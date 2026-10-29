@@ -1,72 +1,73 @@
-# Getting started
+# Jobs from the CLI
 
-## 1. Install
+Everything the Python API does is also available from the `gpulayer` command, which is handy
+for scripts, shell commands and non-Python workloads.
 
-```bash
-uv venv && uv pip install -e '.[dev]'
-uv pip install torch            # optional; needed for MPS/CUDA detection, torchrun jobs, examples
-gpulayer --version
-```
-
-State lives in `$GPULAYER_HOME` (default `~/.gpulayer`, mode 0700): `metadata.db` (SQLite),
-`artifacts/` (content-addressed blobs) and `workers/<id>/` (task workspaces and artifact cache).
-
-## 2. See what this machine offers
-
-```bash
-$ gpulayer resources detect
-host      my-mac (darwin/arm64), 10 cores, 32.0 GB RAM, python 3.11.5
-torch     2.5.1  distributed backends: gloo
-device    [0] mps Apple arm64 GPU (MPS) (32.0 GB unified) independent=hardware-validated distributed=unsupported
-```
-
-Values that detection cannot determine are reported as unknown. Hardware that is detected but
-has no execution path (ROCm, for example) is listed with `execution_supported=false`.
-
-## 3. Run jobs locally
+## Run a command
 
 ```bash
 gpulayer submit -- python -c "print('hello')"
-gpulayer submit --accelerator mps -- python train.py          # needs a worker with MPS
-gpulayer submit --source ./proj --function pkg.mod:fn --arg '{"x": 1}'
-gpulayer submit --timeout 60 --env MODE=fast --secret API_KEY=MY_API_KEY -- python job.py
-gpulayer submit --input data.csv:raw/data.csv -- python job.py  # $GPULAYER_INPUT_DIR/raw/data.csv
+gpulayer submit --accelerator mps -- python train.py
+gpulayer submit --source ./project --timeout 3600 --env MODE=fast -- python train.py --lr 0.01
+gpulayer submit --input data.csv:raw/data.csv -- python prep.py   # file at $GPULAYER_INPUT_DIR/raw/data.csv
+gpulayer submit --secret API_KEY=MY_API_KEY -- python call_api.py # read from the worker's environment
 ```
 
-Without `--detach`, the CLI starts an in-process local worker, streams logs, and exits with the
-job's exit code. With `--detach` it prints the job id and the job waits for `gpulayer worker start`.
+Without `--detach`, the CLI streams the output and exits with the job's exit code. With an
+embedded control plane it also starts a worker in the same process for the duration of the
+command.
 
-Inside a workload:
+A leading `python` means the worker's interpreter. Jobs do not inherit the worker's
+environment; pass values with `--env` and `--secret` (see
+[Environment variables](../reference/environment.md)).
 
-| Variable | Meaning |
-|---|---|
-| `GPULAYER_JOB_ID`, `GPULAYER_TASK_ID`, `GPULAYER_ATTEMPT` | identity |
-| `GPULAYER_INPUT_DIR` / `GPULAYER_OUTPUT_DIR` | staged inputs / files returned as output artifacts |
-| `GPULAYER_ACCELERATOR` | `cpu`, `cuda` or `mps` as requested |
-| `GPULAYER_NODE_RANK`, `GPULAYER_COMM_BACKEND` | distributed jobs (plus torchrun's `RANK`, `WORLD_SIZE`, ...) |
-| `CUDA_VISIBLE_DEVICES` | the granted CUDA devices; empty for CPU jobs |
+## Call a function
 
-A leading `python` in a command means the worker's configured interpreter. The workload does
-not inherit the worker's environment beyond `PATH`, `HOME`, `USER`, `LANG`, `LC_ALL`,
-`TMPDIR`, `TERM`; pass anything else with `--env` or `--secret`.
-
-## 4. Use the SDK
-
-```python
-import gpulayer as gl
-
-with gl.Client() as c:
-    src = c.package("./proj")
-    job = c.submit(gl.function("pkg.mod:fn", 1, 2, source=src))
-    status = job.wait(timeout=300)
-    print(status.state, job.result().return_value, job.logs_text())
-    jobs = c.submit_batch([gl.command(["python", "-c", f"print({i})"]) for i in range(3)])
+```bash
+gpulayer submit --source ./project --function pkg.module:train --arg 0.01 --arg '{"epochs": 5}'
 ```
 
-`Client(url=..., token=...)` talks to a self-hosted control plane with the same API.
+Arguments are JSON; the return value is printed as JSON.
 
-## 5. Next
+## Distributed scripts
 
-- Remote machines: [architecture/remote-workers.md](architecture/remote-workers.md)
-- Multi-node PyTorch: [architecture/distributed.md](architecture/distributed.md)
-- Examples: [../examples](../examples)
+```bash
+gpulayer submit --distributed --source ./project --entrypoint train_ddp.py \
+    --nodes 2 --procs-per-node 4 --accelerator cuda --backend nccl
+```
+
+See [Distributed training](../pytorch/distributed.md).
+
+## Queue now, run later
+
+```bash
+gpulayer submit --detach -- python long_job.py     # prints the job id
+gpulayer worker start                              # a long-running worker picks it up
+```
+
+## Inspect and control
+
+```bash
+gpulayer job list
+gpulayer job status <job-id>          # state, why it was placed (or not), tasks per node
+gpulayer job logs <job-id> -f         # follow output
+gpulayer job events <job-id>          # lifecycle events with timestamps
+gpulayer job result <job-id> --download ./out
+gpulayer job cancel <job-id>
+gpulayer worker status
+```
+
+When a job cannot be placed, `job status` shows the reason for every worker:
+
+```text
+scheduling: no eligible worker
+  wkr-10c5089a6044: needs 1 usable cuda device(s), worker has 0
+```
+
+## Against a server
+
+Set `GPULAYER_URL`, `GPULAYER_TOKEN` and `GPULAYER_FINGERPRINT` (printed by
+[`gpulayer up`](self-hosting.md)), or pass `--url`, `--token` and `--fingerprint` before the
+command. The same commands then talk to the server instead of the embedded control plane.
+
+Full option list: [CLI reference](../reference/cli.md).

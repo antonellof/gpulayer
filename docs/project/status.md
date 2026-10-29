@@ -1,7 +1,35 @@
-# Implementation plan and status
+# Status and roadmap
 
 Repository-specific plan derived from `prompt.md`, `CLAUDE.md` and `architecture_plan.md`.
 Updated 2026-10-29 at the end of the first iteration.
+
+## At a glance
+
+| Capability | Status |
+|---|---|
+| Local execution (SDK, CLI, Trainer), logs, results, artifacts, cancel, timeout | tested |
+| Capability-aware scheduling with per-worker reasons, gang scheduling | tested |
+| `gpulayer up` / `join` / `gl.connect`, TLS with a pinned certificate | tested (several processes, one host) |
+| Workers on separate physical machines | not validated yet |
+| Distributed DDP, 1 x 2 and 2 x 2 processes, gloo | tested on one host |
+| Distributed across machines, NCCL | not validated yet |
+| Apple MPS, independent jobs | hardware-validated |
+| NVIDIA CUDA execution | implemented, not hardware-validated |
+| AMD ROCm | detection only |
+| Cloud provisioning through provider adapters | simulated (`FakeProvider`); cloud VMs can join with `gpulayer join` |
+| Documentation site (`site/`) | builds as a static export |
+
+## Milestone 2 (in progress): PyTorch and ease of use
+
+| Item | Status |
+|---|---|
+| `gpulayer.pytorch`: `Module`, `Trainer`, `Runtime`, `launch()` (ADR-0014) | done, tested |
+| `@gl.remote` with `.run`, `.map`, `.options`, distributed functions | done, tested |
+| `gpulayer up`, `gpulayer join`, `gl.connect`, certificate pinning | done, tested |
+| Examples: regression, CNN, char-level transformer, custom loop, DDP script, sweep | done, run on Apple Silicon |
+| Documentation site (Next.js, Mermaid diagrams) | done |
+| Callbacks, early stopping, gradient accumulation | planned |
+| Validation on NVIDIA hardware and across machines | planned |
 
 ## Milestone 1 steps (prompt.md §8)
 

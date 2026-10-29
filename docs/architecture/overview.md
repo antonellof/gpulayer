@@ -28,6 +28,31 @@ src/gpulayer/
 └── cli/main.py              `gpulayer` CLI
 ```
 
+## Components
+
+```mermaid
+flowchart TB
+    subgraph Client["Your process"]
+        T["Trainer / launch() / @gl.remote"] --> SDK["SDK Client"]
+        CLI["gpulayer CLI"] --> SDK
+    end
+    SDK -- "in-process (embedded)<br/>or HTTPS (server)" --> API
+    subgraph CP["Control plane"]
+        API["API"] --> SVC["Job lifecycle<br/>leases, coordination"]
+        SVC --> SCH["Scheduler<br/>(pure function)"]
+        SVC --> PROV["Provisioning<br/>(provider adapters)"]
+        SVC --> DB[("SQLite metadata")]
+        SVC --> ART[("Artifact store<br/>sha256-addressed")]
+    end
+    subgraph W["Worker (any machine)"]
+        AG["Worker agent<br/>heartbeat, acquire, report"] --> RUN["Process group<br/>command / function / torchrun"]
+    end
+    AG -- "poll over HTTPS<br/>or in-process" --> API
+```
+
+Workers always initiate connections, so they can sit behind NAT. The scheduler has no I/O,
+which keeps placement deterministic and testable.
+
 ## Data model
 
 A job is one logical submission (`JobSpec`). Its states are

@@ -1,190 +1,150 @@
 # GpuLayer
 
-One job model, one capability system and one scheduling layer for many execution environments.
-
-GpuLayer is an open-source GPU execution and orchestration platform. You describe a workload
-and what it needs, and GpuLayer finds a compatible worker to run it: your laptop, a GPU box on
-your network, a cloud machine provisioned through a provider adapter, or a group of these.
-Logs, events, results and artifacts come back through one SDK and CLI.
+Run PyTorch on any GPU you can reach: this machine, a GPU server down the hall, a cloud VM, or
+several of them at once. Write one training file; GpuLayer decides where it can run, starts it
+there, and brings back logs, metrics, checkpoints and the trained model.
 
 ```python
-import gpulayer as gl
+import gpulayer.pytorch as glt
 
-with gl.Client() as client:                       # embedded control plane, no account needed
-    src = client.package("examples/pytorch_train")
-    job = client.submit(gl.command(["python", "train.py"], source=src,
-                                   resources=gl.ResourceRequest(accelerator="mps")))
-    for line in job.follow_logs():
-        print(line.line)
-    print(job.result().outputs)                   # model.pt, metrics.json as artifacts
+class Regressor(glt.Module):
+    def __init__(self):
+        super().__init__()
+        self.net = nn.Sequential(nn.Linear(8, 64), nn.ReLU(), nn.Linear(64, 1))
+
+    def training_step(self, batch, batch_idx):
+        x, y = batch
+        loss = nn.functional.mse_loss(self.net(x), y)
+        self.log("train_loss", loss)
+        return loss
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.parameters(), lr=1e-2)
+
+trainer = glt.Trainer(max_epochs=5)                                  # this process, best device
+trainer = glt.Trainer(max_epochs=5, devices=2, accelerator="cpu")    # DDP, 2 processes
+trainer = glt.Trainer(max_epochs=5, accelerator="cuda", devices=4,
+                      num_nodes=2, target="remote")                  # 8 GPUs on two machines
+trainer.fit(model, train_loader, val_loader)
 ```
 
-> Status: pre-alpha (milestone 1). The core is implemented and tested. Some paths are
-> simulated or only planned, and [What works today](#what-works-today) lists which. This
-> README describes nothing beyond what the test suite demonstrates.
-
-## Why GpuLayer
-
-The same `JobSpec`, SDK and CLI work for local, remote and cloud targets.
-
-Placement is based on what each worker reports: GPU vendor, device count, device memory
-(and whether it is unified or dedicated), CUDA compute capability, OS and CPU architecture,
-Python and framework versions, and the available launcher and communication backend. A worker
-does not qualify just because it has a GPU. Every scheduling decision records why each worker
-was accepted or rejected.
-
-A distributed job is one workload spread over a group of workers. GpuLayer schedules the whole
-group at once, assigns ranks and publishes a rendezvous endpoint, then `torchrun` and PyTorch
-handle the collectives. If one node fails, the whole job fails.
-
-The limits are documented. MPS is a separate backend from CUDA, ROCm is detection-only, leases
-give at-least-once execution at best, and running a workload as a subprocess does not sandbox it.
-
-## Concepts
-
-| Concept | Values | Meaning |
-|---|---|---|
-| Execution target | `local`, `remote`, `cloud` | Where a job may run. A job moves to another target only if you list it as a fallback. |
-| Workload type | `independent`, `distributed` | One execution unit, or one coordinated multi-node workload. |
-| Workload kind | `CommandJob`, `FunctionJob`, `DistributedJob` | A command, a `module:function` call with JSON arguments, or a torchrun entrypoint. |
-| Worker origin | `local`, `existing`, `provider` | How a worker joined. Each origin serves one target. |
-
-Targets and workload types are independent of each other. A distributed job can run on local
-workers, and a cloud job can be a single independent task.
+> **Status: pre-alpha.** Tested on CPU and Apple Silicon (MPS), with multiple workers on one
+> host. NVIDIA GPUs and multi-machine runs are implemented but not validated yet; automatic
+> cloud provisioning is simulated. See [Status and roadmap](docs/project/status.md).
 
 ## Install
 
-GpuLayer needs Python 3.10 or newer. A CPU-only install needs no GPU libraries.
-
 ```bash
-git clone <this repo> && cd gpulayer
-uv venv && uv pip install -e '.[dev]'        # or: python -m venv .venv && pip install -e '.[dev]'
-uv pip install torch                          # optional: MPS/CUDA probing, torchrun jobs, examples
+git clone https://github.com/antonellof/gpulayer.git && cd gpulayer
+uv venv && source .venv/bin/activate
+uv pip install -e '.[dev]' torch
+gpulayer resources detect          # what this machine can run
 ```
 
 ## Quickstart
 
-```bash
-gpulayer resources detect                     # what this machine offers (and what it doesn't)
+1. **Train in this process.** Picks CUDA, MPS or CPU automatically.
 
-# Run a command locally; an in-process worker executes it and the CLI streams logs.
-gpulayer submit -- python -c "import platform; print(platform.machine())"
+   ```bash
+   python examples/trainer_regression/train.py
+   ```
 
-# Inspect it afterwards
-gpulayer job list
-gpulayer job status <job-id>                  # state, placement explanation, tasks
-gpulayer job logs <job-id>
-gpulayer job events <job-id>
-gpulayer job result <job-id> --download ./out
+2. **Same file, two processes with DDP.** GpuLayer starts a local worker, launches torchrun,
+   shards the data, and loads the trained weights back into your `model`.
 
-# Function job: module:function from a packaged directory; JSON in, JSON out
-gpulayer submit --source examples/pytorch_train --function predict:predict --arg '[[1, 1]]'
+   ```bash
+   python examples/trainer_regression/train.py --accelerator cpu --devices 2
+   ```
 
-# Queue now, execute later with a long-running worker
-gpulayer submit --detach -- python long_task.py
-gpulayer worker start
-gpulayer job cancel <job-id>
-```
+3. **Two nodes.** Two workers, ranks and rendezvous handled for you.
 
-If no worker can satisfy a job's requirements, the job fails right away and the CLI prints the
-reason for each worker, for example `needs 1 usable cuda device(s), worker has 0`.
+   ```bash
+   python examples/trainer_regression/train.py --accelerator cpu --nodes 2 --devices 2
+   ```
 
-### Distributed PyTorch (DDP)
+4. **Ask for hardware you don't have.** The job is rejected before it starts, with a reason
+   per worker (`needs 1 usable cuda device(s), worker has 0`).
 
-```bash
-# One node, two processes:
-gpulayer submit --distributed --source examples/pytorch_ddp --entrypoint train_ddp.py \
-    --nodes 1 --procs-per-node 2 --framework 'torch>=2.0'
+   ```bash
+   python examples/trainer_regression/train.py --accelerator cuda --target local
+   ```
 
-# Two nodes x two processes (world size 4): start two workers, then submit
-gpulayer worker start --name node-a &
-gpulayer worker start --name node-b &
-gpulayer submit --detach --distributed --source examples/pytorch_ddp \
-    --entrypoint train_ddp.py --nodes 2 --procs-per-node 2
-```
+5. **A parallel sweep** with `@gl.remote`:
 
-### Self-hosted control plane with remote workers
+   ```bash
+   python examples/remote_sweep/sweep.py
+   ```
 
-```bash
-# On the control-plane host
-gpulayer server init                          # prints a client token and a worker join token ONCE
-gpulayer server start --host 0.0.0.0 --tls-cert cert.pem --tls-key key.pem
+6. **Add more machines.** On a machine that will be the server (it also runs jobs):
 
-# On each GPU machine
-GPULAYER_JOIN_TOKEN=glj_... gpulayer --url https://cp.example:8470 worker start
+   ```bash
+   gpulayer up
+   ```
 
-# From your laptop
-export GPULAYER_URL=https://cp.example:8470 GPULAYER_TOKEN=glc_...
-gpulayer submit --target remote --accelerator cuda --gpus 1 -- python train.py
-```
+   It prints a `gpulayer join ...` line to paste on other GPU machines or cloud VMs, and an
+   `export GPULAYER_URL=... GPULAYER_TOKEN=... GPULAYER_FINGERPRINT=...` line for your laptop.
+   After that, the same commands as above run on the server's workers.
 
-The server refuses to serve plaintext HTTP on a non-loopback address unless you pass
-`--allow-insecure-remote`.
+7. **See what ran.**
+
+   ```bash
+   gpulayer job list
+   gpulayer job status <job-id>
+   gpulayer worker status
+   ```
+
+The [full quickstart](docs/get-started/quickstart.md) shows the output of each step.
+
+## With and without GpuLayer
+
+| Situation | Without | With GpuLayer |
+|---|---|---|
+| Code on a laptop, GPU elsewhere | ssh, copy code, rebuild env, tmux, copy checkpoints back | `python train.py --target remote` |
+| Several GPU machines | track free boxes by hand; jobs crash on the wrong GPU or CUDA build | one queue; each job lands where it fits or is rejected with the reason |
+| Multi-node training | torchrun on every node with matching ranks, address and port | `Trainer(num_nodes=2, devices=4)` |
+| Hyperparameter sweep | sequential loop or custom scripts | `train.map([...])` in parallel |
+| Mac, CPU and CUDA from one file | device, DDP and sampler boilerplate | `accelerator="auto"` |
+
+On a single machine with a single GPU, plain PyTorch is simpler. GpuLayer is also not a
+sandbox for untrusted code. Details: [Why GpuLayer](docs/get-started/why-gpulayer.md).
+
+## Three ways to use it
+
+| API | For |
+|---|---|
+| [`Trainer` + `Module`](docs/pytorch/trainer.md) | new training code: one file, any device, any target |
+| [`launch()`](docs/pytorch/launch.md) | an existing PyTorch script: two lines at the top |
+| [`@gl.remote`](docs/pytorch/remote-functions.md) | functions and sweeps: `.run()`, `.map()` |
 
 ## Examples
 
 | Example | Shows |
 |---|---|
-| [`examples/pytorch_train`](examples/pytorch_train) | Training an MLP on CPU, MPS or CUDA through the SDK, downloading `model.pt`, then running inference as a JSON `FunctionJob` |
-| [`examples/pytorch_ddp`](examples/pytorch_ddp) | `DistributedDataParallel` with `DistributedSampler`, launched by GpuLayer through torchrun on one or more nodes |
+| [`trainer_regression`](examples/trainer_regression) | the smallest `Module` + `Trainer` |
+| [`trainer_image_classifier`](examples/trainer_image_classifier) | a CNN on generated images, accuracy, DDP |
+| [`trainer_char_lm`](examples/trainer_char_lm) | a small transformer: LR schedule, clipping, mixed precision, resume, sampling |
+| [`runtime_custom_loop`](examples/runtime_custom_loop) | your own loop with `Runtime` handling devices and DDP |
+| [`launch_ddp_script`](examples/launch_ddp_script) | a plain DDP script made portable with `launch()` |
+| [`remote_sweep`](examples/remote_sweep) | `@gl.remote` and `.map()` |
 
-## What works today
+## Documentation
 
-The status labels come from [CLAUDE.md](CLAUDE.md): hardware-validated, tested, implemented,
-simulated, planned.
+The docs live in [`docs/`](docs/) and are published by the site in [`site/`](site/)
+(`cd site && npm install && npm run dev`).
 
-| Capability | Status | Evidence |
-|---|---|---|
-| Local CPU execution (command / function), logs, results, artifacts, cancel, timeout | tested | `tests/integration/test_local_execution.py`, `test_cli.py` |
-| Capability-aware deterministic scheduling, rejection reasons, gang scheduling | tested | `tests/unit/test_scheduler.py` |
-| Leases, heartbeats, worker loss, opt-in retry, revocation, persistence | tested (simulated clock) | `tests/unit/test_control_plane.py` |
-| Remote worker over authenticated HTTP (separate process, separate state dir) | tested on one host | `tests/integration/test_http_remote.py` |
-| Remote worker on a different machine | not yet validated | the protocol works over a network, but no cross-host test exists yet |
-| Distributed torchrun/gloo, 2 nodes × 2 procs, fail-fast | tested on one host (real processes, loopback) | `tests/distributed/test_torchrun_multiprocess.py` |
-| Multi-machine distributed | planned | needs a documented multi-host test environment |
-| Apple MPS independent jobs | hardware-validated (Apple Silicon smoke test) | `tests/hardware/test_gpu_smoke.py` |
-| Distributed MPS | unsupported by design (ADR-0006) | rejected at validation |
-| NVIDIA CUDA detection and scheduling | tested (mocked `nvidia-smi` / torch probe) | `tests/unit/test_discovery.py` |
-| NVIDIA CUDA execution (single GPU and NCCL) | implemented, not hardware-validated | smoke test exists, skipped without a GPU |
-| AMD ROCm | detection-only | never scheduled |
-| Cloud provisioning lifecycle (offer selection, single-use bootstrap tokens, reservation, release, cost estimates) | simulated with `FakeProvider` | `tests/unit/test_providers.py` |
-| Real cloud provider adapter | planned; no vendor chosen (ADR-0010) | none |
-| Hosted control plane | planned | none |
-
-## Architecture at a glance
-
-```
- SDK / CLI ──► Control plane (embedded in-process, or `gpulayer server` over HTTPS)
-                 jobs · worker registry · leases · scheduler · coordination · provisioning
-                 SQLite metadata  +  content-addressed artifact store
-                        │  worker protocol (poll: heartbeat / acquire / start / logs / finish)
-        ┌───────────────┼──────────────────────┐
-   local worker    existing worker       provider worker ◄── ProviderAdapter (FakeProvider)
-        └──► WorkerAgent ──► process group: command | function runner | torchrun
-```
-
-Further reading:
-
-- [Getting started](docs/getting-started.md)
-- [Architecture overview](docs/architecture/overview.md) · [Execution modes](docs/architecture/execution-modes.md) ·
-  [Remote workers](docs/architecture/remote-workers.md) · [Cloud & providers](docs/architecture/providers.md) ·
-  [Distributed](docs/architecture/distributed.md) · [GPU compatibility & MPS](docs/architecture/gpu-compatibility.md) ·
-  [Scheduling & cost](docs/architecture/scheduling-and-cost.md) · [Security & trust](docs/architecture/security.md)
-- [Architecture decisions (ADRs)](docs/decisions/README.md)
-- [Implementation plan & status](docs/development/implementation-plan.md) · [Contributing & testing](docs/development/contributing.md)
-- Long-form design: [architecture_plan.md](architecture_plan.md)
+- Get started: [Introduction](docs/index.md) · [Installation](docs/get-started/installation.md) · [Quickstart](docs/get-started/quickstart.md) · [Core concepts](docs/get-started/concepts.md)
+- PyTorch: [Trainer](docs/pytorch/trainer.md) · [Distributed](docs/pytorch/distributed.md) · [launch()](docs/pytorch/launch.md) · [Runtime](docs/pytorch/runtime.md) · [Remote functions](docs/pytorch/remote-functions.md)
+- Guides: [Run a server](docs/guides/self-hosting.md) · [Apple Silicon](docs/guides/apple-silicon.md) · [NVIDIA CUDA](docs/guides/nvidia-cuda.md) · [Cloud](docs/guides/cloud-providers.md) · [CLI jobs](docs/guides/jobs-and-cli.md)
+- Architecture: [Overview](docs/architecture/overview.md) · [Scheduling](docs/architecture/scheduling.md) · [Security](docs/architecture/security.md) · [Decisions (ADRs)](docs/decisions/README.md)
+- Reference: [Python API](docs/reference/python-api.md) · [CLI](docs/reference/cli.md) · [JobSpec](docs/reference/job-spec.md)
 
 ## Development
 
 ```bash
-.venv/bin/pytest                               # everything (hardware tests self-skip)
-.venv/bin/pytest tests/unit                    # fast, no processes
-.venv/bin/pytest -m distributed                # real torchrun runs (needs torch)
-.venv/bin/pytest -m "hardware_mps or hardware_cuda"
-.venv/bin/ruff check src tests && .venv/bin/ruff format --check src tests && .venv/bin/mypy src
+.venv/bin/pytest                    # unit, integration, distributed; hardware tests self-skip
+.venv/bin/ruff check src tests examples && .venv/bin/mypy src
 ```
 
-## License
-
-No license has been chosen yet; see [ADR-0012](docs/decisions/ADR-0012-licensing-and-project-governance.md).
-Until one is added, no rights are granted beyond viewing.
+See [Contributing](docs/project/contributing.md). No license has been chosen yet
+([ADR-0012](docs/decisions/ADR-0012-licensing-and-project-governance.md)); until one is added,
+no rights are granted beyond viewing.

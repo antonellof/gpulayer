@@ -1,5 +1,8 @@
 # Remote workers and private networking
 
+For most setups, [`gpulayer up` and `gpulayer join`](self-hosting.md) are all you need. This
+page describes the lower-level commands and the protocol underneath them.
+
 ## Setup
 
 ```bash

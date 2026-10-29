@@ -1,0 +1,154 @@
+{
+  "sections": [
+    {
+      "title": "Get started",
+      "pages": [
+        {
+          "slug": "index",
+          "title": "Introduction"
+        },
+        {
+          "slug": "get-started/why-gpulayer",
+          "title": "Why GpuLayer"
+        },
+        {
+          "slug": "get-started/installation",
+          "title": "Installation"
+        },
+        {
+          "slug": "get-started/quickstart",
+          "title": "Quickstart"
+        },
+        {
+          "slug": "get-started/concepts",
+          "title": "Core concepts"
+        }
+      ]
+    },
+    {
+      "title": "PyTorch",
+      "pages": [
+        {
+          "slug": "pytorch/trainer",
+          "title": "Trainer and Module"
+        },
+        {
+          "slug": "pytorch/distributed",
+          "title": "Distributed training"
+        },
+        {
+          "slug": "pytorch/launch",
+          "title": "Run any script with launch()"
+        },
+        {
+          "slug": "pytorch/runtime",
+          "title": "Runtime helpers"
+        },
+        {
+          "slug": "pytorch/remote-functions",
+          "title": "Remote functions and sweeps"
+        }
+      ]
+    },
+    {
+      "title": "Guides",
+      "pages": [
+        {
+          "slug": "guides/self-hosting",
+          "title": "Run a server (gpulayer up)"
+        },
+        {
+          "slug": "guides/remote-workers",
+          "title": "Remote workers"
+        },
+        {
+          "slug": "guides/cloud-providers",
+          "title": "Cloud and providers"
+        },
+        {
+          "slug": "guides/apple-silicon",
+          "title": "Apple Silicon (MPS)"
+        },
+        {
+          "slug": "guides/nvidia-cuda",
+          "title": "NVIDIA CUDA"
+        },
+        {
+          "slug": "guides/jobs-and-cli",
+          "title": "Jobs from the CLI"
+        }
+      ]
+    },
+    {
+      "title": "Architecture",
+      "pages": [
+        {
+          "slug": "architecture/overview",
+          "title": "Overview"
+        },
+        {
+          "slug": "architecture/scheduling",
+          "title": "Scheduling"
+        },
+        {
+          "slug": "architecture/distributed",
+          "title": "Distributed execution"
+        },
+        {
+          "slug": "architecture/gpu-compatibility",
+          "title": "GPU compatibility"
+        },
+        {
+          "slug": "architecture/security",
+          "title": "Security and trust"
+        },
+        {
+          "slug": "architecture/cost-accounting",
+          "title": "Cost accounting"
+        }
+      ]
+    },
+    {
+      "title": "Reference",
+      "pages": [
+        {
+          "slug": "reference/python-api",
+          "title": "Python API"
+        },
+        {
+          "slug": "reference/cli",
+          "title": "CLI"
+        },
+        {
+          "slug": "reference/job-spec",
+          "title": "JobSpec"
+        },
+        {
+          "slug": "reference/environment",
+          "title": "Environment variables"
+        },
+        {
+          "slug": "reference/http-api",
+          "title": "HTTP API"
+        }
+      ]
+    },
+    {
+      "title": "Project",
+      "pages": [
+        {
+          "slug": "project/status",
+          "title": "Status and roadmap"
+        },
+        {
+          "slug": "project/contributing",
+          "title": "Contributing"
+        },
+        {
+          "slug": "decisions/README",
+          "title": "Architecture decisions"
+        }
+      ]
+    }
+  ]
+}

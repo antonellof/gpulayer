@@ -1,4 +1,4 @@
-# Scheduling and cost accounting
+# Scheduling
 
 ## Scheduler (`control_plane/scheduler.py`)
 
@@ -28,17 +28,4 @@ The reasons for every candidate are stored on the job, and `gpulayer job status`
 - Data locality, topology/interconnect and cost optimization are planned once reliable
   capability and pricing data exist.
 
-## Cost accounting
-
-`CostRecord` keeps estimates and charges apart:
-
-| `kind` | Meaning |
-|---|---|
-| `estimate` | from a provider `PriceQuote` at provisioning time |
-| `provider_usage` / `provider_charge` | reserved for real adapters that report usage/billing |
-| `internal` | GpuLayer-calculated accounting |
-
-Every record has `amount`, `currency`, `unit` (`per_hour` or `total`), `source` and
-`recorded_at`. A missing price is recorded as unknown, and when `max_hourly_cost` is set, an
-offer without a price is rejected. Today only `FakeProvider` produces estimates, and they are
-labelled as simulated.
+Cost data is described in [Cost accounting](cost-accounting.md).
