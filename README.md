@@ -34,12 +34,31 @@ trainer.fit(model, train_loader, val_loader)                              # 8 GP
 
 ## Install
 
+**One command** (Linux, macOS; no sudo; installs into its own virtualenv):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/antonellof/gpulayer/main/install.sh | sh
+gpulayer resources detect             # what this machine can run
+```
+
+Add `GPULAYER_EXTRAS=examples` before `sh` to include PyTorch, NumPy and MLX.
+
+**Docker** (a server and workers, see [deploy/docker](deploy/docker)):
+
+```bash
+docker build -t gpulayer .
+docker run -d -p 8470:8470 -v gpulayer-data:/data gpulayer up --no-worker
+```
+
+**From source**, to run the examples or work on GpuLayer:
+
 ```bash
 git clone https://github.com/antonellof/gpulayer.git && cd gpulayer
 uv venv && source .venv/bin/activate
 uv pip install -e '.[dev,examples]'   # GpuLayer plus what the examples use (torch, numpy, mlx on Apple Silicon)
-gpulayer resources detect             # what this machine can run
 ```
+
+More options in [Installation](docs/get-started/installation.md).
 
 ## Quickstart
 
@@ -108,6 +127,8 @@ gpulayer resources detect             # what this machine can run
 
    Servers also expose Prometheus metrics at `/metrics`, with a ready-made Grafana dashboard
    in [`deploy/monitoring`](deploy/monitoring) ([guide](docs/guides/monitoring.md)).
+
+   ![GpuLayer dashboard: jobs, workers, CPU load, memory and task processes over time](docs/assets/dashboard/overview-dark.png)
 
 The [full quickstart](docs/get-started/quickstart.md) shows the output of each step.
 

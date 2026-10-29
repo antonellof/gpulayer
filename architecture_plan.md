@@ -768,6 +768,7 @@ Suggested initial ADRs:
 14. `ADR-0014-pytorch-integration.md`
 15. `ADR-0015-workload-agnostic-core.md`
 16. `ADR-0016-performance-parallelism-and-distribution.md`
+17. `ADR-0017-distribution-and-installation.md`
 
 Create an ADR index. Use `Proposed` for decisions that still need validation; do not present an undecided option as established policy.
 

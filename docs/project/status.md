@@ -30,6 +30,8 @@ Updated 2026-10-29 at the end of the first iteration.
 | Documentation site (Next.js, Mermaid diagrams) | done |
 | Gradient accumulation (with DDP `no_sync`) | done, tested |
 | Event-driven dispatch: long-poll acquire and job waits, async log shipping (ADR-0016) | done, tested, benchmarked on one machine |
+| Web dashboard (jobs, logs, workers, activity charts), Prometheus `/metrics`, Grafana dashboard | done, tested; charts checked in a browser |
+| Worker telemetry: load, memory, task processes, NVIDIA GPU utilisation | done, tested (NVIDIA path not hardware-validated) |
 | Callbacks, early stopping | planned |
 | Validation on NVIDIA hardware and across machines | planned |
 
@@ -98,6 +100,15 @@ uncommitted local changes, so it was deliberately left untouched.
   multi-GPU workers and real concurrent CPU processes).
 - Next: per-rank log streams, topology-aware
   group placement, faster distributed start-up. FSDP and `torch.compile` need CUDA hardware.
+
+### Distribution (ADR-0017)
+
+- Done: `install.sh` (curl one-liner, private virtualenv, uv or pip, no sudo; tested from a
+  local checkout with and without uv), `Dockerfile` (CPU or CUDA base, unprivileged user,
+  `/data` volume) and `deploy/docker/docker-compose.yml`. The image has not been built in CI.
+- Next, after the licence decision (ADR-0012) and making the repository public: CI that builds
+  and tests the images, published images on GitHub Container Registry, a PyPI release
+  (`pip install gpulayer`, `uv tool install gpulayer`), possibly a Homebrew formula.
 
 ### Iteration 3: validate across machines
 

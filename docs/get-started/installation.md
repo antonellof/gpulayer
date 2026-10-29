@@ -3,9 +3,71 @@
 GpuLayer needs Python 3.10 or newer. PyTorch is optional for the core package and required for
 everything in `gpulayer.pytorch`.
 
-## From source
+GpuLayer is not on PyPI yet. There are three ways to install it.
 
-GpuLayer is not on PyPI yet.
+## With the install script
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/antonellof/gpulayer/main/install.sh | sh
+```
+
+The script installs the CLI into its own virtual environment (default
+`~/.local/share/gpulayer/venv`) and links `gpulayer` into `~/.local/bin`. It uses
+[uv](https://docs.astral.sh/uv/) when it is installed, otherwise Python 3.10 or newer and git.
+It never uses sudo. Read it first if you prefer: [`install.sh`](../../install.sh).
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `GPULAYER_REF` | `main` | branch, tag or commit to install |
+| `GPULAYER_EXTRAS` | none | extras, for example `examples` (PyTorch, NumPy, MLX) |
+| `GPULAYER_INSTALL_DIR` | `~/.local/share/gpulayer` | where the virtual environment goes |
+| `GPULAYER_BIN_DIR` | `~/.local/bin` | where the `gpulayer` link goes |
+| `GPULAYER_SOURCE` | GitHub | a local checkout or pip URL to install instead |
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/antonellof/gpulayer/main/install.sh | GPULAYER_EXTRAS=examples sh
+```
+
+The one-line form needs the repository to be publicly readable. Until then, clone the
+repository and run `GPULAYER_SOURCE=. sh install.sh`.
+
+To uninstall, delete the install directory and the link:
+`rm -rf ~/.local/share/gpulayer ~/.local/bin/gpulayer`. Job state in `~/.gpulayer` is separate.
+
+## With Docker
+
+The [`Dockerfile`](../../Dockerfile) builds an image with the CLI. It can run the server, a
+worker, or any other command:
+
+```bash
+docker build -t gpulayer .                                    # CPU image (python:3.12-slim)
+docker run -d --name gpulayer -p 8470:8470 -v gpulayer-data:/data gpulayer up --no-worker
+docker logs gpulayer                                          # tokens and the join command
+```
+
+For NVIDIA workers, build on a CUDA base with PyTorch and run with the NVIDIA Container Toolkit:
+
+```bash
+docker build -t gpulayer:cuda \
+  --build-arg BASE=nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 --build-arg EXTRAS=pytorch-cuda .
+docker run -d --gpus all -v gpulayer-worker:/data gpulayer:cuda \
+  join https://<server>:8470 --token <join token> --fingerprint <fingerprint>
+```
+
+[`deploy/docker/docker-compose.yml`](../../deploy/docker/docker-compose.yml) runs a server and a
+worker together, with an optional NVIDIA worker profile. Images run as an unprivileged user
+and keep their state in the `/data` volume.
+
+Notes:
+
+- A container is a packaging choice, not a sandbox for untrusted jobs; see
+  [Security](../architecture/security.md).
+- Apple GPUs are not available inside Docker on macOS. Run Mac workers natively.
+- Distributed jobs need the workers to reach each other on the rendezvous port; use host
+  networking or a shared Docker network, and set `--advertise-address`.
+- Images are built locally for now. Published images (GitHub Container Registry) are planned.
+
+## From source
 
 ```bash
 git clone https://github.com/antonellof/gpulayer.git

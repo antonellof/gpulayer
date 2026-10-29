@@ -1,0 +1,13 @@
+.git
+.venv
+venv
+**/__pycache__
+**/*.pyc
+.mypy_cache
+.pytest_cache
+.ruff_cache
+site
+gpulayer_runs
+examples/**/gpulayer_runs
+deploy/monitoring/gpulayer-token
+deploy/monitoring/gpulayer-cert.pem

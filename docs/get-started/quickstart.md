@@ -7,12 +7,18 @@ on any machine.
 
 ## 1. Install
 
+The examples live in the repository, so clone it and install with the examples extra:
+
 ```bash
 git clone https://github.com/antonellof/gpulayer.git && cd gpulayer
 uv venv && source .venv/bin/activate
 uv pip install -e '.[dev,examples]'
 gpulayer resources detect
 ```
+
+To use GpuLayer without the examples, the
+[install script](installation.md#with-the-install-script) or the
+[Docker image](installation.md#with-docker) is enough.
 
 ## 2. Run a command as a job
 

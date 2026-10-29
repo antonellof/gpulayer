@@ -1,0 +1,50 @@
+# A GpuLayer server and a worker on one Docker host.
+#
+#   docker compose up -d server
+#   docker compose logs server        # prints the join token and certificate fingerprint
+#   export GPULAYER_JOIN_TOKEN=glj_...  GPULAYER_FINGERPRINT=sha256:...
+#   docker compose up -d worker
+#
+# Dashboard: https://localhost:8470/ui/ with the client token from the logs (the certificate is
+# self-signed). Workers on other machines join with the `gpulayer join ...` line from the logs,
+# using this host's address instead of localhost.
+services:
+  server:
+    image: gpulayer:latest
+    build: ../..
+    command: ["up", "--host", "0.0.0.0", "--port", "8470", "--no-worker",
+              "--advertise-address", "server"]
+    ports: ["8470:8470"]
+    volumes: ["server-data:/data"]
+    restart: unless-stopped
+
+  worker:
+    image: gpulayer:latest
+    depends_on: [server]
+    # The worker pins the server's self-signed certificate by fingerprint.
+    command: ["join", "https://server:8470", "--token", "${GPULAYER_JOIN_TOKEN:?set GPULAYER_JOIN_TOKEN}",
+              "--fingerprint", "${GPULAYER_FINGERPRINT:?set GPULAYER_FINGERPRINT}",
+              "--name", "docker-worker", "--advertise-address", "worker"]
+    volumes: ["worker-data:/data"]
+    restart: unless-stopped
+
+  # NVIDIA worker: build with the CUDA base (see the Dockerfile) and run on a host with the
+  # NVIDIA Container Toolkit.  docker compose --profile cuda up -d gpu-worker
+  gpu-worker:
+    profiles: ["cuda"]
+    image: gpulayer:cuda
+    depends_on: [server]
+    command: ["join", "https://server:8470", "--token", "${GPULAYER_JOIN_TOKEN:?set GPULAYER_JOIN_TOKEN}",
+              "--fingerprint", "${GPULAYER_FINGERPRINT:?set GPULAYER_FINGERPRINT}",
+              "--name", "docker-gpu-worker", "--advertise-address", "gpu-worker"]
+    volumes: ["gpu-worker-data:/data"]
+    deploy:
+      resources:
+        reservations:
+          devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]
+    restart: unless-stopped
+
+volumes:
+  server-data:
+  worker-data:
+  gpu-worker-data:
