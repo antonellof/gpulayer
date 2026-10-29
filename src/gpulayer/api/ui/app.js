@@ -7,6 +7,7 @@ const POLL_MS = 3000;
 const S = {
   token: null, role: null, principal: null,
   tab: "jobs", filter: "all", query: "", showOffline: false,
+  range: 60, history: null, chartsHost: null,
   jobs: [], workers: [], selected: null, logSeq: 0, logs: [], events: [],
   lastOk: null, error: null,
 };
@@ -123,6 +124,185 @@ function select(id) {
   S.logs = [];
   S.events = [];
   refresh();
+}
+
+// ------------------------------------------------------------------ charts
+
+const SVG = "http://www.w3.org/2000/svg";
+const MAX_SERIES = 6; // validated categorical slots; more workers are summarised in the note
+
+function s(tag, attrs) {
+  const el = document.createElementNS(SVG, tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+// Axis top and tick count: ticks land on round numbers, and on whole numbers for counts.
+function axis(maxValue, integer) {
+  const v = Math.max(maxValue, integer ? 4 : 1);
+  const p = 10 ** Math.floor(Math.log10(v));
+  for (const m of [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) {
+    const top = m * p;
+    if (top < v) continue;
+    for (const n of [4, 5, 3, 2]) {
+      const step = top / n;
+      if (integer ? Number.isInteger(step) : Number.isInteger(+(step / p * 100).toFixed(6))) {
+        return { top, n };
+      }
+    }
+  }
+  return { top: 10 * p, n: 5 };
+}
+
+const hhmm = (t) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+// series: [{name, slot, points: [[ms, value], ...]}]; values may be null (gap).
+function lineChart({ title, unit, series, fmt, yMax, gapMs, integer = false }) {
+  const card = h("div", { class: "chart" }, h("h3", {}, title), h("div", { class: "unit" }, unit));
+  const shown = series.filter((x) => x.points.some((p) => p[1] !== null));
+  if (!shown.length) {
+    card.append(h("div", { class: "empty-chart" }, "No samples yet. Workers report every 10 seconds."));
+    return card;
+  }
+  if (shown.length >= 2) {
+    card.append(h("div", { class: "legend" }, shown.map((x) =>
+      h("span", {}, h("i", { class: `sw f${x.slot}` }), x.name))));
+  }
+  const W = 560, H = 170, labels = shown.length <= 4;
+  const m = { l: 40, r: labels ? 96 : 12, t: 8, b: 22 };
+  const end = Date.now(), start = end - S.range * 60000;
+  const all = shown.flatMap((x) => x.points.map((p) => p[1])).filter((v) => v !== null);
+  const ax = yMax ? { top: yMax, n: 4 } : axis(Math.max(...all, 0) * 1.1, integer);
+  const top = ax.top;
+  const X = (t) => m.l + ((t - start) / (end - start)) * (W - m.l - m.r);
+  const Y = (v) => H - m.b - (v / top) * (H - m.t - m.b);
+  const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: "none", role: "img",
+    "aria-label": `${title}: ${shown.map((x) => x.name).join(", ")}` });
+  for (let i = 0; i <= ax.n; i++) {
+    const v = (top / ax.n) * i, y = Y(v);
+    svg.append(s("line", { x1: m.l, x2: W - m.r, y1: y, y2: y, class: "grid-line" }));
+    const label = s("text", { x: m.l - 6, y: y + 3.5, "text-anchor": "end", class: "axis-text" });
+    label.textContent = fmt(v);
+    svg.append(label);
+  }
+  for (let i = 0; i <= 3; i++) {
+    const t = start + ((end - start) / 3) * i;
+    const label = s("text", { x: X(t), y: H - 6, "text-anchor": i === 0 ? "start" : i === 3 ? "end" : "middle", class: "axis-text" });
+    label.textContent = hhmm(t);
+    svg.append(label);
+  }
+  const ends = [];
+  for (const x of shown) {
+    let d = "", prev = null;
+    for (const [t, v] of x.points) {
+      if (v === null || t < start) { prev = null; continue; }
+      const jump = prev === null || (gapMs && t - prev > gapMs);
+      d += `${jump ? "M" : "L"}${X(t).toFixed(1)},${Y(v).toFixed(1)}`;
+      prev = t;
+    }
+    svg.append(s("path", { d, class: `series s${x.slot}` }));
+    const last = [...x.points].reverse().find((p) => p[1] !== null);
+    if (labels && last) ends.push({ y: Y(last[1]), x, v: last[1] });
+  }
+  // Direct labels at the right edge, nudged apart so they never overlap.
+  ends.sort((a, b) => a.y - b.y);
+  for (let i = 1; i < ends.length; i++) ends[i].y = Math.max(ends[i].y, ends[i - 1].y + 13);
+  for (const e of ends) {
+    svg.append(s("circle", { cx: W - m.r + 6, cy: e.y, r: 3, class: `f${e.x.slot}` }));
+    const t = s("text", { x: W - m.r + 13, y: e.y + 3.5, class: "end-label" });
+    t.textContent = `${e.x.name.length > 12 ? e.x.name.slice(0, 11) + "…" : e.x.name} ${fmt(e.v)}`;
+    svg.append(t);
+  }
+  // Hover: crosshair, a dot per series and a tooltip with every value at that time.
+  const cross = s("line", { y1: m.t, y2: H - m.b, class: "cross", visibility: "hidden" });
+  const dots = shown.map((x) => s("circle", { r: 4, class: `dot f${x.slot}`, visibility: "hidden" }));
+  const hit = s("rect", { x: m.l, y: 0, width: W - m.l - m.r, height: H, class: "hit" });
+  svg.append(cross, ...dots, hit);
+  const tip = h("div", { class: "tip" });
+  hit.addEventListener("mousemove", (ev) => {
+    const box = svg.getBoundingClientRect();
+    const px = ((ev.clientX - box.left) / box.width) * W;
+    const t = start + ((px - m.l) / (W - m.l - m.r)) * (end - start);
+    const rows = [];
+    shown.forEach((x, i) => {
+      let best = null;
+      for (const p of x.points) if (p[1] !== null && (!best || Math.abs(p[0] - t) < Math.abs(best[0] - t))) best = p;
+      if (!best || (gapMs && Math.abs(best[0] - t) > gapMs)) { dots[i].setAttribute("visibility", "hidden"); return; }
+      dots[i].setAttribute("cx", X(best[0])); dots[i].setAttribute("cy", Y(best[1]));
+      dots[i].setAttribute("visibility", "visible");
+      rows.push(h("div", { class: "r" }, h("span", { class: "k" }, h("i", { class: `sw f${x.slot}` }), x.name),
+        h("span", { class: "v" }, fmt(best[1]))));
+    });
+    cross.setAttribute("x1", px); cross.setAttribute("x2", px);
+    cross.setAttribute("visibility", "visible");
+    tip.replaceChildren(h("div", { class: "t" }, new Date(t).toLocaleTimeString()), ...rows);
+    tip.classList.add("on");
+    const cardBox = card.getBoundingClientRect();
+    const left = ev.clientX - cardBox.left;
+    tip.style.left = `${Math.min(left + 14, cardBox.width - 170)}px`;
+    tip.style.top = `${ev.clientY - cardBox.top + 12}px`;
+  });
+  hit.addEventListener("mouseleave", () => {
+    tip.classList.remove("on");
+    cross.setAttribute("visibility", "hidden");
+    dots.forEach((d) => d.setAttribute("visibility", "hidden"));
+  });
+  card.append(svg, tip);
+  return card;
+}
+
+function activityView() {
+  const hist = S.history;
+  const head = h("div", { class: "activity-head" }, h("h2", {}, "Activity"),
+    [[15, "15 min"], [60, "1 hour"], [360, "6 hours"]].map(([v, label]) => h("button", {
+      class: `chip ${S.range === v ? "on" : ""}`,
+      onclick: () => { S.range = v; loadHistory(); },
+    }, label)));
+  if (!hist) return [head, h("div", { class: "empty" }, "Loading activity…")];
+  const workers = hist.workers.slice(0, MAX_SERIES).map((w, i) => ({ ...w, slot: i + 1 }));
+  const ms = (t) => new Date(t).getTime();
+  const per = (fn) => workers.map((w) => ({
+    name: w.name, slot: w.slot, points: w.samples.map((p) => [ms(p.t), fn(p)]),
+  }));
+  const pct = (v) => `${Math.round(v)}%`;
+  const int = (v) => `${Math.round(v)}`;
+  const gapMs = 35000; // a worker that missed 3 samples has a gap, not a straight line
+  const gpu = [];
+  for (const w of workers) {
+    const idx = new Set(w.samples.flatMap((p) => (p.gpus || []).map((g) => g.index)));
+    for (const i of idx) gpu.push({ name: `${w.name} GPU ${i}`, slot: ((gpu.length) % MAX_SERIES) + 1,
+      points: w.samples.map((p) => [ms(p.t), ((p.gpus || []).find((g) => g.index === i) || {}).utilization_pct ?? null]) });
+  }
+  const charts = [
+    lineChart({ title: "Jobs", unit: "running and waiting, all workers", fmt: int, integer: true, series: [
+      { name: "running", slot: 1, points: hist.jobs.map((p) => [ms(p.t), p.running]) },
+      { name: "waiting", slot: 2, points: hist.jobs.map((p) => [ms(p.t), p.waiting]) },
+    ] }),
+    lineChart({ title: "CPU load", unit: "1-minute load average as % of cores", fmt: pct, gapMs,
+      series: per((p) => (p.load1 != null && p.cpu_count ? (100 * p.load1) / p.cpu_count : null)) }),
+    lineChart({ title: "Memory used", unit: "% of the machine's memory", fmt: pct, gapMs, yMax: 100,
+      series: per((p) => (p.memory_used_gb != null && p.memory_total_gb ? (100 * p.memory_used_gb) / p.memory_total_gb : null)) }),
+    lineChart({ title: "Task processes", unit: "OS processes started by running tasks", fmt: int, gapMs, integer: true,
+      series: per((p) => p.processes ?? null) }),
+  ];
+  if (gpu.length) charts.push(lineChart({ title: "GPU utilisation", unit: "NVIDIA GPUs, %", fmt: pct, gapMs, yMax: 100, series: gpu }));
+  const note = hist.workers.length > MAX_SERIES
+    ? h("p", { class: "muted" }, `Showing the first ${MAX_SERIES} of ${hist.workers.length} workers.`) : null;
+  return [head, h("section", { class: "charts" }, charts), note];
+}
+
+async function loadHistory() {
+  try {
+    S.history = await api(`/v1/metrics/history?minutes=${S.range}`);
+  } catch (e) {
+    if (e.status === 401) return;
+  }
+  renderCharts();
+}
+
+function renderCharts() {
+  if (!S.chartsHost) return;
+  S.chartsHost.replaceChildren(...activityView().flat().filter(Boolean));
 }
 
 // ------------------------------------------------------------------ views
@@ -298,11 +478,12 @@ function render(keepFocus = false) {
       h("h1", {}, "Overview"),
       h("p", { class: "sub" }, "Jobs and workers on this control plane. Refreshes every 3 seconds."),
       kpis(),
+      chartsHost(),
       h("nav", { class: "tabs" },
         [["jobs", `Jobs (${S.jobs.length})`], ["workers", `Workers (${S.workers.length})`]].map(([k, label]) =>
           h("button", { class: `tab ${S.tab === k ? "on" : ""}`, onclick: () => { S.tab = k; render(); } }, label))),
       S.tab === "jobs" ? jobsView() : workersView()),
-    drawer());
+    drawer() || "");
   if (focused === "search") {
     const el = app.querySelector(".search");
     el.focus();
@@ -345,15 +526,31 @@ function signOut(message) {
 // ------------------------------------------------------------------ start
 
 let polling = null;
+let historyPolling = null;
+
+// The charts live in one element that survives the 3-second re-render, so hovering a chart
+// is not interrupted; they are redrawn when new history arrives (every 10 seconds).
+function chartsHost() {
+  if (!S.chartsHost) {
+    S.chartsHost = h("div", {});
+    renderCharts();
+  }
+  return S.chartsHost;
+}
 
 // `gpulayer dashboard` passes a one-time token in the URL fragment. Read it on load and also
 // when only the fragment changes (pasting a new link into an open tab does not reload it),
 // then remove it from the address bar and history.
 async function start() {
+  // Deep links: ?tab=workers, ?range=15|60|360 (minutes), ?job=<job id> opens its details.
+  const q = new URLSearchParams(location.search);
+  if (q.get("tab") === "workers") S.tab = "workers";
+  if (["15", "60", "360"].includes(q.get("range"))) S.range = Number(q.get("range"));
+  if (/^job-[0-9a-f]+$/.test(q.get("job") || "")) S.selected = q.get("job");
   const frag = new URLSearchParams(location.hash.slice(1));
   if (frag.get("token")) {
     sessionStorage.setItem("gpulayer.token", frag.get("token"));
-    history.replaceState(null, "", location.pathname);
+    history.replaceState(null, "", location.pathname + location.search);
   }
   S.token = sessionStorage.getItem("gpulayer.token");
   if (!S.token) return renderLogin();
@@ -365,6 +562,8 @@ async function start() {
   }
   await refresh();
   if (polling === null) polling = setInterval(refresh, POLL_MS);
+  loadHistory();
+  if (historyPolling === null) historyPolling = setInterval(loadHistory, 10000);
 }
 
 window.addEventListener("hashchange", () => {

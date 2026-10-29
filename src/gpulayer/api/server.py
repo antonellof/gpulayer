@@ -31,6 +31,7 @@ from gpulayer.contracts import (
     JobState,
     TaskOutcome,
     WorkerCapabilities,
+    WorkerMetrics,
 )
 from gpulayer.control_plane.service import ControlPlane
 from gpulayer.errors import (
@@ -164,6 +165,12 @@ class ControlPlaneServer:
             ("GET", r"/v1/whoami", "client", lambda q: {"principal": q.principal, "role": q.role}),
             (
                 "GET",
+                r"/v1/metrics/history",
+                "client",
+                lambda q: cp.metrics_history(float(q.query.get("minutes", 60))),
+            ),
+            (
+                "GET",
                 r"/v1/health",
                 "none",
                 lambda q: {
@@ -250,7 +257,15 @@ class ControlPlaneServer:
                 "POST",
                 r"/v1/worker/heartbeat",
                 "worker",
-                lambda q: cp.heartbeat(q.wid, draining=bool(q.json().get("draining"))),
+                lambda q: cp.heartbeat(
+                    q.wid,
+                    draining=bool(q.json().get("draining")),
+                    metrics=(
+                        WorkerMetrics.model_validate(q.json()["metrics"])
+                        if q.json().get("metrics") is not None
+                        else None
+                    ),
+                ),
             ),
             (
                 "POST",

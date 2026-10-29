@@ -95,6 +95,10 @@ def _sample_order(sample: tuple[str, dict[str, str], float]) -> tuple[object, ..
     return (_family(name), rest, rank, bound)
 
 
+def _bytes(gb: float | None) -> float | None:
+    return None if gb is None else round(gb * 1024**3)
+
+
 def render(cp: ControlPlane, now: datetime | None = None) -> str:
     """The full /metrics payload."""
     now = now or cp.now()
@@ -108,6 +112,14 @@ def render(cp: ControlPlane, now: datetime | None = None) -> str:
         "gpulayer_accelerators": ("gauge", "Usable accelerator devices on online workers."),
         "gpulayer_queue_oldest_seconds": ("gauge", "Age of the oldest queued job."),
         "gpulayer_scrape_duration_seconds": ("gauge", "Time spent producing this response."),
+        "gpulayer_worker_load1": ("gauge", "1-minute load average reported by the worker."),
+        "gpulayer_worker_cpu_count": ("gauge", "CPU cores on the worker."),
+        "gpulayer_worker_memory_used_bytes": ("gauge", "Memory in use on the worker."),
+        "gpulayer_worker_memory_total_bytes": ("gauge", "Total memory on the worker."),
+        "gpulayer_worker_processes": ("gauge", "OS processes belonging to running tasks."),
+        "gpulayer_worker_running_tasks": ("gauge", "Tasks the worker is running."),
+        "gpulayer_gpu_utilization_ratio": ("gauge", "GPU utilisation (NVIDIA, 0 to 1)."),
+        "gpulayer_gpu_memory_used_bytes": ("gauge", "GPU memory in use (NVIDIA)."),
         **HELP,
     }
     t0 = time.perf_counter()
@@ -145,6 +157,29 @@ def render(cp: ControlPlane, now: datetime | None = None) -> str:
             gauges.append(("gpulayer_workers", {"state": wstate.value, "origin": origin.value}, n))
     for accel in ("cuda", "mps", "rocm"):
         gauges.append(("gpulayer_accelerators", {"accelerator": accel}, devices.get(accel, 0)))
+
+    # Per-worker resource gauges from each worker's latest sample (last minute only).
+    names = {r["id"]: r["name"] for r in store.query("SELECT id, name FROM workers")}
+    for wid, m in sorted(cp.latest_samples().items()):
+        lbl = {"worker_id": wid, "worker": names.get(wid, wid)}
+        for name, value in (
+            ("gpulayer_worker_load1", m.load1),
+            ("gpulayer_worker_cpu_count", m.cpu_count),
+            ("gpulayer_worker_memory_used_bytes", _bytes(m.memory_used_gb)),
+            ("gpulayer_worker_memory_total_bytes", _bytes(m.memory_total_gb)),
+            ("gpulayer_worker_processes", m.processes),
+            ("gpulayer_worker_running_tasks", m.running_tasks),
+        ):
+            if value is not None:
+                gauges.append((name, lbl, float(value)))
+        for g in m.gpus:
+            glbl = {**lbl, "gpu": str(g.index)}
+            if g.utilization_pct is not None:
+                gauges.append(("gpulayer_gpu_utilization_ratio", glbl, g.utilization_pct / 100))
+            if g.memory_used_gb is not None:
+                gauges.append(
+                    ("gpulayer_gpu_memory_used_bytes", glbl, _bytes(g.memory_used_gb) or 0)
+                )
 
     oldest = store.one("SELECT MIN(created_at) t FROM jobs WHERE state=?", (JobState.QUEUED.value,))
     created = parse_ts(oldest["t"]) if oldest and oldest["t"] else None

@@ -123,6 +123,8 @@ class WorkerAgent:
         self.workdir = Path(workdir)
         self.python = python
         self.poll_interval = poll_interval  # back-off when the server cannot long-poll
+        self._pgids: dict[str, int] = {}  # task id -> process group, for telemetry
+        self.sample_interval = 10.0
         self.long_poll = long_poll
         self.keep_workspaces = keep_workspaces
         self.stop = threading.Event()
@@ -134,9 +136,21 @@ class WorkerAgent:
     # ------------------------------------------------------------- lifecycle
 
     def _heartbeat_loop(self) -> None:
+        from gpulayer.worker.telemetry import sample
+
+        last_sample = 0.0
         while not self.stop.wait(self.channel.heartbeat_interval):
+            metrics = None
+            if time.monotonic() - last_sample >= self.sample_interval:
+                last_sample = time.monotonic()
+                with self._cancel_lock:
+                    pgids, running = list(self._pgids.values()), len(self._cancel)
+                try:
+                    metrics = sample(self.caps, pgids, running)
+                except Exception:  # telemetry must never stop heartbeats
+                    log.debug("resource sampling failed", exc_info=True)
             try:
-                resp = self.channel.heartbeat()
+                resp = self.channel.heartbeat(metrics=metrics)
                 revoked = resp.revoked
             except (Forbidden, Unauthorized) as e:
                 # Over HTTP a revoked session token is rejected outright.
@@ -426,9 +440,23 @@ class WorkerAgent:
             else:  # pragma: no cover - exhaustiveness
                 raise GpuLayerError(f"unsupported workload {type(w).__name__}")
 
-            out = run_process(
-                argv, env=env, cwd=cwd, on_line=sink, timeout=spec.timeout_seconds, cancel=cancel
-            )
+            def started(pid: int) -> None:
+                with self._cancel_lock:
+                    self._pgids[a.task_id] = pid
+
+            try:
+                out = run_process(
+                    argv,
+                    env=env,
+                    cwd=cwd,
+                    on_line=sink,
+                    timeout=spec.timeout_seconds,
+                    cancel=cancel,
+                    on_start=started,
+                )
+            finally:
+                with self._cancel_lock:
+                    self._pgids.pop(a.task_id, None)
         finally:
             sink.close()
         outputs = self._upload_outputs(ws / "outputs", a)

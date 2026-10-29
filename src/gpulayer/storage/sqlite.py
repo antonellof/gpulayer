@@ -40,6 +40,10 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 CREATE INDEX IF NOT EXISTS tasks_job ON tasks(job_id);
 CREATE INDEX IF NOT EXISTS tasks_worker ON tasks(worker_id, state);
+CREATE TABLE IF NOT EXISTS worker_samples (
+  worker_id TEXT NOT NULL, ts TEXT NOT NULL, data TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS worker_samples_ts ON worker_samples(ts, worker_id);
 CREATE TABLE IF NOT EXISTS workers (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, state TEXT NOT NULL, capabilities TEXT NOT NULL,
   registered_at TEXT NOT NULL, last_heartbeat_at TEXT, token_hash TEXT NOT NULL,

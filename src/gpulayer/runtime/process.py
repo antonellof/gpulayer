@@ -59,6 +59,7 @@ def run_process(
     timeout: float | None = None,
     cancel: threading.Event | None = None,
     kill_grace: float = 10.0,
+    on_start: Callable[[int], None] | None = None,
 ) -> ProcessOutcome:
     try:
         proc = subprocess.Popen(
@@ -72,6 +73,8 @@ def run_process(
         )
     except OSError as e:
         return ProcessOutcome(exit_code=None, error=f"could not start process: {e}")
+    if on_start is not None:
+        on_start(proc.pid)  # also the process-group id (start_new_session)
 
     def pump(stream_name: str, pipe: object) -> None:
         for raw in iter(pipe.readline, b""):  # type: ignore[attr-defined]

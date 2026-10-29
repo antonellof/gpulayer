@@ -693,6 +693,26 @@ class TaskOutcome(_Model):
         return v
 
 
+class GpuMetrics(_Model):
+    index: int
+    utilization_pct: float | None = Field(None, ge=0, le=100)
+    memory_used_gb: float | None = Field(None, ge=0)
+    memory_total_gb: float | None = Field(None, ge=0)
+
+
+class WorkerMetrics(_Model):
+    """Resource sample a worker sends with some heartbeats. Every field is optional:
+    workers report what their platform exposes without extra privileges."""
+
+    load1: float | None = Field(None, ge=0)  # 1-minute load average
+    cpu_count: int | None = Field(None, ge=1)
+    memory_used_gb: float | None = Field(None, ge=0)
+    memory_total_gb: float | None = Field(None, ge=0)
+    processes: int | None = Field(None, ge=0)  # OS processes belonging to running tasks
+    running_tasks: int | None = Field(None, ge=0)
+    gpus: list[GpuMetrics] = Field(default_factory=list, max_length=64)
+
+
 class HeartbeatResponse(_Model):
     lease_ttl_seconds: float
     cancel_task_ids: list[str] = Field(default_factory=list)

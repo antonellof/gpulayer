@@ -20,6 +20,7 @@ from gpulayer.contracts import (
     TaskAssignment,
     TaskOutcome,
     WorkerCapabilities,
+    WorkerMetrics,
 )
 from gpulayer.control_plane.service import ControlPlane
 
@@ -28,7 +29,9 @@ class WorkerChannel(Protocol):
     worker_id: str
     heartbeat_interval: float
 
-    def heartbeat(self, draining: bool = False) -> HeartbeatResponse: ...
+    def heartbeat(
+        self, draining: bool = False, metrics: WorkerMetrics | None = None
+    ) -> HeartbeatResponse: ...
     def acquire(
         self, wait: float = 0.0, stop: threading.Event | None = None
     ) -> TaskAssignment | None: ...
@@ -59,8 +62,10 @@ class EmbeddedChannel:
         reg = cp.register_worker(name, caps, instance_token=instance_token)
         return cls(cp, reg.worker_id, reg.heartbeat_interval_seconds)
 
-    def heartbeat(self, draining: bool = False) -> HeartbeatResponse:
-        return self.cp.heartbeat(self.worker_id, draining=draining)
+    def heartbeat(
+        self, draining: bool = False, metrics: WorkerMetrics | None = None
+    ) -> HeartbeatResponse:
+        return self.cp.heartbeat(self.worker_id, draining=draining, metrics=metrics)
 
     def acquire(
         self, wait: float = 0.0, stop: threading.Event | None = None

@@ -13,9 +13,14 @@ more). For local jobs, run:
 gpulayer dashboard          # opens http://127.0.0.1:8471/ui/ already signed in
 ```
 
+![Dashboard overview](../assets/dashboard/overview-dark.png)
+
 The dashboard shows:
 
 - running, waiting, succeeded and failed jobs, workers online and GPUs online;
+- activity charts over the last 15 minutes, hour or 6 hours: jobs running and waiting, CPU
+  load, memory used and task processes per worker, and GPU utilisation on NVIDIA workers.
+  Hover a chart to read every series at that moment;
 - the jobs table, filterable by state and searchable by id or name;
 - for each job: what it runs, its resources, why it was placed where it was (or why no worker
   qualified), its tasks per node, live logs, lifecycle events and the full JobSpec, plus a
@@ -23,9 +28,31 @@ The dashboard shows:
 - workers with their GPUs, frameworks, CPU and memory, running tasks and last heartbeat, plus
   Revoke for admins. Offline workers are hidden until you ask for them.
 
-It refreshes every 3 seconds and uses the same API and permissions as the CLI. Tokens stay in
+![A running job: placement, tasks and live logs](../assets/dashboard/job-running-dark.png)
+
+![A failed job with its traceback](../assets/dashboard/job-failed-dark.png)
+
+![Workers with their GPUs, frameworks and load](../assets/dashboard/workers-dark.png)
+
+Links can open a view directly: `/ui/?tab=workers`, `/ui/?range=15` (minutes: 15, 60 or 360)
+and `/ui/?job=<job id>`.
+
+It refreshes every 3 seconds (charts every 10 seconds) and uses the same API and permissions
+as the CLI. Tokens stay in
 the browser tab's session storage. Pages are served with a strict Content-Security-Policy, and
 job output is always inserted as text, never as HTML.
+
+## Worker telemetry
+
+Every 10 seconds each worker sends a resource sample with its heartbeat: 1-minute load
+average and core count, memory used and total, the number of OS processes belonging to its
+running tasks, and on NVIDIA machines each GPU's utilisation and memory (from `nvidia-smi`).
+Nothing needs extra privileges or packages. Apple GPU utilisation is not reported because
+reading it requires root.
+
+The control plane keeps one sample per worker every 5 seconds for 24 hours, in its own
+database. Samples never leave your deployment. `GET /v1/metrics/history?minutes=60` returns
+them with job activity for the dashboard; Prometheus gets the latest values as gauges.
 
 ## Prometheus metrics
 
@@ -49,6 +76,13 @@ gpulayer metrics            # print the same text locally, embedded or against a
 | `gpulayer_tasks_lost_total` | counter | | tasks whose worker stopped heartbeating |
 | `gpulayer_job_run_seconds` | histogram | `state` | first task start to end |
 | `gpulayer_job_queue_wait_seconds` | histogram | `target` | submission to first start |
+| `gpulayer_worker_load1` | gauge | `worker`, `worker_id` | 1-minute load average |
+| `gpulayer_worker_cpu_count` | gauge | `worker`, `worker_id` | CPU cores |
+| `gpulayer_worker_memory_used_bytes` / `_total_bytes` | gauge | `worker`, `worker_id` | memory |
+| `gpulayer_worker_processes` | gauge | `worker`, `worker_id` | OS processes of running tasks |
+| `gpulayer_worker_running_tasks` | gauge | `worker`, `worker_id` | tasks running |
+| `gpulayer_gpu_utilization_ratio` | gauge | `worker`, `worker_id`, `gpu` | NVIDIA GPU utilisation, 0 to 1 |
+| `gpulayer_gpu_memory_used_bytes` | gauge | `worker`, `worker_id`, `gpu` | NVIDIA GPU memory in use |
 | `gpulayer_info` | gauge | `api_version` | always 1 |
 
 Counters and histograms are stored in the metadata database, so they keep increasing across

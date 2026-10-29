@@ -17,6 +17,7 @@ artifacts used by their current tasks.
 | `GET /ui/`, `GET /` | none (the page asks for a token) | the web dashboard |
 | `GET /metrics` | `metrics`, `submitter` or `admin`; no protocol header needed | Prometheus text format |
 | `GET /v1/whoami` | client | `{principal, role}` |
+| `GET /v1/metrics/history?minutes=` | client | worker resource samples and jobs running/waiting over time (max 24 h) |
 
 ## Client endpoints (client token)
 
@@ -40,7 +41,7 @@ artifacts used by their current tasks.
 | Method and path | Token | Purpose |
 |---|---|---|
 | `POST /v1/workers/register` | join token (or single-use instance token) | returns worker id and session token |
-| `POST /v1/worker/heartbeat` | session | renews leases; returns tasks to cancel and revocation |
+| `POST /v1/worker/heartbeat` | session | `{draining, metrics?}`; renews leases, stores an optional `WorkerMetrics` sample; returns tasks to cancel and revocation |
 | `POST /v1/worker/acquire` | session | `{wait}` (seconds, max 30): long poll; returns the next assignment as soon as one exists, or `null` |
 | `POST /v1/worker/tasks/{id}/start` | session | mark running |
 | `POST /v1/worker/tasks/{id}/rendezvous` | session | node rank 0 publishes `{addr, port}` |

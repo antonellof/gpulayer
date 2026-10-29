@@ -141,3 +141,15 @@ def test_grafana_dashboard_uses_only_exported_metrics(real_cp):
         {f"{m}_bucket" for m in known} | {f"{m}_sum" for m in known} | {f"{m}_count" for m in known}
     )
     assert used and used <= known, used - known
+
+
+def test_worker_metrics_travel_over_http(server):
+    from gpulayer.contracts import WorkerMetrics
+
+    srv, t = server
+    ch = HttpWorkerChannel.register(srv.url, t["join"], "w", CAPS)
+    ch.heartbeat(metrics=WorkerMetrics(load1=1.5, processes=4))
+    client = HttpControlPlaneClient(HttpTransport(srv.url, t["submitter"]))
+    h = client.metrics_history(10)
+    assert h["workers"][0]["samples"][0]["processes"] == 4
+    assert 'gpulayer_worker_processes{worker="w"' in scrape(srv.url, t["metrics"])[1]

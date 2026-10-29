@@ -43,6 +43,7 @@ from gpulayer.contracts import (
     TaskState,
     TaskStatus,
     WorkerCapabilities,
+    WorkerMetrics,
     WorkerOrigin,
     WorkerState,
     WorkerStatus,
@@ -487,13 +488,17 @@ class ControlPlane:
             for r in self.store.query("SELECT * FROM workers ORDER BY registered_at")
         ]
 
-    def heartbeat(self, worker_id: str, *, draining: bool = False) -> HeartbeatResponse:
+    def heartbeat(
+        self, worker_id: str, *, draining: bool = False, metrics: WorkerMetrics | None = None
+    ) -> HeartbeatResponse:
         row = self._worker_row(worker_id)
         if row["revoked"]:
             return HeartbeatResponse(lease_ttl_seconds=self.config.lease_ttl_seconds, revoked=True)
         now = self.now()
         lease = ts(now + timedelta(seconds=self.config.lease_ttl_seconds))
         with self.store.tx() as c:
+            if metrics is not None:
+                self._record_sample(c, worker_id, now, metrics)
             active = c.execute(
                 "SELECT COUNT(*) FROM tasks WHERE worker_id=? AND state IN (?,?)",
                 (worker_id, *ACTIVE_TASK_STATES),
@@ -558,6 +563,83 @@ class ControlPlane:
         if row["worker_id"] != worker_id:
             raise Forbidden("task is not assigned to this worker")
         return row
+
+    # ============================================================ telemetry
+
+    SAMPLE_INTERVAL = 5.0  # seconds; keep at most one stored sample per worker per interval
+    SAMPLE_RETENTION = timedelta(hours=24)
+
+    def _record_sample(self, c: Any, worker_id: str, now: datetime, m: WorkerMetrics) -> None:
+        last = c.execute(
+            "SELECT MAX(ts) FROM worker_samples WHERE worker_id=?", (worker_id,)
+        ).fetchone()[0]
+        last_at = parse_ts(last) if last else None
+        if last_at is not None and (now - last_at).total_seconds() < self.SAMPLE_INTERVAL:
+            return
+        c.execute(
+            "INSERT INTO worker_samples (worker_id, ts, data) VALUES (?,?,?)",
+            (worker_id, ts(now), m.model_dump_json(exclude_none=True)),
+        )
+        c.execute("DELETE FROM worker_samples WHERE ts < ?", (ts(now - self.SAMPLE_RETENTION),))
+
+    def latest_samples(self, max_age_seconds: float = 60.0) -> dict[str, WorkerMetrics]:
+        """The newest sample of each worker, if it is recent."""
+        since = ts(self.now() - timedelta(seconds=max_age_seconds))
+        rows = self.store.query(
+            "SELECT s.worker_id, s.data FROM worker_samples s JOIN (SELECT worker_id, MAX(ts) m "
+            "FROM worker_samples WHERE ts >= ? GROUP BY worker_id) l "
+            "ON l.worker_id=s.worker_id AND l.m=s.ts",
+            (since,),
+        )
+        return {r["worker_id"]: WorkerMetrics.model_validate_json(r["data"]) for r in rows}
+
+    def metrics_history(self, minutes: float = 60.0, points: int = 120) -> dict[str, Any]:
+        """Time series for the dashboard: per-worker resource samples, and jobs running and
+        waiting per time bucket (derived from job and task timestamps)."""
+        minutes = min(max(minutes, 1.0), 24 * 60)
+        now = self.now()
+        start = now - timedelta(minutes=minutes)
+        names = {r["id"]: r["name"] for r in self.store.query("SELECT id, name FROM workers")}
+        series: dict[str, list[dict[str, Any]]] = {}
+        for r in self.store.query(
+            "SELECT worker_id, ts, data FROM worker_samples WHERE ts >= ? ORDER BY ts",
+            (ts(start),),
+        ):
+            sample = json.loads(r["data"])
+            sample["t"] = r["ts"]
+            series.setdefault(r["worker_id"], []).append(sample)
+        workers = [
+            {"worker_id": wid, "name": names.get(wid, wid), "samples": s}
+            for wid, s in sorted(series.items(), key=lambda kv: names.get(kv[0], kv[0]))
+        ]
+        # Job activity: one interval for waiting (submit -> first start) and one for running
+        # (first start -> end), then count overlaps at each bucket boundary.
+        terminal = [s.value for s in JobState if s.terminal]
+        rows = self.store.query(
+            "SELECT j.id, j.state, j.created_at, j.updated_at, MIN(t.started_at) started "
+            "FROM jobs j LEFT JOIN tasks t ON t.job_id=j.id "
+            f"WHERE j.updated_at >= ? OR j.state NOT IN ({','.join('?' * len(terminal))}) "
+            "GROUP BY j.id",
+            (ts(start), *terminal),
+        )
+        spans: list[tuple[datetime, datetime, datetime | None]] = []
+        for r in rows:
+            created = parse_ts(r["created_at"])
+            # Active jobs have no end yet; extend past `now` so the last bucket counts them.
+            end = parse_ts(r["updated_at"]) if r["state"] in terminal else now + timedelta(days=1)
+            if created is None or end is None:
+                continue
+            spans.append((created, end, parse_ts(r["started"]) if r["started"] else None))
+        step = (now - start) / max(points - 1, 1)
+        jobs = []
+        for i in range(points):
+            t = start + step * i
+            running = sum(1 for _, end, s in spans if s is not None and s <= t < end)
+            waiting = sum(
+                1 for created, end, s in spans if created <= t < (s if s is not None else end)
+            )
+            jobs.append({"t": ts(t), "running": running, "waiting": waiting})
+        return {"now": ts(now), "minutes": minutes, "workers": workers, "jobs": jobs}
 
     # ============================================================ change signal
 

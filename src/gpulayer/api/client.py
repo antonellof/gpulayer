@@ -26,6 +26,7 @@ from gpulayer.contracts import (
     TaskAssignment,
     TaskOutcome,
     WorkerCapabilities,
+    WorkerMetrics,
     WorkerStatus,
 )
 from gpulayer.errors import ERRORS_BY_CODE, GpuLayerError, Unauthorized
@@ -187,6 +188,10 @@ class HttpControlPlaneClient:
         text: str = self.t.request("GET", "/metrics")
         return text
 
+    def metrics_history(self, minutes: float = 60.0) -> dict[str, Any]:
+        history: dict[str, Any] = self.t.request("GET", f"/v1/metrics/history?minutes={minutes}")
+        return history
+
     def whoami(self) -> dict[str, str]:
         who: dict[str, str] = self.t.request("GET", "/v1/whoami")
         return who
@@ -261,9 +266,14 @@ class HttpWorkerChannel:
             HttpTransport(url, reg.session_token, ca_file=ca_file, fingerprint=fingerprint), reg
         )
 
-    def heartbeat(self, draining: bool = False) -> HeartbeatResponse:
+    def heartbeat(
+        self, draining: bool = False, metrics: WorkerMetrics | None = None
+    ) -> HeartbeatResponse:
+        body: dict[str, Any] = {"draining": draining}
+        if metrics is not None:
+            body["metrics"] = metrics.model_dump(mode="json", exclude_none=True)
         return HeartbeatResponse.model_validate(
-            self.t.request("POST", "/v1/worker/heartbeat", {"draining": draining})
+            self.t.request("POST", "/v1/worker/heartbeat", body)
         )
 
     def acquire(
