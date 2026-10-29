@@ -37,6 +37,22 @@ remaining time for a single job is the job's own start-up.
 These are single-machine numbers. Over HTTP, add one network round trip for each of acquire,
 start, logs and finish. Multi-machine numbers will be published once they are measured.
 
+## Distributed job start-up
+
+`benchmarks/distributed_startup.py` splits the start-up of a trivial 2 x 2 torchrun job:
+
+| Stage | Seconds |
+|---|---|
+| GPUlayer dispatch (submit to tasks started) | 0.00 |
+| torchrun start-up (task start to script running) | 0.64 to 0.70 |
+| `import torch` in each rank | 0.56 to 0.58 |
+| process-group init (gloo) | 0.03 |
+| torchrun shutdown after the script ends | 0.55 to 0.67 |
+| GPUlayer completion (task finished to client sees it) | 0.00 |
+
+Almost all of it is torchrun and PyTorch itself. See ADR-0016 for the proposed direct
+launcher.
+
 ## Training loop
 
 The PyTorch `Trainer` avoids work that slows each step:

@@ -115,8 +115,15 @@ can hold at most one server thread per open request; the failed-login limiter st
    longer interleaves.
 3. **Topology-aware group placement.** Prefer GPUs on one host, then hosts on one fast network,
    using reported interconnect data (NVLink, InfiniBand) when it exists.
-4. **Faster start-up of distributed jobs.** Measure and reduce bundle, extract and torchrun
-   start times; reuse warm worker environments between jobs.
+4. **Faster start-up of distributed jobs.** Measured with `benchmarks/distributed_startup.py`
+   (2 nodes x 2 processes, one Mac): total about 1.8 to 2.0 s, of which GPUlayer dispatch and
+   completion take under 0.01 s each. The rest is torchrun start-up (0.6 to 0.7 s), `import
+   torch` in each rank (0.55 s), process-group init (0.03 s) and torchrun shutdown after the
+   script ends (0.55 to 0.7 s, unchanged by `--monitor-interval`). The remaining large gain
+   (about 1.1 s per job) would come from starting ranks directly instead of through torchrun.
+   That changes the environment frameworks use to detect how they were launched
+   (`TORCHELASTIC_*`), so it is proposed as an opt-in launcher, not a default; decision
+   pending.
 5. **Sharded data parallelism (FSDP)** for models larger than one GPU, and a `torch.compile`
    option, validated on CUDA hardware.
 6. **Async server** if long-poll thread counts become the limit.
