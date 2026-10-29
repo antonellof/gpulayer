@@ -8,8 +8,8 @@ model and isolation review exist (ADR-0009).
 
 | Boundary | Mechanism |
 |---|---|
-| Client → control plane | bearer *client token* (hash stored, constant-time compare); TLS required off-loopback |
-| Worker → control plane (join) | shared *join token*, valid only for `POST /v1/workers/register` |
+| Client → control plane | named bearer token with role `admin` or `submitter` (hash stored, constant-time compare); TLS required off-loopback |
+| Worker → control plane (join) | named *join token*, valid only for `POST /v1/workers/register`; can expire |
 | Worker → control plane (session) | per-worker random session token; every task call checks ownership |
 | Provisioned worker | single-use token bound to one instance record; identity fields taken from GpuLayer's record |
 | Control plane → workload | job spec, source bundle, inputs; secrets as *references* only |
@@ -39,14 +39,36 @@ its active tasks.
 - The API limits request sizes and requires the protocol-version header.
 - No telemetry. Logs from the HTTP server never include headers or tokens.
 
+## Tokens and roles
+
+| Role | Can |
+|---|---|
+| `admin` | everything a client can do, plus revoke workers, cancel any job and run maintenance |
+| `submitter` | submit jobs, read all jobs and workers, cancel its own jobs |
+| `join` | register workers, nothing else |
+
+Tokens are named, can expire, and can be revoked:
+
+```bash
+gpulayer token create alice --role submitter
+gpulayer token create ci-runner --role join --ttl 12h
+gpulayer token list
+gpulayer token revoke alice
+```
+
+These commands edit `$GPULAYER_HOME/server-credentials.json` on the server machine (hashes
+only). A running server picks up changes on its next request. After 20 failed authentications
+in a minute, an address gets HTTP 429 for the rest of that minute.
+
+Workers can only download artifacts that a task currently assigned to them uses (its source
+bundle and inputs). A revoked worker is rejected on its next heartbeat and its agent stops.
+
 ## Known gaps (tracked in the implementation plan)
 
-- One client role: any client token can cancel any job and revoke any worker.
-- The join token is shared and has no expiry; no rate limiting.
-- Artifact downloads are allowed for any authenticated worker, not only for its tasks' artifacts.
+- Any client token can read every job and its logs; there is no per-team isolation.
 - `cpu_cores`/`memory_gb` are not enforced as resource limits; timeouts are.
-- No mTLS/OIDC, audit log export, artifact retention or garbage collection yet.
-- Provider API calls currently run while the metadata transaction lock is held.
+- No mTLS/OIDC or audit log export yet.
+- Rate limiting covers failed authentication only, per client address, in one server process.
 
 ## Reporting vulnerabilities
 

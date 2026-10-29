@@ -145,9 +145,26 @@ def _up_tokens(home: Path) -> tuple[str, str]:
     return client, join
 
 
+def _up_credentials(home: Path, client_token: str, join_token: str) -> Any:
+    """Make sure the `up` tokens are in the credentials file (`gpulayer token` edits it)."""
+    from datetime import datetime, timezone
+
+    from gpulayer.api.auth import ServerCredentials, TokenEntry, token_hash
+
+    path = home / "server-credentials.json"
+    creds = ServerCredentials.load(path) if path.exists() else ServerCredentials(path=path)
+    now = datetime.now(timezone.utc).isoformat()
+    for name, role, token in (("up-admin", "admin", client_token), ("up-join", "join", join_token)):
+        if not any(t.hash == token_hash(token) for t in creds.tokens):
+            creds.tokens.append(
+                TokenEntry(name=name, role=role, hash=token_hash(token), created_at=now)
+            )
+    creds.save(path)
+    return creds
+
+
 def cmd_up(args: argparse.Namespace) -> int:
     """One command: control plane + (optionally) this machine as a worker."""
-    from gpulayer.api.auth import ServerCredentials, token_hash
     from gpulayer.api.server import ControlPlaneServer, _is_loopback
     from gpulayer.api.tls import certificate_fingerprint, ensure_self_signed
     from gpulayer.control_plane.service import ControlPlaneConfig
@@ -159,7 +176,7 @@ def cmd_up(args: argparse.Namespace) -> int:
 
     home = gpulayer_home(args.home)
     client_token, join_token = _up_tokens(home)
-    creds = ServerCredentials([token_hash(client_token)], [token_hash(join_token)])
+    creds = _up_credentials(home, client_token, join_token)
     loopback = _is_loopback(args.host)
     cert, key, fingerprint = args.tls_cert, args.tls_key, None
     if not cert and (args.tls or (not loopback and not args.insecure_http)):
@@ -244,6 +261,59 @@ def cmd_join(args: argparse.Namespace) -> int:
     args.url = args.server_url
     args.join_token = args.token
     return cmd_worker_start(args)
+
+
+# ------------------------------------------------------------------------ tokens
+
+
+def _creds_path(args: argparse.Namespace) -> Path:
+    from gpulayer.sdk.home import gpulayer_home
+
+    return gpulayer_home(args.home) / "server-credentials.json"
+
+
+def cmd_token_create(args: argparse.Namespace) -> int:
+    from gpulayer.api.auth import ServerCredentials, parse_ttl
+
+    path = _creds_path(args)
+    creds = ServerCredentials.load(path) if path.exists() else ServerCredentials(path=path)
+    token = creds.create(args.name, args.role, parse_ttl(args.ttl) if args.ttl else None)
+    creds.save(path)
+    entry = creds.tokens[-1]
+    expiry = f", expires {entry.expires_at}" if entry.expires_at else ""
+    print(f"created {args.role} token '{args.name}'{expiry}. It is shown once:", file=sys.stderr)
+    print(token)
+    return 0
+
+
+def cmd_token_list(args: argparse.Namespace) -> int:
+    from gpulayer.api.auth import ServerCredentials
+
+    path = _creds_path(args)
+    if not path.exists():
+        print("no credentials yet: run `gpulayer up` or `gpulayer server init`", file=sys.stderr)
+        return EXIT_USAGE
+    for t in ServerCredentials.load(path).tokens:
+        status = "active" if t.active() else ("revoked" if t.revoked else "expired")
+        print(
+            f"{t.name:20} {t.role:10} {status:8} created {t.created_at[:19]}"
+            + (f"  expires {t.expires_at[:19]}" if t.expires_at else "")
+        )
+    return 0
+
+
+def cmd_token_revoke(args: argparse.Namespace) -> int:
+    from gpulayer.api.auth import ServerCredentials
+
+    path = _creds_path(args)
+    creds = ServerCredentials.load(path)
+    n = creds.revoke(args.name)
+    if not n:
+        print(f"no active token named {args.name!r}", file=sys.stderr)
+        return EXIT_USAGE
+    creds.save(path)
+    print(f"revoked {args.name}; a running server applies this on its next request")
+    return 0
 
 
 # ----------------------------------------------------------------------- worker
@@ -646,6 +716,19 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--max-tasks", type=int)
     s.add_argument("--idle-exit", type=float, metavar="SECONDS")
     s.set_defaults(fn=cmd_join)
+
+    tk = sub.add_parser("token", help="manage server tokens (on the server machine)")
+    tks = tk.add_subparsers(dest="cmd", required=True)
+    s = tks.add_parser("create", help="create a named token (printed once)")
+    s.add_argument("name")
+    s.add_argument("--role", choices=["admin", "submitter", "join"], default="submitter")
+    s.add_argument("--ttl", help="expire after e.g. 90m, 12h or 7d")
+    s.set_defaults(fn=cmd_token_create)
+    s = tks.add_parser("list", help="list tokens (never their values)")
+    s.set_defaults(fn=cmd_token_list)
+    s = tks.add_parser("revoke", help="revoke a token by name")
+    s.add_argument("name")
+    s.set_defaults(fn=cmd_token_revoke)
 
     srv = sub.add_parser("server", help="self-hosted control plane").add_subparsers(
         dest="cmd", required=True

@@ -13,6 +13,7 @@ import logging
 import re
 import ssl
 import threading
+import time
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -20,7 +21,7 @@ from urllib.parse import parse_qs, urlparse
 
 from pydantic import BaseModel, ValidationError
 
-from gpulayer.api.auth import ServerCredentials
+from gpulayer.api.auth import CLIENT_ROLES, ServerCredentials
 from gpulayer.contracts import (
     API_VERSION,
     PROTOCOL_VERSION,
@@ -32,9 +33,11 @@ from gpulayer.contracts import (
 )
 from gpulayer.control_plane.service import ControlPlane
 from gpulayer.errors import (
+    Forbidden,
     GpuLayerError,
     NotFound,
     ProtocolMismatch,
+    RateLimited,
     Unauthorized,
     ValidationFailed,
 )
@@ -54,6 +57,7 @@ class _Req:
         self.query = {k: v[-1] for k, v in parse_qs(urlparse(h.path).query).items()}
         self.worker_id: str | None = None
         self.principal = "anonymous"
+        self.role: str | None = None
         self._body: bytes | None = None
 
     def body(self, limit: int = MAX_JSON_BYTES) -> bytes:
@@ -94,6 +98,7 @@ class ControlPlaneServer:
     ) -> None:
         self.cp = cp
         self.creds = credentials
+        self.limiter = FailureLimiter()
         if not tls_cert and not _is_loopback(host) and not allow_insecure_remote:
             raise ValueError(
                 f"refusing to serve plaintext HTTP on non-loopback address {host!r}; "
@@ -176,7 +181,7 @@ class ControlPlaneServer:
                 "POST",
                 r"/v1/jobs/(?P<id>[\w-]+)/cancel",
                 "client",
-                lambda q: cp.cancel_job(q.params["id"]),
+                self._cancel,
             ),
             (
                 "GET",
@@ -200,7 +205,7 @@ class ControlPlaneServer:
             (
                 "POST",
                 r"/v1/workers/(?P<id>[\w-]+)/revoke",
-                "client",
+                "admin",
                 lambda q: cp.revoke_worker(q.params["id"]),
             ),
             ("PUT", r"/v1/artifacts", "client_or_worker", self._put_artifact),
@@ -208,7 +213,7 @@ class ControlPlaneServer:
                 "GET",
                 r"/v1/artifacts/(?P<sha>[0-9a-f]{64})",
                 "client_or_worker",
-                lambda q: _Raw(cp.get_artifact(q.params["sha"])),
+                self._get_artifact,
             ),
             ("POST", r"/v1/workers/register", "join", self._register),
             (
@@ -260,6 +265,7 @@ class ControlPlaneServer:
                 str(body.get("name", "worker"))[:64], caps, instance_token=token
             )
         if not self.creds.is_join(token):
+            self.limiter.failure(q.h.client_address[0])
             raise Unauthorized("a valid join token is required to register a worker")
         return self.cp.register_worker(str(body.get("name", "worker"))[:64], caps)
 
@@ -271,22 +277,71 @@ class ControlPlaneServer:
             q.wid, q.params["tid"], [(str(s), str(text)) for s, text in lines]
         )
 
+    def _cancel(self, q: _Req) -> Any:
+        job_id = q.params["id"]
+        if q.role != "admin" and self.cp.get_job(job_id).submitted_by != q.principal:
+            raise Forbidden("only an admin or the job's submitter can cancel it")
+        return self.cp.cancel_job(job_id)
+
+    def _get_artifact(self, q: _Req) -> Any:
+        sha = q.params["sha"]
+        if q.worker_id is not None and not self.cp.worker_can_read_artifact(q.worker_id, sha):
+            raise Forbidden("this artifact is not used by any task assigned to this worker")
+        return _Raw(self.cp.get_artifact(sha))
+
     def authorize(self, q: _Req, access: str) -> None:
         if access == "none":
             return
         if q.h.headers.get("X-GpuLayer-Protocol") != PROTOCOL_VERSION:
             raise ProtocolMismatch(f"this control plane speaks protocol {PROTOCOL_VERSION}")
+        client_ip = q.h.client_address[0]
+        self.limiter.check(client_ip)
+        try:
+            self._authorize(q, access)
+        except Unauthorized:
+            self.limiter.failure(client_ip)
+            raise
+
+    def _authorize(self, q: _Req, access: str) -> None:
         token = q.h._bearer()
         if access == "join":
             return  # checked in _register (join token or instance token)
-        if access in ("client", "client_or_worker") and self.creds.is_client(token):
-            q.principal = "client"
-            return
+        if access in ("client", "admin", "client_or_worker"):
+            entry = self.creds.authenticate(token, CLIENT_ROLES)
+            if entry is not None:
+                if access == "admin" and entry.role != "admin":
+                    raise Forbidden("this endpoint needs an admin token")
+                q.principal, q.role = f"client:{entry.name}", entry.role
+                return
         if access in ("worker", "client_or_worker"):
             q.worker_id = self.cp.authenticate_worker(token)
             q.principal = f"worker:{q.worker_id}"
             return
         raise Unauthorized("invalid credentials for this endpoint")
+
+
+class FailureLimiter:
+    """Blocks an address for ``window`` seconds after ``limit`` failed authentications."""
+
+    def __init__(self, limit: int = 20, window: float = 60.0) -> None:
+        self.limit, self.window = limit, window
+        self._fails: dict[str, list[float]] = {}
+        self._lock = threading.Lock()
+
+    def _recent(self, ip: str, now: float) -> list[float]:
+        recent = [t for t in self._fails.get(ip, []) if now - t < self.window]
+        self._fails[ip] = recent
+        return recent
+
+    def check(self, ip: str) -> None:
+        with self._lock:
+            if len(self._recent(ip, time.monotonic())) >= self.limit:
+                raise RateLimited("too many failed authentication attempts; try again later")
+
+    def failure(self, ip: str) -> None:
+        with self._lock:
+            now = time.monotonic()
+            self._recent(ip, now).append(now)
 
 
 class _Raw:

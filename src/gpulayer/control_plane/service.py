@@ -180,6 +180,7 @@ class ControlPlane:
             updated_at=parse_ts(row["updated_at"]),
             attempts=row["attempts"],
             cancel_requested=bool(row["cancel_requested"]),
+            submitted_by=row["submitted_by"],
             error=row["error"],
             scheduling=SchedulingDecision.model_validate_json(row["scheduling"])
             if row["scheduling"]
@@ -863,6 +864,18 @@ class ControlPlane:
         self, data: bytes, name: str = "", kind: ArtifactKind = ArtifactKind.INPUT
     ) -> ArtifactReference:
         return self.artifacts.put(data, name, kind)
+
+    def worker_can_read_artifact(self, worker_id: str, sha256: str) -> bool:
+        """Workers may only fetch sources and inputs of tasks currently assigned to them."""
+        for r in self.store.query(
+            "SELECT j.spec FROM tasks t JOIN jobs j ON j.id=t.job_id "
+            "WHERE t.worker_id=? AND t.state IN (?,?)",
+            (worker_id, *ACTIVE_TASK_STATES),
+        ):
+            spec = JobSpec.model_validate_json(r["spec"])
+            if any(ref.sha256 == sha256 for ref in self._referenced_artifacts(spec)):
+                return True
+        return False
 
     def get_artifact(self, sha256: str) -> bytes:
         return self.artifacts.get(sha256)

@@ -33,6 +33,11 @@ class Conflict(GpuLayerError):
     http_status = 409
 
 
+class RateLimited(GpuLayerError):
+    code = "rate_limited"
+    http_status = 429
+
+
 class ProtocolMismatch(GpuLayerError):
     code = "protocol_mismatch"
     http_status = 400
@@ -48,5 +53,6 @@ ERRORS_BY_CODE = {
         Forbidden,
         Conflict,
         ProtocolMismatch,
+        RateLimited,
     )
 }

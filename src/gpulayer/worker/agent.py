@@ -30,7 +30,7 @@ from gpulayer.contracts import (
     TaskState,
     WorkerCapabilities,
 )
-from gpulayer.errors import Conflict, GpuLayerError
+from gpulayer.errors import Conflict, Forbidden, GpuLayerError, Unauthorized
 from gpulayer.runtime import dist_function_runner, function_runner
 from gpulayer.runtime.distributed import free_port, torchrun_argv
 from gpulayer.runtime.process import run_process
@@ -106,13 +106,18 @@ class WorkerAgent:
         while not self.stop.wait(self.channel.heartbeat_interval):
             try:
                 resp = self.channel.heartbeat()
+                revoked = resp.revoked
+            except (Forbidden, Unauthorized) as e:
+                # Over HTTP a revoked session token is rejected outright.
+                log.error("control plane rejected this worker's credentials: %s", e)
+                revoked = True
             except GpuLayerError as e:
                 log.warning("heartbeat failed: %s", e)
                 continue
             except OSError as e:
                 log.warning("control plane unreachable: %s", e)
                 continue
-            if resp.revoked:
+            if revoked:
                 log.error("worker revoked by control plane; stopping")
                 self.revoked = True
                 with self._cancel_lock:

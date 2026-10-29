@@ -102,8 +102,12 @@ workers. See [Distributed training](../pytorch/distributed.md).
 
 ## Security notes
 
-- The client token can submit and cancel any job and revoke workers. Give it only to people
-  you trust. The join token can only register workers.
+- The token printed by `up` is an admin token. Give each person their own submitter token
+  instead: `gpulayer token create alice --role submitter` on the server machine. Submitters can
+  cancel only their own jobs and cannot revoke workers.
+- For machines that join later, a short-lived join token limits exposure:
+  `gpulayer token create vm-batch --role join --ttl 2h`. Revoke any token with
+  `gpulayer token revoke <name>`.
 - Workloads run as the user that started `gpulayer join`. Run workers under a dedicated user.
 - See [Security and trust](../architecture/security.md) for the full model.
 

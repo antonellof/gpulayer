@@ -17,6 +17,9 @@ Global options go before the command:
 |---|---|
 | `gpulayer up [--host --port --advertise-address --no-worker --name --label K=V --python --tls --tls-cert --tls-key --insecure-http]` | start a server and use this machine as a worker; prints join and connect commands |
 | `gpulayer join URL --token T [--fingerprint FP --name --label K=V --python --advertise-address --workdir --max-tasks N --idle-exit S]` | add this machine as a worker of a server |
+| `gpulayer token create NAME [--role admin\|submitter\|join --ttl 12h]` | create a named token on the server machine (printed once) |
+| `gpulayer token list` | list tokens with role and status, never their values |
+| `gpulayer token revoke NAME` | revoke a token; a running server applies it on the next request |
 | `gpulayer server init [--rotate]` | create client and join tokens for `server start` (printed once) |
 | `gpulayer server start [--host --port --tls-cert --tls-key --allow-insecure-remote --public-url]` | serve the API only |
 | `gpulayer worker start [--name --label --join-token --python --advertise-address --workdir --max-tasks --idle-exit]` | run a worker: embedded without `--url`, remote with it |

@@ -79,11 +79,10 @@ uncommitted local changes, so it was deliberately left untouched.
 
 ### Iteration 2: harden what exists
 
-- Move provider API calls out of the metadata transaction (two-phase: record intent → call
-  provider → record outcome). Today a slow provider blocks the control plane.
-- Scope artifact reads to the requesting worker's tasks; add client roles (submitter vs admin).
-- Make join tokens expiring and rotatable; add basic rate limiting.
-- Retries and an orphan sweep for provisioning (`CapacityUnavailable`, failed terminate).
+- Done: provider API calls run outside metadata transactions (intent, call, outcome).
+- Done: worker artifact reads scoped to their tasks; `admin` and `submitter` client roles.
+- Done: named, expiring, revocable tokens (`gpulayer token`); rate limiting of failed logins.
+- Done: provisioning retries on `CapacityUnavailable`, retried terminations, orphan sweep.
 - Retention and garbage collection for artifacts, logs and events.
 - A CLI flag for `gpu_memory_kind`; `runtime profiles` as an optional compatibility aid.
 

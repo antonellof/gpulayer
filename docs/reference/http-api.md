@@ -3,8 +3,12 @@
 The server speaks JSON over HTTP(S). Every request except `GET /v1/health` needs
 `Authorization: Bearer <token>` and `X-GpuLayer-Protocol: 1`. Errors look like
 `{"error": {"code": "...", "message": "..."}}` with codes `invalid_request` (400),
-`unauthorized` (401), `forbidden` (403), `not_found` (404), `conflict` (409) and
-`protocol_mismatch` (400).
+`unauthorized` (401), `forbidden` (403), `not_found` (404), `conflict` (409),
+`rate_limited` (429) and `protocol_mismatch` (400).
+
+Client endpoints accept `admin` and `submitter` tokens. Cancelling a job needs an admin token or
+the token that submitted it; revoking a worker needs an admin token. Workers can download only
+artifacts used by their current tasks.
 
 ## Client endpoints (client token)
 

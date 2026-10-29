@@ -581,6 +581,7 @@ class JobStatus(_Model):
     updated_at: datetime
     attempts: int = 0
     cancel_requested: bool = False
+    submitted_by: str | None = Field(None, description="Principal that submitted the job.")
     error: str | None = None
     scheduling: SchedulingDecision | None = None
     tasks: list[TaskStatus] = Field(default_factory=list)
