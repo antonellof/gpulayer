@@ -14,7 +14,7 @@ def test_versions_agree():
     assert project
     project = project.group(1)
     site = re.search(r'VERSION = "([^"]+)"', (ROOT / "site/src/lib/version.ts").read_text())
-    changelog = re.search(r"^## (\S+)", (ROOT / "CHANGELOG.md").read_text(), re.M)
+    changelog = re.search(r"^## (\d\S*)", (ROOT / "CHANGELOG.md").read_text(), re.M)
     assert gpulayer.__version__ == project
     assert site and site.group(1) == project
     assert changelog and changelog.group(1) == project

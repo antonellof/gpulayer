@@ -18,6 +18,7 @@ Global options go before the command:
 | `gpulayer up [--host --port --advertise-address --no-worker --name --label K=V --python --tls --tls-cert --tls-key --insecure-http]` | start a server and use this machine as a worker; prints join and connect commands |
 | `gpulayer join URL --token T [--fingerprint FP --name --label K=V --python --advertise-address --workdir --concurrency N --max-tasks N --idle-exit S]` | add this machine as a worker of a server; `--concurrency` sets how many tasks run at once (default one per GPU), `--max-tasks` exits after N tasks |
 | `gpulayer dashboard [--port 8471 --no-open]` | open the web dashboard for local jobs |
+| `gpulayer mcp [--read-only]` | MCP server on stdio for AI and coding agents ([guide](../guides/ai-agents.md)) |
 | `gpulayer metrics` | print Prometheus metrics (embedded, or a server with `--url`) |
 | `gpulayer gc --older-than AGE [--delete-jobs --dry-run]` | remove logs and events of jobs that finished before AGE (e.g. `7d`), optionally the jobs, plus unreferenced artifacts; admin only |
 | `gpulayer token create NAME [--role admin\|submitter\|join\|metrics --ttl 12h]` | create a named token on the server machine (printed once) |

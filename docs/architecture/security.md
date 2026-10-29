@@ -75,3 +75,11 @@ bundle and inputs). A revoked worker is rejected on its next heartbeat and its a
 
 Until a security policy is published, please report privately to the maintainers rather than
 opening a public issue.
+
+## AI agents
+
+Agents use GPUlayer through `gpulayer mcp`, the CLI or the HTTP API, with the permissions of
+the token they hold (or of the local user in embedded mode). Give them `submitter` tokens with
+an expiry, or `gpulayer mcp --read-only` for monitoring; see
+[AI and coding agents](../guides/ai-agents.md#security).
+

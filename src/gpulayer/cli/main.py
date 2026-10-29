@@ -319,6 +319,16 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_mcp(args: argparse.Namespace) -> int:
+    """Model Context Protocol server on stdio, for AI and coding agents."""
+    from gpulayer.agents.mcp_server import serve
+
+    # Embedded mode keeps an in-process worker alive for the whole agent session.
+    with _client(args, local_worker=True) as c:
+        serve(c, read_only=args.read_only)
+    return 0
+
+
 def cmd_metrics(args: argparse.Namespace) -> int:
     with _client(args, local_worker=False) as c:
         sys.stdout.write(c._api.metrics_text())
@@ -805,6 +815,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--port", type=int, default=8471)
     s.add_argument("--no-open", action="store_true", help="print the URL without opening it")
     s.set_defaults(fn=cmd_dashboard)
+
+    s = sub.add_parser("mcp", help="MCP server on stdio for AI and coding agents")
+    s.add_argument("--read-only", action="store_true", help="no submit, cancel or download")
+    s.set_defaults(fn=cmd_mcp)
 
     s = sub.add_parser("metrics", help="print Prometheus metrics (embedded or server)")
     s.set_defaults(fn=cmd_metrics)

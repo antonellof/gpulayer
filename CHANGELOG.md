@@ -3,6 +3,14 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
+## Unreleased
+
+- `gpulayer mcp`: a Model Context Protocol server on stdio, so AI and coding agents can list
+  resources, submit commands (with a project directory and inputs), wait, read logs, cancel
+  and download outputs; `--read-only` for monitoring. Tested with the official MCP Python SDK.
+- Agent Skill for the CLI in `integrations/skills/gpulayer`.
+- Guide: AI and coding agents.
+
 ## 0.1.0 (2026-10-29)
 
 The first release. GPUlayer runs commands, Python functions and distributed jobs on the

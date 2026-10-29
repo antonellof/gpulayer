@@ -79,6 +79,10 @@
           "title": "Dashboard and monitoring"
         },
         {
+          "slug": "guides/ai-agents",
+          "title": "AI and coding agents"
+        },
+        {
           "slug": "guides/apple-silicon",
           "title": "Apple Silicon (Metal)"
         },
