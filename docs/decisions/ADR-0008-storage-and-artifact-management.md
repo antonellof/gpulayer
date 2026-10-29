@@ -18,11 +18,11 @@ needs. Remote workers do not share a filesystem with the submitter or the contro
 - **Artifacts:** `LocalArtifactStore` (`artifacts/store.py`) is content-addressed by
   SHA-256 (`artifact://sha256/<hex>`). Writes are atomic (temp file + rename), and every
   read verifies the digest. The `ArtifactStore` protocol lets an object store replace it.
-- Remote workers fetch artifacts **over the API** (`GET /v1/artifacts/<sha>`), verify the
+- Remote workers fetch artifacts over the API (`GET /v1/artifacts/<sha>`), verify the
   digest, and cache them per worker. Outputs written to `$GPULAYER_OUTPUT_DIR` are
   uploaded after the task (limits: 1000 files, 512 MiB per task) and referenced in
   `JobResult.outputs`.
-- Logs are stored as rows (lines truncated at 8 KiB), not as artifacts.
+- Logs are stored as database rows (lines truncated at 8 KiB). They are not artifacts.
 
 ## Alternatives considered
 

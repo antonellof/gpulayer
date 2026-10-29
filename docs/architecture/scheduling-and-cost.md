@@ -2,25 +2,27 @@
 
 ## Scheduler (`control_plane/scheduler.py`)
 
-A pure function `schedule(spec, workers, job_id) -> SchedulingDecision`. No I/O, no provider
-calls, no mutation — so it is deterministic and unit-testable.
+The scheduler is a pure function, `schedule(spec, workers, job_id) -> SchedulingDecision`. It
+does no I/O, makes no provider calls and changes no state, which keeps it deterministic and easy
+to unit-test.
 
 1. For each allowed target in order (`placement.target`, then explicit `fallback_targets`):
-2. For each worker (sorted by id): compute `compatibility_reasons()` — target/origin, provider,
-   region, labels, reservation, OS, arch, CPU, RAM, disk, Python, frameworks, support matrix,
-   accelerator devices/memory/compute capability, and for distributed jobs launcher, backend,
-   torch and `advertise_address`.
-3. Compatible workers are then checked for **availability** (state and free task slots).
-   *Capability* and *availability* are separate: "compatible but busy" queues; "incompatible"
-   can fail fast with `on_unschedulable="fail"`.
-4. Rank eligible workers by policy — `first_fit` (worker id) or `most_free_memory` — and pick
-   one worker, or for distributed jobs a whole group sharing one torch version.
+2. For each worker, sorted by id, it computes `compatibility_reasons()`. The checks cover
+   target and origin, provider, region, labels, reservation, OS, CPU architecture, CPU, RAM,
+   disk, Python, frameworks, the support matrix, and accelerator devices, memory and compute
+   capability. Distributed jobs also check the launcher, backend, torch and `advertise_address`.
+3. Compatible workers are then checked for availability (state and free task slots). A job whose
+   compatible workers are all busy waits in the queue. A job with no compatible worker can fail
+   immediately if `on_unschedulable="fail"`.
+4. Eligible workers are ranked by policy, either `first_fit` (by worker id) or
+   `most_free_memory`. The scheduler picks one worker, or for a distributed job a whole group
+   that shares one torch version.
 
-Every candidate's reasons are persisted on the job (`gpulayer job status` prints them).
+The reasons for every candidate are stored on the job, and `gpulayer job status` prints them.
 
 ## What is not scheduled on (yet)
 
-- `cpu_cores` / `memory_gb` are placement constraints, **not enforced limits** at runtime.
+- `cpu_cores` and `memory_gb` only constrain placement; nothing enforces them at runtime.
 - Each worker runs `max_concurrent_tasks` tasks (default 1); devices are not partitioned
   between concurrent tasks.
 - Data locality, topology/interconnect and cost optimization are planned once reliable
@@ -28,7 +30,7 @@ Every candidate's reasons are persisted on the job (`gpulayer job status` prints
 
 ## Cost accounting
 
-`CostRecord` keeps estimates and charges distinct:
+`CostRecord` keeps estimates and charges apart:
 
 | `kind` | Meaning |
 |---|---|
@@ -37,5 +39,6 @@ Every candidate's reasons are persisted on the job (`gpulayer job status` prints
 | `internal` | GpuLayer-calculated accounting |
 
 Every record has `amount`, `currency`, `unit` (`per_hour` or `total`), `source` and
-`recorded_at`. Unknown prices stay unknown: with `max_hourly_cost` set, an unpriced offer is
-rejected. Today only `FakeProvider` produces estimates, labelled as simulated.
+`recorded_at`. A missing price is recorded as unknown, and when `max_hourly_cost` is set, an
+offer without a price is rejected. Today only `FakeProvider` produces estimates, and they are
+labelled as simulated.

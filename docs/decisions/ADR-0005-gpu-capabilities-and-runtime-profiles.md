@@ -7,7 +7,7 @@
 
 "Has a GPU" says nothing about whether a workload can run. Hardware, driver, framework
 build and Python environment are separate facts. Discovery must work on CPU-only CI
-without GPU libraries, and it must report uncertainty rather than invent precision.
+without GPU libraries, and it must report uncertain values as uncertain instead of guessing them.
 
 ## Decision
 
@@ -18,13 +18,13 @@ without GPU libraries, and it must report uncertainty rather than invent precisi
   `notes`.
 - Discovery (`gpu/discovery.py`) is a set of independent, injectable probes:
   - `nvidia-smi` CSV query: devices as the driver sees them.
-  - **The torch probe runs in a subprocess** with the *workload* interpreter. A missing
+  - The torch probe runs in a subprocess with the *workload* interpreter. A missing
     or broken torch install cannot crash the worker or slow its import. It reports the
     torch version, CUDA/MPS built and available, and the gloo/nccl backends.
   - `rocm-smi`: presence only (`execution_supported=False`).
   - NVIDIA hardware with no usable torch CUDA runtime is reported but marked
     non-executable, with a note.
-- **The support matrix** (`gpu/support.py`) is the single source of truth that the
+- The support matrix (`gpu/support.py`) is the single source of truth that the
   scheduler consults. Levels use the CLAUDE.md vocabulary:
 
   | Accelerator | Independent | Distributed |
@@ -52,8 +52,8 @@ without GPU libraries, and it must report uncertainty rather than invent precisi
 
 - Capabilities are detected once at worker start. A driver change needs a worker restart.
 - Free memory and utilization are not reported, only capacity.
-- The matrix must be edited by hand when validation status changes. That edit is the
-  point of the matrix.
+- The matrix must be edited by hand when validation status changes. This is intentional:
+  every change in claimed support goes through a deliberate edit.
 
 ## Security and operational implications
 

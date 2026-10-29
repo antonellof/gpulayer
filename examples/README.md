@@ -1,9 +1,9 @@
 # Examples
 
-All examples need PyTorch in the interpreter that **runs the workload** (the worker's
+All examples need PyTorch in the interpreter that runs the workload (the worker's
 interpreter, `--python` on `gpulayer worker start`; by default the one running GpuLayer).
 
-## `pytorch_train/` — single-device training + JSON inference (SDK)
+## `pytorch_train/`: single-device training and JSON inference (SDK)
 
 ```bash
 python examples/pytorch_train/run.py                     # CPU
@@ -20,12 +20,12 @@ What happens:
 3. `train.py` picks its device from `GPULAYER_ACCELERATOR` and writes `model.pt` and
    `metrics.json` to `GPULAYER_OUTPUT_DIR`; they come back as output artifacts and are
    downloaded to `examples/pytorch_train/outputs/`.
-4. A `FunctionJob` calls `predict:predict` with JSON arguments and returns JSON — no pickling.
+4. A `FunctionJob` calls `predict:predict` with JSON arguments and gets JSON back, without pickling.
 
 Verified on Apple Silicon (MPS) and CPU. The CUDA path uses the same mechanism but has not
 been run on NVIDIA hardware in this repository yet.
 
-## `pytorch_ddp/` — DistributedDataParallel through torchrun (CLI)
+## `pytorch_ddp/`: DistributedDataParallel through torchrun (CLI)
 
 ```bash
 # one node, two processes
@@ -46,6 +46,6 @@ and every node launches `torchrun --nnodes N --node-rank r --master-addr ... --m
 PyTorch handles the collectives (`gloo` on CPU; `--backend nccl --accelerator cuda` for NVIDIA).
 
 Verified with two worker processes on one machine over loopback. Across machines, each worker
-needs `--advertise-address` reachable by its peers and open rendezvous/collective ports — see
-[docs/architecture/distributed.md](../docs/architecture/distributed.md); multi-machine runs
+needs an `--advertise-address` its peers can reach and open rendezvous and collective ports (see
+[docs/architecture/distributed.md](../docs/architecture/distributed.md)). Multi-machine runs
 have not been validated yet.

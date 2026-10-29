@@ -22,7 +22,7 @@ distributed systems cannot keep.
 
 ## Decision: delivery, leases and retries
 
-- **At-least-once at best; never exactly-once.** A task whose lease expires (no
+- Delivery is at-least-once at best, never exactly-once. A task whose lease expires (no
   heartbeat for `lease_ttl_seconds`, default 20 s) becomes `lost`. The worker may still
   be running it. If the worker reconnects, its heartbeat tells it to kill lost tasks, and
   its late outcome report is recorded as `task.late_report` and ignored.
@@ -30,12 +30,12 @@ distributed systems cannot keep.
   `max_attempts>1`, an independent job is requeued after `worker_lost` (and after
   `failed` if listed), as a new task with `attempt+1`. The requeue event states that side
   effects may repeat.
-- **Distributed jobs are never auto-retried** (rejected at validation). One node failure
+- Distributed jobs are never retried automatically (validation rejects it). One node failure
   fails the group (ADR-0007).
 - **Timeouts:** the worker enforces `timeout_seconds` by killing the process group. The
   control plane adds a backstop after `timeout_grace_seconds` for workers that stop
   reporting.
-- **Cancellation is idempotent.** Unstarted tasks are cancelled immediately; running
+- Cancellation is idempotent. Unstarted tasks are cancelled immediately; running
   ones are cancelled through heartbeat delivery.
 
 ## Alternatives considered

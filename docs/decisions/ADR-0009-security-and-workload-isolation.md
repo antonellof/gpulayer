@@ -47,7 +47,8 @@ logs.
 
 ## Consequences and trade-offs
 
-- Simple and portable (Linux/macOS), with GPU access that just works.
+- The model is simple and portable (Linux/macOS), and jobs get GPU access without extra
+  setup.
 - Operators must run workers under a dedicated low-privilege user and treat everyone who
   can submit as able to execute code there.
 

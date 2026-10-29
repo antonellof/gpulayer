@@ -6,15 +6,15 @@
 ## Context
 
 Apple Silicon is a common developer machine. PyTorch exposes its GPU through the MPS
-backend. MPS is **not** CUDA: operators, dtypes, custom extensions, memory semantics and
+backend. MPS is not CUDA: operators, dtypes, custom extensions, memory semantics and
 distributed collectives differ. Apple Silicon also uses unified memory shared with the
 CPU.
 
 ## Decision
 
-- MPS is detected **only** through PyTorch APIs (`torch.backends.mps.is_built()` and
+- MPS is detected only through PyTorch APIs (`torch.backends.mps.is_built()` and
   `is_available()`), inside the isolated torch probe (`gpu/discovery.py`). Missing torch,
-  non-macOS hosts and built-but-unavailable MPS are handled gracefully and explained in
+  non-macOS hosts and built-but-unavailable MPS are handled without failing and explained in
   `notes`.
 - The MPS device is reported with `memory_kind=unified` and `memory_gb` equal to host
   RAM. It is never presented as dedicated VRAM. `ResourceRequest.gpu_memory_kind` lets a
@@ -24,7 +24,7 @@ CPU.
   `torch.device("mps")`. GpuLayer only routes and exposes `GPULAYER_ACCELERATOR`.
 - **Unsupported:** distributed MPS. `JobSpec` validation rejects `DistributedJob` with
   `accelerator="mps"`, and the support matrix marks it unsupported. CPU/gloo distributed
-  jobs *can* run on Macs, because they do not use MPS.
+  jobs can run on Macs, because they do not use MPS.
 - A CUDA job is never placed on an MPS worker, and the reverse also holds.
 
 ## Validation
@@ -34,8 +34,8 @@ CPU.
   run on CPU-only CI.
 - Hardware: `tests/hardware/test_gpu_smoke.py::test_mps_independent_job` ran a 512×512
   matmul on MPS through the full SDK path on an Apple Silicon Mac (arm64, 32 GB, torch
-  from the project venv). That covers one smoke workload only, not an operator coverage
-  claim.
+  from the project venv). This covers one smoke workload only and makes no claim about
+  operator coverage.
 
 ## Alternatives considered
 

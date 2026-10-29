@@ -1,11 +1,11 @@
 # GpuLayer
 
-**One job model, one capability system, one scheduling layer — many execution environments.**
+One job model, one capability system and one scheduling layer for many execution environments.
 
 GpuLayer is an open-source GPU execution and orchestration platform. You describe a workload
-and what it needs; GpuLayer finds a compatible worker (your laptop, a GPU box on your network,
-a provider-provisioned cloud machine, or a group of them) and runs it, with logs, events,
-results and artifacts flowing back through one SDK and CLI.
+and what it needs, and GpuLayer finds a compatible worker to run it: your laptop, a GPU box on
+your network, a cloud machine provisioned through a provider adapter, or a group of these.
+Logs, events, results and artifacts come back through one SDK and CLI.
 
 ```python
 import gpulayer as gl
@@ -19,40 +19,42 @@ with gl.Client() as client:                       # embedded control plane, no a
     print(job.result().outputs)                   # model.pt, metrics.json as artifacts
 ```
 
-> **Status: pre-alpha (milestone 1).** The core is implemented and tested; several paths are
-> deliberately marked *simulated* or *planned*. See [What works today](#what-works-today) —
-> nothing below is advertised beyond what the test suite demonstrates.
+> Status: pre-alpha (milestone 1). The core is implemented and tested. Some paths are
+> simulated or only planned, and [What works today](#what-works-today) lists which. This
+> README describes nothing beyond what the test suite demonstrates.
 
----
+## Why GpuLayer
 
-## Why
+The same `JobSpec`, SDK and CLI work for local, remote and cloud targets.
 
-- **Unified interface.** The same `JobSpec`, SDK and CLI for local, remote and cloud targets.
-- **Capability-aware placement.** Scheduling uses GPU vendor, device count and memory (and
-  whether it is *unified* or *dedicated*), CUDA compute capability, OS/arch, Python and framework
-  versions, launcher and communication backend — never "it has a GPU, ship it".
-- **Explainable.** Every scheduling decision records why each worker was eligible or rejected.
-- **Distributed is a workload type, not a batch.** A `DistributedJob` is gang-scheduled onto a
-  compatible worker group, ranks are assigned, a rendezvous endpoint is published, and
-  `torchrun` + PyTorch do the collectives. One failed node fails the whole job.
-- **Honest about limits.** MPS is not CUDA. ROCm is detection-only. Leases are not
-  exactly-once. Subprocesses are not a sandbox. The docs say so.
+Placement is based on what each worker reports: GPU vendor, device count, device memory
+(and whether it is unified or dedicated), CUDA compute capability, OS and CPU architecture,
+Python and framework versions, and the available launcher and communication backend. A worker
+does not qualify just because it has a GPU. Every scheduling decision records why each worker
+was accepted or rejected.
+
+A distributed job is one workload spread over a group of workers. GpuLayer schedules the whole
+group at once, assigns ranks and publishes a rendezvous endpoint, then `torchrun` and PyTorch
+handle the collectives. If one node fails, the whole job fails.
+
+The limits are documented. MPS is a separate backend from CUDA, ROCm is detection-only, leases
+give at-least-once execution at best, and running a workload as a subprocess does not sandbox it.
 
 ## Concepts
 
 | Concept | Values | Meaning |
 |---|---|---|
-| **Execution target** | `local`, `remote`, `cloud` | *Where* a job may run. Fallback across targets only when explicitly listed. |
-| **Workload type** | `independent`, `distributed` | *What* runs: one execution unit vs one coordinated multi-node workload. |
-| **Workload kind** | `CommandJob`, `FunctionJob`, `DistributedJob` | A command, a `module:function` with JSON args, or a torchrun entrypoint. |
-| **Worker origin** | `local`, `existing`, `provider` | How a worker joined; maps to the target it serves. |
+| Execution target | `local`, `remote`, `cloud` | Where a job may run. A job moves to another target only if you list it as a fallback. |
+| Workload type | `independent`, `distributed` | One execution unit, or one coordinated multi-node workload. |
+| Workload kind | `CommandJob`, `FunctionJob`, `DistributedJob` | A command, a `module:function` call with JSON arguments, or a torchrun entrypoint. |
+| Worker origin | `local`, `existing`, `provider` | How a worker joined. Each origin serves one target. |
 
-Targets and workload types are orthogonal: a distributed job can run on local workers, and a
-cloud job is not necessarily distributed.
+Targets and workload types are independent of each other. A distributed job can run on local
+workers, and a cloud job can be a single independent task.
 
 ## Install
 
-Requires Python ≥ 3.10. CPU-only installs need no GPU libraries.
+GpuLayer needs Python 3.10 or newer. A CPU-only install needs no GPU libraries.
 
 ```bash
 git clone <this repo> && cd gpulayer
@@ -84,8 +86,8 @@ gpulayer worker start
 gpulayer job cancel <job-id>
 ```
 
-Requirements that no worker can satisfy fail fast with a reason per worker, e.g.
-`needs 1 usable cuda device(s), worker has 0`.
+If no worker can satisfy a job's requirements, the job fails right away and the CLI prints the
+reason for each worker, for example `needs 1 usable cuda device(s), worker has 0`.
 
 ### Distributed PyTorch (DDP)
 
@@ -116,38 +118,38 @@ export GPULAYER_URL=https://cp.example:8470 GPULAYER_TOKEN=glc_...
 gpulayer submit --target remote --accelerator cuda --gpus 1 -- python train.py
 ```
 
-Plaintext HTTP on a non-loopback address is refused unless you pass
+The server refuses to serve plaintext HTTP on a non-loopback address unless you pass
 `--allow-insecure-remote`.
 
 ## Examples
 
 | Example | Shows |
 |---|---|
-| [`examples/pytorch_train`](examples/pytorch_train) | Train an MLP on CPU / MPS / CUDA, download `model.pt`, then a JSON `FunctionJob` for inference — via the SDK |
-| [`examples/pytorch_ddp`](examples/pytorch_ddp) | `DistributedDataParallel` with `DistributedSampler`, launched by GpuLayer through torchrun across 1 or more nodes |
+| [`examples/pytorch_train`](examples/pytorch_train) | Training an MLP on CPU, MPS or CUDA through the SDK, downloading `model.pt`, then running inference as a JSON `FunctionJob` |
+| [`examples/pytorch_ddp`](examples/pytorch_ddp) | `DistributedDataParallel` with `DistributedSampler`, launched by GpuLayer through torchrun on one or more nodes |
 
 ## What works today
 
-Status vocabulary from [CLAUDE.md](CLAUDE.md): *hardware-validated* · *tested* · *simulated* ·
-*planned*.
+The status labels come from [CLAUDE.md](CLAUDE.md): hardware-validated, tested, implemented,
+simulated, planned.
 
 | Capability | Status | Evidence |
 |---|---|---|
-| Local CPU execution (command / function), logs, results, artifacts, cancel, timeout | **tested** | `tests/integration/test_local_execution.py`, `test_cli.py` |
-| Capability-aware deterministic scheduling, rejection reasons, gang scheduling | **tested** | `tests/unit/test_scheduler.py` |
-| Leases, heartbeats, worker loss, opt-in retry, revocation, persistence | **tested** (simulated clock) | `tests/unit/test_control_plane.py` |
-| Remote worker over authenticated HTTP (separate process, separate state dir) | **tested on one host** | `tests/integration/test_http_remote.py` |
-| Remote worker on a *different machine* | **not yet validated** | protocol is network-ready; no cross-host test yet |
-| Distributed torchrun/gloo, 2 nodes × 2 procs, fail-fast | **tested on one host** (real processes, loopback) | `tests/distributed/test_torchrun_multiprocess.py` |
-| Multi-machine distributed | **planned** | needs a documented multi-host test environment |
-| Apple MPS independent jobs | **hardware-validated** (Apple Silicon smoke test) | `tests/hardware/test_gpu_smoke.py` |
-| Distributed MPS | **unsupported** by design (ADR-0006) | rejected at validation |
-| NVIDIA CUDA detection & scheduling | **tested** (mocked `nvidia-smi` / torch probe) | `tests/unit/test_discovery.py` |
-| NVIDIA CUDA execution (single GPU and NCCL) | **implemented, not hardware-validated** | smoke test exists, skipped without a GPU |
-| AMD ROCm | **detection-only** | never scheduled |
-| Cloud provisioning lifecycle (offer selection, single-use bootstrap tokens, reservation, release, cost estimates) | **simulated** with `FakeProvider` | `tests/unit/test_providers.py` |
-| Real cloud provider adapter | **planned** — no vendor chosen (ADR-0010) | — |
-| Hosted control plane | **planned** | — |
+| Local CPU execution (command / function), logs, results, artifacts, cancel, timeout | tested | `tests/integration/test_local_execution.py`, `test_cli.py` |
+| Capability-aware deterministic scheduling, rejection reasons, gang scheduling | tested | `tests/unit/test_scheduler.py` |
+| Leases, heartbeats, worker loss, opt-in retry, revocation, persistence | tested (simulated clock) | `tests/unit/test_control_plane.py` |
+| Remote worker over authenticated HTTP (separate process, separate state dir) | tested on one host | `tests/integration/test_http_remote.py` |
+| Remote worker on a different machine | not yet validated | the protocol works over a network, but no cross-host test exists yet |
+| Distributed torchrun/gloo, 2 nodes × 2 procs, fail-fast | tested on one host (real processes, loopback) | `tests/distributed/test_torchrun_multiprocess.py` |
+| Multi-machine distributed | planned | needs a documented multi-host test environment |
+| Apple MPS independent jobs | hardware-validated (Apple Silicon smoke test) | `tests/hardware/test_gpu_smoke.py` |
+| Distributed MPS | unsupported by design (ADR-0006) | rejected at validation |
+| NVIDIA CUDA detection and scheduling | tested (mocked `nvidia-smi` / torch probe) | `tests/unit/test_discovery.py` |
+| NVIDIA CUDA execution (single GPU and NCCL) | implemented, not hardware-validated | smoke test exists, skipped without a GPU |
+| AMD ROCm | detection-only | never scheduled |
+| Cloud provisioning lifecycle (offer selection, single-use bootstrap tokens, reservation, release, cost estimates) | simulated with `FakeProvider` | `tests/unit/test_providers.py` |
+| Real cloud provider adapter | planned; no vendor chosen (ADR-0010) | none |
+| Hosted control plane | planned | none |
 
 ## Architecture at a glance
 
@@ -161,7 +163,7 @@ Status vocabulary from [CLAUDE.md](CLAUDE.md): *hardware-validated* · *tested* 
         └──► WorkerAgent ──► process group: command | function runner | torchrun
 ```
 
-Read more:
+Further reading:
 
 - [Getting started](docs/getting-started.md)
 - [Architecture overview](docs/architecture/overview.md) · [Execution modes](docs/architecture/execution-modes.md) ·
@@ -184,5 +186,5 @@ Read more:
 
 ## License
 
-Not yet chosen — see [ADR-0012](docs/decisions/ADR-0012-licensing-and-project-governance.md).
-Until a license is added, no rights are granted beyond viewing.
+No license has been chosen yet; see [ADR-0012](docs/decisions/ADR-0012-licensing-and-project-governance.md).
+Until one is added, no rights are granted beyond viewing.

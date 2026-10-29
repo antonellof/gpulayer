@@ -12,7 +12,7 @@ data is sent to a GpuLayer-operated service.
 
 ## Decision
 
-- There is a **single `ControlPlane` class** (`src/gpulayer/control_plane/service.py`). It
+- There is a single `ControlPlane` class (`src/gpulayer/control_plane/service.py`). It
   owns the job lifecycle, worker registry, leases, scheduling passes, distributed
   coordination and provisioning (through `control_plane/provisioning.py`). Scheduling is a
   separate pure module (`control_plane/scheduler.py`; see ADR-0004).
@@ -44,10 +44,10 @@ data is sent to a GpuLayer-operated service.
 - The single-process server is a single point of failure, and availability equals that
   of one host. There is no HA.
 - SQLite limits write concurrency. All writes serialize on one lock per process
-  (`storage/sqlite.py`), which is adequate for tens of workers, not thousands.
+  (`storage/sqlite.py`), which is adequate for tens of workers but not for thousands.
 - **Known gap:** some provider calls (`provision`, `terminate`) run while the SQLite
-  transaction lock is held, because `schedule_pending` → `ProvisioningManager.request` and
-  `_set_job_state` → `_finalize` → `release_for_job` run inside `store.tx()`. A slow
+  transaction lock is held: `schedule_pending` calls `ProvisioningManager.request`, and
+  `_set_job_state` calls `_finalize`, which calls `release_for_job`, all inside `store.tx()`. A slow
   provider API would stall the control plane. This must change before a real provider
   ships (ADR-0010).
 

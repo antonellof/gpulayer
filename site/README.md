@@ -2,12 +2,15 @@
 
 This directory will hold GpuLayer's public website and documentation site.
 
-- **Stack:** not chosen yet. See [ADR-0013](../docs/decisions/ADR-0013-website-and-documentation-stack.md)
-  (Proposed), which compares MkDocs-Material, Docusaurus and Astro Starlight.
-- **Content source:** Markdown under [`docs/`](../docs/). The site renders those files.
-  It does not keep a second copy, so documentation is reviewed together with code changes.
-- **Rule:** the site may only present capabilities that the docs classify as implemented,
-  tested or hardware-validated. Simulated and planned features must be labelled as such.
+The website stack is not chosen yet.
+[ADR-0013](../docs/decisions/ADR-0013-website-and-documentation-stack.md) (Proposed) compares
+MkDocs-Material, Docusaurus and Astro Starlight.
+
+The site will render the Markdown under [`docs/`](../docs/) and keep no second copy, so
+documentation is reviewed together with code changes.
+
+The site may only present capabilities that the docs classify as implemented, tested or
+hardware-validated. Simulated and planned features must be labelled as such.
 
 ## Planned page map
 

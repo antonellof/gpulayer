@@ -20,8 +20,8 @@ torch     2.5.1  distributed backends: gloo
 device    [0] mps Apple arm64 GPU (MPS) (32.0 GB unified) independent=hardware-validated distributed=unsupported
 ```
 
-Detection never guesses: unknown values are reported as unknown, and detected-but-unsupported
-hardware (e.g. ROCm) is listed with `execution_supported=false`.
+Values that detection cannot determine are reported as unknown. Hardware that is detected but
+has no execution path (ROCm, for example) is listed with `execution_supported=false`.
 
 ## 3. Run jobs locally
 
@@ -47,7 +47,7 @@ Inside a workload:
 | `CUDA_VISIBLE_DEVICES` | the granted CUDA devices; empty for CPU jobs |
 
 A leading `python` in a command means the worker's configured interpreter. The workload does
-**not** inherit the worker's environment beyond `PATH`, `HOME`, `USER`, `LANG`, `LC_ALL`,
+not inherit the worker's environment beyond `PATH`, `HOME`, `USER`, `LANG`, `LC_ALL`,
 `TMPDIR`, `TERM`; pass anything else with `--env` or `--secret`.
 
 ## 4. Use the SDK

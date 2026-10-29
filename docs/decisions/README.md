@@ -1,9 +1,9 @@
-# Architecture Decision Records
+# Architecture decision records
 
 ADRs record the significant architectural decisions behind GpuLayer: what was decided,
 why, which alternatives were rejected, and what the decision costs us.
 
-**Status vocabulary**
+Status values:
 
 - **Accepted (milestone 1):** implemented in the current code and covered by tests.
 - **Proposed:** a direction under evaluation. It is not policy and must not be described

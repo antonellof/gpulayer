@@ -1,7 +1,7 @@
 # Architecture overview
 
-GpuLayer is a **modular monolith**: the logical components below live in one Python package
-and can run in one process (embedded mode) or as a served control plane plus remote workers.
+GpuLayer is a modular monolith. The components below live in one Python package and can run
+in one process (embedded mode) or as a served control plane with remote workers.
 See [ADR-0001](../decisions/ADR-0001-control-plane-and-deployment-model.md).
 
 ```
@@ -30,19 +30,25 @@ src/gpulayer/
 
 ## Data model
 
-- **Job** — one logical submission (`JobSpec`) with a state machine:
-  `queued → [provisioning] → scheduled → running → succeeded | failed | cancelled | timed_out`.
-  Validation is synchronous at submission; a retry moves a job back to `queued`. Allowed
-  transitions are enforced (`JOB_TRANSITIONS` in `contracts/models.py`).
-- **Task** — one unit of work for one worker. Independent jobs have one task per attempt; a
-  distributed job has one task per node, all created atomically when the group is placed.
-  States: `assigned → running → succeeded | failed | cancelled | timed_out | lost`.
-- **Worker** — registration record with reported `WorkerCapabilities`, heartbeat-derived state
-  (`idle`, `busy`, `draining`, `offline`) and a revocable session credential.
-- **Event / log line** — append-only, sequence-numbered, queryable per job.
-- **Artifact** — immutable bytes addressed by SHA-256 (`artifact://sha256/<hex>`).
+A job is one logical submission (`JobSpec`). Its states are
+`queued → [provisioning] → scheduled → running → succeeded | failed | cancelled | timed_out`.
+Validation happens synchronously at submission, and a retry moves the job back to `queued`.
+The control plane rejects any transition not listed in `JOB_TRANSITIONS`
+(`contracts/models.py`).
 
-Job state and worker state are independent: a worker can recover after its job failed.
+A task is one unit of work for one worker. An independent job has one task per attempt. A
+distributed job has one task per node, and all of them are created in the same transaction when
+the group is placed. Task states are `assigned → running → succeeded | failed | cancelled |
+timed_out | lost`.
+
+A worker record holds the reported `WorkerCapabilities`, a state derived from heartbeats
+(`idle`, `busy`, `draining`, `offline`) and a session credential that can be revoked.
+
+Events and log lines are append-only, numbered in sequence and queryable per job. Artifacts are
+immutable bytes addressed by SHA-256 (`artifact://sha256/<hex>`).
+
+Job state and worker state are tracked separately, so a worker can recover after its job has
+failed.
 
 ## Request flow (independent job)
 
@@ -66,9 +72,9 @@ worker heartbeats and task leases, enforces a deadline backstop, and advances pr
 |---|---|---|---|
 | Embedded (default) | in the SDK/CLI process, SQLite in `$GPULAYER_HOME` | in-process thread or `gpulayer worker start` sharing the same home | OS user owning `$GPULAYER_HOME` |
 | Self-hosted | `gpulayer server start` (HTTP/HTTPS) | `gpulayer --url ... worker start` anywhere reachable | client token, join token, per-worker session token |
-| Hosted | **planned** | — | — |
+| Hosted | planned | | |
 
-What crosses the wire in self-hosted mode: job specs (including env values — use secret
-references for secrets), logs, events, artifacts (source bundles, inputs, outputs), worker
-capabilities. Secret *values* stay on workers. Nothing is sent to any GpuLayer-operated service;
-there is no telemetry.
+In self-hosted mode the network carries job specs, logs, events, artifacts (source bundles,
+inputs and outputs) and worker capabilities. Job specs include `env` values, so pass secrets as
+secret references; secret values stay on the workers. Nothing is sent to a GpuLayer-operated
+service, and there is no telemetry.

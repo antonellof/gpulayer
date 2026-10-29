@@ -5,14 +5,15 @@
 
 ## Context
 
-Placement must use declared requirements and reported capabilities, must reject rather
-than weaken an incompatible requirement, and must be explainable and deterministic so it
-can be unit-tested. Distributed jobs need a whole compatible group, never a partial one.
+Placement must use declared requirements and reported capabilities. When a requirement
+cannot be met, placement rejects the job instead of weakening the requirement. It must be
+explainable and deterministic so it can be unit-tested. A distributed job is placed on a
+whole compatible group or not at all.
 
 ## Decision
 
 - `schedule(spec, workers, job_id)` in `src/gpulayer/control_plane/scheduler.py` is a
-  **pure function** over `WorkerView` (capabilities plus current state and load). It
+  pure function over `WorkerView` (capabilities plus current state and load). It
   returns a `SchedulingDecision` that lists every candidate with its rejection reasons.
   The decision is persisted on the job and shown by `gpulayer job status`.
 - `compatibility_reasons` checks the target (worker origin → local/remote/cloud), the
@@ -20,7 +21,7 @@ can be unit-tested. Distributed jobs need a whole compatible group, never a part
   disk, the Python and framework PEP 440 specifiers, the support matrix (ADR-0005),
   device count, memory (including memory kind), CUDA compute capability, and the
   distributed prerequisites (launcher, comm backend, torch, `advertise_address`, procs ≤
-  cores). An **unknown** value never satisfies a requirement; for example, unknown RAM
+  cores). An unknown value never satisfies a requirement; for example, unknown RAM
   fails `memory_gb`.
 - **Capability vs availability:** incompatible workers are rejected with reasons.
   Compatible workers that are busy, offline, draining or unhealthy are noted separately.

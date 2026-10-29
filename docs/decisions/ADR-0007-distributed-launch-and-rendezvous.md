@@ -31,14 +31,14 @@ not own collective communication, which PyTorch already provides.
 - **Coordination:** the job succeeds only when every node succeeds. When any node
   fails, is lost or times out, the job fails immediately, and running siblings get
   `cancel_requested` (delivered by heartbeat) while unstarted ones are cancelled.
-  Distributed jobs are **never** retried automatically (`JobSpec` validation rejects
+  Distributed jobs are never retried automatically (`JobSpec` validation rejects
   `max_attempts>1`).
 - Logs are tagged with `node_rank`. Outputs are uploaded per node under `node<r>/`.
 
 ## Validation
 
 - `tests/distributed/test_torchrun_multiprocess.py` runs two worker agents as two
-  "nodes" on **one host**, each launching torchrun with 2 processes (world size 4), and
+  "nodes" on a single host, each launching torchrun with 2 processes (world size 4), and
   verifies a gloo `all_reduce`. A second test shows that one failing rank fails the whole
   job and stops the sibling.
 - **Not validated:** separate machines, real networks, firewalls and interface

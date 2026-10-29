@@ -1,7 +1,8 @@
 # Security and trust model
 
-**Scope today: single user or a mutually trusting team.** Public or multi-tenant execution of
-untrusted code is out of scope until a dedicated threat-model and isolation review (ADR-0009).
+GpuLayer currently targets a single user or a team whose members trust each other. Running
+untrusted code for the public or for multiple tenants is out of scope until a dedicated threat
+model and isolation review exist (ADR-0009).
 
 ## Trust boundaries
 
@@ -12,7 +13,7 @@ untrusted code is out of scope until a dedicated threat-model and isolation revi
 | Worker → control plane (session) | per-worker random session token; every task call checks ownership |
 | Provisioned worker | single-use token bound to one instance record; identity fields taken from GpuLayer's record |
 | Control plane → workload | job spec, source bundle, inputs; secrets as *references* only |
-| Workload → host | OS process group under the worker's user — **not a sandbox** |
+| Workload → host | OS process group under the worker's user; this is not a sandbox |
 | Embedded mode | anyone who can write `$GPULAYER_HOME` (created 0700) controls it |
 
 Tokens are generated with `secrets.token_urlsafe(32)`, printed once by `server init`, and stored
@@ -21,18 +22,21 @@ its active tasks.
 
 ## Secrets
 
-- `SecretRef(name, source="env", key)` is resolved **on the worker** from its environment.
-  The value never enters the job record, the database or the wire.
+- The worker resolves `SecretRef(name, source="env", key)` from its own environment. The value
+  never enters the job record or the database and is never sent over the network.
 - Secret values are redacted (`***`) from streamed logs and function error messages.
-- Workloads receive an **allow-listed** environment (`PATH`, `HOME`, `USER`, `LANG`, `LC_ALL`,
-  `TMPDIR`, `TERM`) plus explicit `env`/`secrets` — worker credentials are not inherited.
-- `env` values are *not* secret; they are stored and transmitted in the job spec.
+- Workloads receive an allow-listed environment (`PATH`, `HOME`, `USER`, `LANG`, `LC_ALL`,
+  `TMPDIR`, `TERM`) plus the job's `env` and `secrets`. They do not inherit the worker's
+  credentials.
+- `env` values are stored and transmitted in the job spec, so they are not secret.
 
 ## Validation
 
-- Strict pydantic models (`extra="forbid"`), reserved env names, safe relative paths for
-  inputs and entrypoints, zip-slip/symlink-safe bundle extraction, SHA-256 verification of
-  every artifact, request size limits, protocol-version header.
+- Pydantic models reject unknown fields (`extra="forbid"`), reserved environment names and
+  unsafe input or entrypoint paths.
+- Bundle extraction refuses absolute paths, `..` and symlinks, and every artifact is verified
+  against its SHA-256.
+- The API limits request sizes and requires the protocol-version header.
 - No telemetry. Logs from the HTTP server never include headers or tokens.
 
 ## Known gaps (tracked in the implementation plan)

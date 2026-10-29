@@ -10,8 +10,8 @@ Two orthogonal choices: **target** (where) and **workload type** (what).
 | `remote` | `existing` | `gpulayer --url URL worker start` with a join token |
 | `cloud` | `provider` | booted by a provider adapter with a single-use instance token |
 
-`placement.fallback_targets` lists additional targets tried *in order* — only when given.
-A `local` job never silently runs remotely.
+`placement.fallback_targets` lists more targets to try, in order. Without it, a `local` job
+only ever runs on a local worker.
 
 ## Workload kinds
 
@@ -22,12 +22,11 @@ A `local` job never silently runs remotely.
 | `DistributedJob` | distributed | `torchrun` on every node | source bundle (required for the entrypoint) |
 
 Function arguments and return values must be JSON. Closures, lambdas and pickled objects are
-not supported, by design (ADR-0002): they do not survive crossing machines, Python versions or
-trust boundaries.
+unsupported by design (ADR-0002), because they break across machines, Python versions and trust
+boundaries.
 
-**Batch vs distributed:** `Client.submit_batch([...])` submits *independent* jobs that are
-scheduled separately. `gl.distributed(...)` is *one* job whose nodes start together and fail
-together.
+`Client.submit_batch([...])` submits independent jobs that are scheduled separately.
+`gl.distributed(...)` submits one job whose nodes start together and fail together.
 
 ## Local execution
 
@@ -42,7 +41,7 @@ See [remote-workers.md](remote-workers.md). Same agent, HTTP channel instead of 
 
 A cloud job either lands on an already-registered provider worker or, with
 `placement.provisioning`, triggers the provisioning lifecycle in
-[providers.md](providers.md). **Only the simulated `FakeProvider` exists today.**
+[providers.md](providers.md). The only provider today is the simulated `FakeProvider`.
 
 ## Distributed execution
 

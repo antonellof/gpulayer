@@ -13,7 +13,7 @@ and the reverse also holds.
 ## Decision
 
 - **Transport:** HTTP/1.1 + JSON, stdlib only (`api/server.py`, `api/client.py`).
-  Workers **poll**: heartbeats (default every 2 s) and `acquire`. All connections are
+  Workers poll: they send heartbeats (default every 2 s) and `acquire` calls. All connections are
   outbound from the worker.
 - **Protocol version:** every authenticated request carries `X-GpuLayer-Protocol: 1`, and
   a mismatch returns `protocol_mismatch`.
@@ -26,7 +26,7 @@ and the reverse also holds.
     start/logs/finish/rendezvous and deregister. Task ownership is enforced in
     `ControlPlane._owned_task`.
   - *instance token*: single-use and bound to one provisioned instance (ADR-0010).
-    Workers that claim `origin=provider` **must** present it; a static join token is
+    Workers that claim `origin=provider` must present it; a static join token is
     rejected for them.
 - Token comparison uses `hmac.compare_digest` over hashes.
 - **TLS:** `ControlPlaneServer` refuses to bind a non-loopback address without a

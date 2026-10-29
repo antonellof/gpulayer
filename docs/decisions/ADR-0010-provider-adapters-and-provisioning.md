@@ -20,11 +20,11 @@ that its GPU runtime works.
   only, and the scheduler never sees it.
 - `ProvisioningManager` (`control_plane/provisioning.py`) handles jobs that have
   `placement.provisioning` and no eligible worker:
-  1. It filters offers with the **same** `compatibility_reasons` used for workers, plus
+  1. It filters offers with the same `compatibility_reasons` used for workers, plus
      `max_hourly_cost`. An offer without a price is rejected when a cap is set.
   2. It picks the cheapest known price deterministically and records a `CostRecord(kind=
      "estimate")`.
-  3. It provisions `num_nodes` instances. Each gets a **single-use instance token** bound
+  3. It provisions `num_nodes` instances. Each gets a single-use instance token bound
      to an internal `inst-…` reference and a `reserved-for=<job>` label, passed in
      `WorkerBootstrap`.
   4. The job waits in `provisioning`. The booted worker registers with that token, and
