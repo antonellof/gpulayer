@@ -1,842 +1,796 @@
-# GpuLayer Architecture Plan
+# GpuLayer — Architecture Plan
 
 **Status:** Proposed architecture  
-**Project:** GpuLayer — working name, subject to trademark, package, and domain checks  
-**Product model:** Open source, local-first, optional hosted control plane  
-**Execution model:** Independent jobs and explicitly distributed jobs
+**Project:** GpuLayer  
+**Category:** Open-source GPU execution and orchestration platform
 
 ## 1. Vision
 
-GpuLayer is an open-source GPU execution platform that lets developers submit workloads through a consistent API without hard-coding their applications to one GPU provider.
+GpuLayer provides a unified way to execute GPU workloads across local machines, existing remote workers, cloud GPU providers, and distributed GPU clusters.
 
-The platform should allow a developer to:
+It aims to make infrastructure selection and execution management consistent while preserving access to the capabilities and limitations of each underlying environment.
 
-- Run a GPU job on their current computer.
-- Use Apple Silicon GPUs through Metal/MPS for compatible workloads.
-- Combine trusted local computers into a private execution mesh.
-- Submit independent jobs to available compatible workers.
-- Run distributed workloads across multiple GPUs or machines where the framework, network, and hardware support it.
-- Add external GPU providers through adapters.
-- Self-host the control plane.
-- Optionally use a hosted control plane without making it a requirement for local execution.
+A developer should be able to describe a workload and its requirements, choose an execution target or placement policy, submit it through the SDK or CLI, and observe its execution without writing provider-specific orchestration code.
 
-The long-term goal is a provider-neutral GPU execution layer. The initial goal is a reliable local execution engine that can grow into a private mesh and provider-routing system.
+The platform should support independent jobs and distributed workloads, with a clear path from local development to remote execution and multi-node GPU computing.
 
-## 2. Product principles
+## 2. Goals
 
-1. **Local-first:** Local execution must not require a hosted service, account, or mandatory telemetry.
-2. **Open source:** The core platform should use an OSI-approved license.
-3. **Provider-neutral:** Provider integrations belong behind stable adapter interfaces.
-4. **Explicit execution semantics:** Independent jobs and distributed jobs are different job types.
-5. **Capability-aware scheduling:** The scheduler matches declared job requirements against validated worker capabilities.
-6. **Honest portability:** A common API does not imply universal compatibility between CUDA, ROCm, Metal/MPS, and CPU.
-7. **Optional hosting:** Self-hosted and hosted control planes should use the same core contracts where practical.
-8. **Security by design:** Trusted private meshes come before arbitrary public multi-tenant execution.
-9. **Incremental delivery:** Build and validate each milestone before expanding the supported matrix.
+- Provide a consistent SDK and CLI for job submission and management.
+- Support local CPU and GPU execution.
+- Support execution on existing remote workers.
+- Integrate external GPU infrastructure through provider adapters.
+- Support distributed jobs across multiple GPUs and machines.
+- Schedule work based on hardware and runtime compatibility.
+- Support reproducible workload packaging and artifact transfer.
+- Expose job, worker, and resource status.
+- Provide extensible storage, security, and accounting interfaces.
+- Support self-hosted and hosted control-plane deployments.
+- Keep provider-specific behavior outside the core scheduling logic.
+- Maintain a practical CPU-only development and CI path.
 
-## 3. Supported execution models
+## 3. Non-goals
 
-### 3.1 Independent jobs
+The initial architecture does not promise:
 
-An independent job executes on one selected worker or provider allocation.
+- Universal portability of every CUDA workload across GPU vendors.
+- Automatic conversion of CUDA workloads to Apple MPS or ROCm.
+- Distributed multi-Mac MPS execution without validated support.
+- A proprietary distributed tensor or collective-communication framework.
+- Exactly-once job execution under arbitrary failures.
+- Automatic migration of arbitrary running processes between machines.
+- A secure public multi-tenant sandbox merely by using subprocesses or containers.
+- A single scheduler that optimally solves every cost, latency, and topology problem.
+- Support for every cloud provider in the first release.
+- Transparent access to all remote filesystems.
+- Automatic checkpointing for workloads that do not support it.
 
-Examples include:
+## 4. Fundamental domain model
 
-- PyTorch inference.
-- Embedding generation.
-- Image and video processing.
-- Batch data processing.
-- Python functions.
-- Custom scripts and supported containers.
-- Other workloads that fit a declared runtime profile.
+Keep these concepts separate throughout the API and implementation.
 
-The scheduler may place independent jobs on local hardware, a private mesh worker, or a compatible external provider.
+### 4.1 Workload type
 
-### 3.2 Distributed jobs
+**Independent job:** A single logical execution unit that runs on an eligible worker or allocation. Examples include model inference, data processing, model training on one machine, and batch tasks.
 
-A distributed job represents one logical workload that requires multiple coordinated processes.
+**Distributed job:** One logical workload coordinated across multiple processes, GPUs, or workers. Examples include multi-GPU training and multi-node distributed computation.
 
-Examples include:
+A distributed job may create multiple worker tasks and processes, but those tasks belong to one coordinated workload.
 
-- Multi-GPU training.
-- Multi-node PyTorch distributed training.
-- Distributed inference where the framework and topology are supported.
-- Other explicitly supported distributed workloads.
+### 4.2 Execution target
 
-A distributed job must declare its worker count, GPUs per worker, runtime, network requirements, and failure policy.
+**Local:** Execution on the local machine or a local worker.
 
-The system must reserve a feasible group of workers and coordinate launch, rendezvous, monitoring, and cleanup.
+**Remote:** Execution on an existing worker that is reachable through an authorized deployment.
 
-**Distributed execution is not simply independent scheduling repeated several times.**
+**Cloud:** Execution on infrastructure managed through a provider adapter. A cloud worker may be provisioned specifically for a job or drawn from an existing worker pool.
 
-## 4. Deployment modes
+These targets are independent of workload type. For example, an independent job can execute on a cloud GPU, and a distributed job can execute on an existing private cluster.
 
-### Mode A: Local single machine
+### 4.3 Placement policy
 
-Components:
+Placement describes where a job is eligible to run.
 
-- CLI.
-- Python SDK.
-- Local coordinator/daemon.
-- SQLite metadata database.
-- Local artifact storage.
-- Local worker/runtime process.
+Possible policies include:
 
-Properties:
+- Explicit target or worker selection.
+- Required hardware and runtime constraints.
+- Allowed providers or regions.
+- Required GPU count and memory.
+- Distributed worker-group requirements.
+- Data locality and network constraints.
+- Cost or latency preferences.
+- Explicitly configured fallback rules.
 
-- Works without an account.
-- No hosted control plane dependency.
-- CPU jobs run on ordinary development machines.
-- NVIDIA CUDA is available when a compatible environment is installed.
-- AMD ROCm is supported only on validated configurations.
-- Apple Silicon GPUs are supported through PyTorch MPS for eligible workloads.
+Fallback must not violate required constraints or silently change a workload's execution semantics.
 
-### Mode B: Private mesh
+### 4.4 Capability versus availability
 
-Components:
+A worker's **capability** describes what it can support. Its **availability** describes what resources it can currently offer.
 
-- One coordinator.
-- Multiple authenticated worker agents.
-- Resource discovery and scheduling.
-- Job logs and artifact exchange.
-- Optional shared artifact storage.
+The scheduler needs both. A worker can be compatible but busy, or available but incompatible.
 
-Initially, assume the machines are trusted and controlled by the same person or organization.
+## 5. High-level architecture
 
-Workers should preferably establish outbound authenticated connections to the coordinator. Distributed jobs may additionally require peer connectivity.
+<box gap={2}>
+  <box border radius="lg" padding={3} gap={1}>
+    <title size="lg">Developer interface</title>
+    Python SDK · CLI · Job specification · API client
+  </box>
+  <box align="center">
+    <icon name="arrow-down" size="lg" />
+  </box>
+  <box border radius="lg" padding={3} gap={1}>
+    <title size="lg">Control plane</title>
+    Job lifecycle · API · Worker registry · Scheduler · Authorization · Coordination · Accounting
+  </box>
+  <box align="center">
+    <icon name="arrow-down" size="lg" />
+  </box>
+  <grid columns={2} gap={2}>
+    <grid-item>
+      <box border radius="lg" padding={3} gap={1} height="100%">
+        <title>Execution plane</title>
+        Local worker · Remote worker · Cloud worker · Runtime manager
+      </box>
+    </grid-item>
+    <grid-item>
+      <box border radius="lg" padding={3} gap={1} height="100%">
+        <title>Infrastructure adapters</title>
+        Provider APIs · Instance lifecycle · Worker bootstrap · Capacity
+      </box>
+    </grid-item>
+  </grid>
+  <box align="center">
+    <icon name="arrow-down" size="lg" />
+  </box>
+  <grid columns={3} gap={2}>
+    <grid-item>
+      <box background="surface-secondary" radius="md" padding={2} gap={1} height="100%">
+        **Local**
+        <text size="sm">CPU, CUDA, supported MPS workloads</text>
+      </box>
+    </grid-item>
+    <grid-item>
+      <box background="surface-secondary" radius="md" padding={2} gap={1} height="100%">
+        **Cloud**
+        <text size="sm">Provider-managed GPU resources</text>
+      </box>
+    </grid-item>
+    <grid-item>
+      <box background="surface-secondary" radius="md" padding={2} gap={1} height="100%">
+        **Distributed**
+        <text size="sm">Coordinated multi-process and multi-node execution</text>
+      </box>
+    </grid-item>
+  </grid>
+</box>
 
-### Mode C: Self-hosted control plane
+The diagram represents logical responsibilities. It does not require each box to be a separate service or deployment.
 
-Optional components:
+## 6. Control plane
 
-- PostgreSQL.
-- S3-compatible artifact storage.
-- Coordinator service.
-- Worker agents.
-- Monitoring and backup procedures.
+The control plane manages desired state and execution coordination.
 
-The self-hosted deployment must not depend on GpuLayer-operated infrastructure.
+### Responsibilities
 
-### Mode D: Optional hosted control plane
+- Authenticate clients and workers.
+- Validate job specifications.
+- Persist job metadata and lifecycle events.
+- Maintain worker registrations, heartbeats, capabilities, and leases.
+- Schedule independent jobs and distributed worker groups.
+- Coordinate provider operations.
+- Track distributed job state and worker ranks.
+- Support cancellation, timeouts, and retry policies.
+- Maintain artifact references and execution metadata.
+- Expose job and resource information through the API.
 
-The hosted offering may provide:
+### Deployment modes
 
-- Remote coordination.
-- Worker and provider management.
-- Usage reporting.
-- Job history.
-- Multi-user access control.
+The architecture should support:
 
-It must remain optional. Local mode must continue to work independently.
+1. **Embedded or local mode:** Minimal setup for development and single-machine use.
+2. **Self-hosted control plane:** An operator runs GpuLayer and manages multiple workers.
+3. **Hosted control plane:** A managed service coordinates authorized workers and configured providers.
 
-Any paid-provider or hosted spending must be explicitly configured by the user.
+These modes should share the same core contracts and scheduling concepts. The implementation may vary in persistence, authentication, availability, and deployment topology.
 
-## 5. Proposed SDK
+Local execution must remain possible without a hosted service.
 
-### Independent job example
+The platform must clearly document which metadata, logs, artifacts, and credentials are transmitted to the control plane in each deployment mode.
 
-```python
-import gpulayer as gpu
+## 7. Execution plane and workers
 
-@gpu.function(gpu="auto", gpu_memory_gb=12)
-def embed_batch(texts: list[str]) -> dict:
-    import torch
-    model = load_model()
-    return {"embeddings": model.encode(texts).tolist()}
+Workers execute workloads on local or remote compute resources.
 
-job = embed_batch.submit(
-    ["hello", "world"],
-    target="local",
-)
+### Worker responsibilities
 
-result = job.result()
-print(result.output)
-```
+- Establish authenticated identity.
+- Register with the control plane.
+- Report capabilities and current resource availability.
+- Receive and validate assignments.
+- Prepare runtime environments.
+- Retrieve required artifacts.
+- Execute supported workloads.
+- Stream logs and lifecycle events.
+- Report resource observations and execution outcomes.
+- Handle cancellation and lease expiry.
+- Clean up processes and temporary resources.
 
-### Distributed job example
+### Worker state model
 
-```python
-from gpulayer import DistributedJob, ResourceRequest
+A practical initial state model is:
 
-job = DistributedJob(
-    entrypoint="train.py",
-    command=["--config", "configs/train.yaml"],
-    workers=2,
-    gpus_per_worker=4,
-    runtime="pytorch-distributed",
-    resources=ResourceRequest(
-        accelerator="nvidia",
-        gpu_memory_gb=40,
-        network="multi-node",
-    ),
-)
+- `offline`
+- `registering`
+- `idle`
+- `busy`
+- `draining`
+- `unhealthy`
 
-handle = gpu.submit(job, target="mesh")
-handle.wait()
+Job state and worker state must remain separate. A worker can recover while a job has failed, and a job can continue through other workers after an individual worker fails if the workload's semantics allow it.
 
-print(handle.status())
-print(handle.logs())
-```
+### Leases and recovery
 
-These are design sketches. They must not be documented as implemented APIs until the corresponding implementation exists.
+Assignments should have explicit ownership and lease semantics.
 
-The API should make the execution target explicit when useful, while allowing a scheduler to select among compatible resources when the user requests automatic placement.
+If a worker disappears, the control plane must determine whether to mark the execution as failed, wait for recovery, or attempt a retry.
 
-## 6. High-level architecture
+A lease cannot guarantee that the previous process has stopped. Retrying may duplicate execution or external side effects. The platform must document these risks and avoid promising exactly-once execution.
 
-```text
-Python SDK / CLI
-       |
-       v
-Versioned JobSpec
-       |
-       v
-Coordinator
-       |
-       +--> Job state machine
-       |
-       +--> Scheduler and resource leases
-       |
-       +--> Capability registry
-       |
-       +--> Local worker
-       |
-       +--> Private mesh workers
-       |
-       +--> Provider adapters
-                  |
-                  +--> External GPU providers
+## 8. Job contracts and lifecycle
 
-Execution runtime
-       |
-       +--> Logs and events
-       +--> Artifacts and results
-       +--> Usage accounting
-       +--> Reconciliation
-```
+All execution modes should share versioned job contracts.
 
-The initial system should be a modular monolith. Split services only when there is a clear operational or scaling reason.
+### Proposed contracts
 
-## 7. Core domain types
+- `JobSpec`: top-level submission.
+- `FunctionJob`: supported packaged Python workload.
+- `CommandJob`: supported command or executable workload.
+- `DistributedJob`: one coordinated multi-process or multi-worker workload.
+- `ResourceRequest`: compute and hardware requirements.
+- `PlacementPolicy`: target and placement constraints.
+- `WorkerCapabilities`: hardware, runtime, and environment capabilities.
+- `WorkerStatus`: health, availability, and current assignments.
+- `JobResult`: exit status, outputs, errors, and references.
+- `ArtifactReference`: input, output, log, or checkpoint location.
+- `ExecutionEvent`: timestamped lifecycle and diagnostic information.
 
-Expected types include:
+The final names and fields should be refined against the existing codebase before implementation.
 
-- `JobSpec`
-- `FunctionJob`
-- `CommandJob`
-- `DistributedJob`
-- `ResourceRequest`
-- `WorkerCapabilities`
-- `ProviderOffer`
-- `JobAttempt`
-- `JobResult`
-- `ArtifactRef`
-- `UsageRecord`
+### Job lifecycle
 
-A job specification should include:
+A proposed lifecycle is:
 
-- Schema version.
-- Job type.
-- Entrypoint and arguments.
+`submitted → validated → queued → preparing → running → finalizing → succeeded`
+
+Failure, cancellation, timeout, and retry states must be explicitly modeled.
+
+Possible terminal states include:
+
+- `succeeded`
+- `failed`
+- `cancelled`
+- `timed_out`
+
+The implementation may require additional intermediate states. State transitions must be validated, persisted, and observable.
+
+### Job packaging
+
+Remote execution requires a defined representation of code and dependencies.
+
+Possible packaging strategies include:
+
+- A versioned source bundle with declared dependencies.
+- A container image.
+- A preinstalled runtime profile.
+- An explicit command and environment specification.
+
+The first supported strategy should be selected through an ADR and implemented end-to-end. Avoid promising arbitrary Python closures, local paths, or environments are portable across machines.
+
+## 9. Scheduler and placement engine
+
+The scheduler maps a job's requirements to suitable available resources.
+
+### Scheduling inputs
+
+- Workload type.
+- Execution target and allowed environments.
+- GPU vendor, architecture, and memory.
+- GPU count and topology.
+- CPU, RAM, and disk requirements.
+- Runtime, framework, and dependency compatibility.
+- Network and interconnect requirements.
+- Artifact availability and data locality.
+- Worker health and current load.
+- Region and provider restrictions.
+- Cost estimates and policy preferences when reliable.
+
+### Scheduling stages
+
+1. Validate requirements.
+2. Identify eligible workers or provider-backed allocations.
+3. Filter out incompatible resources.
+4. Select a suitable worker or worker group.
+5. Reserve or lease resources.
+6. Prepare the execution environment.
+7. Launch the workload.
+8. Observe progress and handle failures.
+9. Release resources and finalize results.
+
+For cloud execution, provisioning may occur between resource selection and worker readiness. The design must distinguish selecting an instance type from successfully provisioning a working GPU worker.
+
+### Initial policies
+
+Start with deterministic policies:
+
+- Explicit worker or target.
+- First eligible worker.
+- Simple resource-aware selection.
+- User-specified constraints.
+
+Add cost-aware or topology-aware optimization after the platform has reliable capability, availability, and pricing data.
+
+Scheduling decisions should be explainable: users should be able to understand why a worker was selected or rejected.
+
+## 10. Distributed execution architecture
+
+Distributed execution is a core workload type, not merely a batch of independent jobs.
+
+### Distributed job specification
+
+A distributed job should describe:
+
+- Worker count.
+- GPU or process count per worker.
+- Required backend and framework.
 - Runtime and dependency requirements.
-- Resource constraints.
-- Backend compatibility requirements.
-- Input artifact references.
-- Output and log references.
-- Execution target or placement policy.
-- Retry and cancellation policy.
+- Communication and network requirements.
+- Rendezvous mechanism.
+- Entry point and arguments.
+- Environment configuration and secret references.
+- Timeout, cancellation, and failure policy.
+- Inputs, outputs, and checkpoint behavior where supported.
 
-Avoid serializing arbitrary Python closures as the only job format. Use an explicit packaging and execution contract with documented limitations.
+### Execution flow
 
-## 8. Scheduling design
+1. Validate the distributed workload.
+2. Identify a compatible worker group.
+3. Reserve the group as a coordinated allocation.
+4. Assign ranks and world size.
+5. Prepare consistent execution environments.
+6. Distribute code and required artifacts.
+7. Establish rendezvous.
+8. Start the distributed processes.
+9. Track worker readiness and per-rank state.
+10. Stream logs and execution events.
+11. Coordinate completion or failure.
+12. Release allocations and collect outputs.
 
-### 8.1 Independent jobs
+### Distributed runtime
 
-The scheduling flow is:
+Prioritize established mechanisms such as PyTorch distributed with `torchrun` and an appropriate rendezvous service.
 
-1. Validate the job specification.
-2. Determine hard resource and runtime constraints.
-3. Discover compatible workers and provider offers.
-4. Filter incompatible backends and runtime profiles.
-5. Rank the remaining candidates.
-6. Reserve resources.
-7. Dispatch the job.
-8. Track status and collect logs/results.
-9. Release reservations and reconcile failures.
+Keep the orchestration layer responsible for allocation and lifecycle management, while established frameworks handle collective communication.
 
-Candidate ranking can eventually consider:
+Do not assume a distributed job can start successfully merely because enough GPUs are available. Network reachability, firewall rules, interface selection, runtime compatibility, and communication support must be validated.
 
-- Availability.
-- GPU model and count.
-- Runtime compatibility.
-- Memory requirements.
-- Data locality.
-- Network constraints.
-- User-defined placement preferences.
-- Estimated cost, when reliable cost information is available.
+### Failure semantics
 
-The scheduler must explain why a target was selected or rejected.
+Distributed failures can invalidate the entire worker group.
 
-### 8.2 Distributed jobs
+The first implementation should use conservative semantics: a fatal worker or rank failure fails the logical distributed job unless the selected runtime explicitly supports recovery.
 
-Distributed scheduling must:
+Checkpoint-based restart can be added when supported by the workload and runtime.
 
-1. Validate runtime and topology.
-2. Find a feasible worker group.
-3. Reserve the group.
-4. Validate network connectivity.
-5. Establish rendezvous and rank assignment.
-6. Launch all required processes.
-7. Monitor every rank.
-8. Collect logs and status.
-9. Clean up the whole group when a partial launch fails.
+Automatic retry of a partially executed distributed job must not be assumed safe.
 
-Do not assume that independent workers can automatically form a valid distributed training group.
+### Initial scope
 
-A provider adapter must explicitly advertise placement-group and networking support before it can be selected for a distributed job.
+Begin with a real, testable multi-process distributed path. Progress to multi-node execution using an explicitly supported environment.
 
-## 9. GPU backend and runtime compatibility
+A simulated worker group is useful for testing placement logic but is not proof of distributed execution support.
 
-GpuLayer should use explicit runtime profiles.
+## 11. Cloud and provider architecture
 
-| Profile | Intended scope | Initial status |
-|---|---|---|
-| `cpu` | CPU workloads | Baseline |
-| `pytorch-nvidia` | Compatible PyTorch workloads on NVIDIA CUDA | Validate incrementally |
-| `pytorch-distributed-nvidia` | Supported distributed PyTorch configurations | Start with tested configurations |
-| `pytorch-metal-mps` | Compatible PyTorch workloads on Apple Silicon | Support local independent jobs |
-| `pytorch-amd` | Compatible PyTorch workloads on AMD ROCm | Add after validation |
+Cloud infrastructure must be a first-class target, but integrations must be explicit and verifiable.
 
-The profile name is not proof of compatibility. Each profile must define supported versions and pass automated smoke tests.
+### Provider adapter responsibilities
 
-### 9.1 Apple Metal / PyTorch MPS support
+An adapter may support:
 
-Apple Silicon Macs must be supported as local GPU workers through PyTorch's MPS backend when available.
+- Listing supported instance types.
+- Querying capacity or availability.
+- Estimating cost.
+- Creating and terminating instances.
+- Inspecting instance state.
+- Configuring access and worker bootstrap.
+- Waiting for worker registration.
+- Reporting provider errors and resource identifiers.
 
-#### Discovery
+Not all providers expose every operation. Each adapter should declare its actual capabilities.
 
-Probe the selected Python environment using:
+### Provisioning lifecycle
 
-```python
-import torch
+A cloud job may follow this sequence:
 
-mps_built = (
-    hasattr(torch.backends, "mps")
-    and torch.backends.mps.is_built()
-)
+1. Validate the job.
+2. Resolve provider constraints.
+3. Select a compatible resource configuration.
+4. Obtain an estimate if reliable pricing is available.
+5. Request provisioning.
+6. Wait for the instance to become reachable.
+7. Authenticate and register the worker.
+8. Verify its reported capabilities.
+9. Schedule and execute the job.
+10. Collect logs, results, and accounting information.
+11. Release or retain the resource according to explicit policy.
 
-mps_available = (
-    hasattr(torch.backends, "mps")
-    and torch.backends.mps.is_available()
-)
-```
+Provisioning success does not prove GPU runtime readiness. The worker must report verified capabilities before receiving incompatible work.
 
-Guard the probe so missing PyTorch, missing APIs, and non-macOS systems produce a clear capability result instead of crashing the daemon.
+### Existing and managed workers
 
-A successful availability probe should be followed by a small runtime smoke test where practical.
+Support two concepts:
 
-#### Capability metadata
+- **Existing workers:** machines already operated by the user or organization.
+- **Managed workers:** machines provisioned or managed through a provider adapter.
 
-Capture, where reliably available:
+This distinction allows GpuLayer to orchestrate a private cluster without taking responsibility for provisioning every machine.
 
-- Operating system and version.
-- CPU architecture.
-- Python version.
-- PyTorch version.
-- MPS build and availability status.
-- Device details.
-- Backend-specific memory information.
-- Probe errors and compatibility diagnostics.
+### Provider independence
 
-Apple Silicon uses unified memory. Do not represent its memory capacity as if it were directly equivalent to discrete NVIDIA VRAM.
+The core scheduler should use GpuLayer's capability model rather than hardcoding provider-specific instance names.
 
-Use backend-aware fields such as `memory_kind`, `memory_confidence`, and optional recommended working-set information.
+Provider-specific fields may be retained as metadata, but they should not leak into core scheduling logic unless required by a declared extension.
 
-#### Compatibility rules
+Implement `FakeProvider` for deterministic testing. Add a real provider only after documenting authentication, supported regions or instance types, lifecycle behavior, cleanup, and failure cases.
 
-- Metal/MPS is a distinct backend, not a CUDA implementation.
-- CUDA-only packages and custom CUDA extensions cannot be assumed to work.
-- Not every PyTorch operator or dtype is necessarily supported.
-- Performance and numerical behavior must not be assumed identical to CUDA.
-- Unsupported workloads should fail with useful diagnostics.
-- Never silently change a CUDA-specific job to MPS.
+## 12. GPU and runtime compatibility
 
-#### Scheduling rules
+Model hardware capability separately from the framework and runtime available to a worker.
 
-Eligible MPS jobs should run locally on Apple Silicon Macs. These Macs may also participate in a private mesh for independent jobs.
+### Capability dimensions
 
-For the initial release, **do not schedule distributed jobs across multiple MPS workers**.
+- GPU vendor and architecture.
+- Device count and visible devices.
+- Memory capacity and available-memory observations.
+- Operating system and CPU architecture.
+- Driver and runtime versions.
+- Framework and supported versions.
+- Supported operators, dtypes, and relevant acceleration capabilities.
+- Multi-GPU and distributed communication support.
+- Interconnect and topology information where available.
 
-Before enabling that capability, verify:
+Capability discovery should report uncertainty rather than fabricate precision.
 
-- Supported process-group and collective behavior.
-- Framework and backend compatibility.
-- Inter-node networking and rendezvous.
-- Failure and cleanup behavior.
-- Dedicated multi-node integration tests.
+### NVIDIA CUDA
 
-Do not advertise multi-Mac distributed training as supported before those requirements are satisfied.
+Use a clear distinction between detecting hardware, validating the driver/runtime, preparing the environment, and successfully executing the workload.
 
-### 9.2 NVIDIA CUDA
+Local GPU tests and distributed CUDA tests should be independently gated.
 
-Detect supported NVIDIA hardware and runtime versions through platform-appropriate tooling.
+### Apple Metal / PyTorch MPS
 
-Validate:
+Use PyTorch's MPS APIs to detect whether MPS is built and available in the selected environment.
 
-- Driver and CUDA compatibility.
-- PyTorch runtime compatibility.
-- GPU count and device visibility.
-- Memory availability.
-- Distributed launch support for the selected configuration.
+MPS is a distinct backend, not a CUDA compatibility layer.
 
-Do not assume that every NVIDIA device or CUDA extension works with every runtime.
+The platform must account for differences in operators, dtypes, extensions, memory reporting, and distributed support.
 
-### 9.3 AMD ROCm
+Apple Silicon uses unified memory, which must not be treated as equivalent to discrete GPU VRAM.
 
-Treat AMD ROCm as a distinct runtime. Add support after testing actual supported hardware and software combinations.
+The initial MPS target is supported independent workloads on eligible Apple Silicon machines. Distributed MPS across multiple Macs is out of scope until a dedicated implementation and validation effort proves the required behavior.
 
-Do not infer CUDA compatibility from the presence of an AMD GPU.
+### AMD ROCm
 
-### 9.4 Capability discovery rules
+Maintain an extensible capability model, but do not mark ROCm execution as supported until a concrete runtime path has been implemented and tested.
 
-- Keep backend probes modular.
-- Isolate macOS-specific logic.
-- Missing tooling means capability is unknown.
-- Report runtime and probe errors explicitly.
-- Avoid hard-coding hardware support from machine names alone.
-- Make scheduler compatibility depend on validated profiles and job requirements.
+### Runtime profiles
 
-## 10. Provider adapter protocol
+Runtime profiles can describe known combinations of framework, driver, operating system, and hardware requirements.
 
-A provider adapter should expose operations equivalent to:
+A profile is a compatibility aid, not a guarantee. Actual worker checks and workload validation remain necessary.
 
-- `health_check`
-- `list_offers`
-- `get_capabilities`
-- `submit`
-- `get_status`
-- `fetch_logs`
-- `cancel`
-- `get_usage`
+## 13. Storage and artifact management
 
-Start with `FakeProvider` so scheduling, lifecycle, retry, and error handling can be tested without external accounts.
+Metadata, artifacts, logs, and checkpoints have different storage requirements.
 
-Add real providers incrementally.
+### Metadata storage
 
-Keep provider-specific API details and pricing out of the core scheduler.
+Use a database abstraction for job metadata, worker records, execution events, and resource allocations.
 
-Distributed workloads require explicit support for worker groups, placement, networking, and coordinated launch. An adapter that only supports independent jobs must not be used for distributed jobs.
+A local SQLite implementation is suitable for initial development. A shared deployment can use a database selected through an ADR.
 
-## 11. Worker security and networking
+### Artifact storage
 
-The worker protocol should support:
+Define an interface for:
 
-- Authentication.
-- Enrollment and revocation.
-- Heartbeats.
-- Capability updates.
-- Job dispatch.
-- Logs and state updates.
-- Cancellation.
-- Resource leases.
-- Version compatibility.
+- Source and package bundles.
+- Input datasets and files.
+- Job outputs.
+- Logs where appropriate.
+- Distributed checkpoints.
+- Metadata and integrity information.
 
-Prefer outbound worker connections to the coordinator.
+Support local storage first as a working implementation and define remote object storage integration separately.
 
-Distributed jobs may need additional worker-to-worker connectivity. Document firewall and VPN requirements.
+Do not assume that local paths are accessible from remote workers. Artifact staging, upload, download, and integrity checks must be explicit.
 
-The first private mesh should target trusted machines. Public multi-tenant arbitrary-code execution requires a separate security review.
+### Data locality
 
-Do not expose:
+Where possible, the scheduler should account for where large inputs reside.
 
-- Host secrets.
-- Provider credentials.
-- Cloud metadata endpoints.
-- Docker sockets.
-- Unrestricted host filesystem access.
+The first implementation can use explicit artifact locations and simple locality constraints. Advanced data placement and caching can follow later.
 
-Containers alone must not be treated as sufficient isolation for hostile workloads.
+## 14. Security and trust model
 
-## 12. Job lifecycle, persistence, and recovery
+Security requirements depend on deployment topology and whether workers execute workloads from mutually trusted users.
 
-Use a durable state machine.
+### Required design considerations
 
-Example lifecycle:
+- Authentication and authorization.
+- Worker identity and registration.
+- Encrypted remote communication.
+- Scoped credentials and secret references.
+- API and protocol versioning.
+- Resource limits and timeouts.
+- Artifact access control and path validation.
+- Isolation of processes and workloads.
+- Secure provisioning and worker bootstrap.
+- Log redaction and audit events.
+- Worker revocation and lease expiration.
 
-`queued → validating → scheduled → starting → running → succeeded`
+### Trust boundaries
 
-Failure and cancellation should be explicit terminal states.
+Treat the control plane, workers, provider APIs, and workload processes as distinct trust boundaries.
 
-Local mode should use SQLite and local artifact storage by default.
+A self-hosted single-user setup may use a simpler trust configuration than a multi-tenant service, but the difference must be explicit.
 
-Self-hosted multi-user deployments may use PostgreSQL and S3-compatible object storage.
+Containers and subprocesses are not, by themselves, a guarantee of strong isolation against hostile code.
 
-Requirements:
+Before supporting public, untrusted multi-tenant workloads, perform a dedicated threat-model and isolation review.
 
-- Database is the source of truth.
-- Queues are delivery mechanisms, not the sole record of job state.
-- Submissions and state transitions are idempotent where practical.
-- Resource leases expire or are reconciled.
-- Coordinator restarts must not lose all knowledge of active jobs.
-- Worker loss must produce a clear state transition.
-- Retry semantics must acknowledge at-least-once execution and possible duplicate side effects.
+### Secrets
 
-## 13. Artifacts, logs, and results
+Never embed provider credentials in job specifications or log output.
 
-Define an artifact abstraction supporting local storage and, later, S3-compatible storage.
+Use scoped credentials or secret references with documented access behavior. Do not forward all control-plane credentials to every worker.
 
-The system should eventually support:
+## 15. Observability and cost accounting
 
-- Input bundles.
-- Output artifacts.
-- Structured results.
-- Standard output and standard error.
-- Worker and scheduler events.
-- Artifact retention policies.
-- Explicit cleanup.
-- Artifact transfer between workers when required.
+### Observability
 
-Do not upload source code, inputs, or outputs to a hosted service unless the user has explicitly configured that behavior.
+Expose:
 
-## 14. Cost and usage accounting
+- Job status and lifecycle events.
+- Worker status and heartbeats.
+- Scheduling decisions.
+- Preparation and launch errors.
+- Per-rank distributed logs.
+- Exit codes and failure reasons.
+- Resource usage where available.
+- Artifact and checkpoint references.
+- Cancellation and retry events.
 
-Distinguish:
+The first version may use structured logs and persisted events. A dedicated metrics backend can be added later.
 
-- Local resource usage.
+### Cost accounting
+
+Keep these separate:
+
+- Cost estimates.
 - Provider-reported usage.
-- Estimated cost.
-- Final provider cost.
-- Any explicitly configured platform charge.
+- Provider-reported charges.
+- GpuLayer-calculated internal accounting.
 
-Use decimal arithmetic for monetary calculations.
+Every amount should have a currency, unit, timestamp, and source. Estimates must never be presented as actual charges.
 
-Never invent provider prices. Estimates must be labeled as estimates.
+Do not invent missing pricing information. Report unknown cost when there is no reliable source.
 
-Local execution should not require billing. Hosted or paid-provider use must be opt-in and configured.
+## 16. Proposed repository layout
 
-For distributed jobs, aggregate usage across workers while preserving per-worker records.
-
-## 15. Open-source governance
-
-Choose an OSI-approved license before public release. Apache-2.0 is a candidate, but the final decision belongs in an ADR.
-
-Prepare:
-
-- `LICENSE`
-- `CONTRIBUTING.md`
-- `CODE_OF_CONDUCT.md`
-- `SECURITY.md`
-- Issue and pull-request templates.
-- Dependency and license review.
-- Release and versioning policy.
-- A process for reporting security vulnerabilities.
-
-Telemetry should be disabled by default or explicitly opt-in.
-
-The open-source core must remain usable without a GpuLayer-hosted account.
-
-## 16. Website: `site/`
-
-Create a `site/` folder for the project's public website.
-
-The site should be independent of the Python package and build locally without hosted-service credentials.
-
-Proposed structure:
+Adapt this layout to the existing repository. Do not create every module in advance merely to match the tree.
 
 ```text
-site/
+gpulayer/
+├── CLAUDE.md
+├── architecture_plan.md
+├── pyproject.toml
 ├── README.md
-├── package.json             # After selecting a framework
 ├── src/
-│   ├── pages/
-│   ├── components/
-│   └── styles/
-└── public/
+│   └── gpulayer/
+│       ├── __init__.py
+│       ├── cli/
+│       ├── sdk/
+│       ├── api/
+│       ├── contracts/
+│       ├── control_plane/
+│       │   ├── jobs/
+│       │   ├── workers/
+│       │   ├── scheduler/
+│       │   ├── coordination/
+│       │   └── auth/
+│       ├── worker/
+│       ├── runtime/
+│       ├── gpu/
+│       ├── distributed/
+│       ├── providers/
+│       ├── storage/
+│       ├── artifacts/
+│       ├── observability/
+│       └── accounting/
+├── tests/
+│   ├── unit/
+│   ├── integration/
+│   ├── distributed/
+│   └── hardware/
+├── docs/
+│   ├── architecture/
+│   ├── development/
+│   └── decisions/
+└── site/
+    └── README.md
 ```
 
-The exact structure depends on the chosen static-site framework.
+The initial implementation may be a modular monolith. Split services only when deployment, scale, security, or operational requirements justify it.
 
-### Initial pages
+## 17. Testing and validation strategy
 
-1. Home and product overview.
-2. Quickstart.
-3. Installation and CLI reference.
-4. Supported hardware and backend compatibility matrix.
-5. Apple Silicon Metal/MPS setup and limitations.
-6. Private mesh installation and security.
-7. Distributed jobs and supported topologies.
-8. Provider adapters.
-9. Self-hosted deployment.
-10. Optional hosted control plane.
-11. Architecture and ADR index.
-12. Contributing and code of conduct.
-13. License and security reporting.
+### CPU-only CI
 
-A static-site framework such as Astro is a candidate, not a finalized choice.
+Must validate:
 
-Record the framework decision in an ADR. Consider accessibility, search, documentation reuse, deployment simplicity, maintenance burden, and contributor experience.
-
-Avoid maintaining duplicate versions of the same instructions. Define whether website content is generated from Markdown in `docs/` or maintained separately.
-
-Add site build and broken-link checks to CI once the framework is selected.
-
-## 17. Architecture Decision Records
-
-Create:
-
-```text
-docs/
-└── decisions/
-    ├── README.md
-    ├── ADR-0001-local-first-control-plane.md
-    ├── ADR-0002-job-and-function-packaging.md
-    ├── ADR-0003-worker-protocol-versioning.md
-    ├── ADR-0004-distributed-launch-and-rendezvous.md
-    ├── ADR-0005-gpu-capability-and-runtime-profiles.md
-    ├── ADR-0006-metal-mps-support-boundaries.md
-    ├── ADR-0007-storage-and-persistence.md
-    ├── ADR-0008-security-and-trust-model.md
-    ├── ADR-0009-open-source-license-and-governance.md
-    ├── ADR-0010-provider-accounts-and-commercial-terms.md
-    ├── ADR-0011-cost-and-retry-semantics.md
-    └── ADR-0012-website-and-documentation-stack.md
-```
-
-Each ADR must contain:
-
-- Status: `Proposed`, `Accepted`, or `Superseded`.
-- Date.
-- Context.
-- Decision.
-- Alternatives considered.
-- Consequences.
-- Follow-up work.
-
-### Initial ADR topics
-
-| ADR | Decision area |
-|---|---|
-| 0001 | Local-first, self-hosted, and hosted control planes |
-| 0002 | Job packaging, arguments/results, and runtime reproducibility |
-| 0003 | Worker protocol versioning and compatibility |
-| 0004 | Distributed launch, rendezvous, networking, and failure behavior |
-| 0005 | GPU capabilities, runtime profiles, and scheduler matching |
-| 0006 | Metal/MPS support boundaries and unified-memory semantics |
-| 0007 | SQLite/PostgreSQL and artifact storage |
-| 0008 | Worker trust, workload isolation, and security |
-| 0009 | Open-source license and governance |
-| 0010 | Provider credentials and commercial integration model |
-| 0011 | Cost accounting, idempotency, and retry semantics |
-| 0012 | Website framework, docs source of truth, hosting, and CI |
-
-All ADRs start as proposed. Do not mark them accepted until alternatives and consequences have been evaluated.
-
-## 18. Testing strategy
-
-### Always-on CI
-
-Tests must run without GPU hardware.
-
-Include:
-
-- Job specification validation.
-- State machine transitions.
+- Contract validation.
+- Job lifecycle and state transitions.
 - Local CPU execution.
-- Success, failure, and cancellation.
-- Duplicate submissions.
-- Artifact handling.
-- Scheduler constraint matching.
-- Worker disconnection and recovery.
-- Fake provider integration.
-- Invalid backend/profile rejection.
-- Configuration validation.
+- Scheduler behavior with fake workers.
+- Artifact and metadata persistence.
+- Failure and cancellation semantics.
+- Provider behavior with `FakeProvider`.
+- Distributed allocation and rank planning.
+- MPS discovery using mocks.
+- API authentication and authorization where implemented.
+
+### Integration tests
+
+Validate the actual execution paths:
+
+- Local job submission through the public SDK or CLI.
+- Worker registration and remote execution.
+- Artifact staging between machines.
+- Distributed multi-process execution.
+- Provider lifecycle against an explicitly configured test environment.
 
 ### Hardware-gated tests
 
-Run where compatible hardware is available:
+Run only when suitable infrastructure is available:
 
-- NVIDIA GPU discovery and smoke tests.
-- Local multi-GPU distributed tests.
-- Two-node distributed tests.
-- Apple Silicon MPS smoke tests.
-- AMD ROCm tests once supported.
+- NVIDIA GPU execution.
+- Multi-GPU distributed execution.
+- Multi-node distributed execution.
+- Apple MPS execution.
+- ROCm execution when implemented.
 
-A skipped hardware test is not evidence of successful hardware support.
+Test results must state the environment and scope. Mock-based tests cannot establish hardware compatibility.
 
-### Failure injection
+## 18. Implementation roadmap
 
-Test:
+The milestones are intentionally overlapping architectural concerns, not three separate products.
 
-- Worker termination during execution.
-- Coordinator restart.
-- Expired resource leases.
-- Partial distributed launch.
-- Provider submission timeouts.
-- Duplicate requests.
-- Artifact transfer failures.
-- Unsupported MPS operators and runtime failures.
+### Milestone 1 — Core contracts and local vertical slice
 
-## 19. Development stack
+- Define versioned job and capability contracts.
+- Implement local CPU execution.
+- Provide a working SDK and CLI path.
+- Persist job metadata and results.
+- Add tests and basic observability.
 
-Suggested initial choices:
+**Exit criteria:** a user can submit, inspect, and retrieve a real local job through the public interface.
 
-- Python 3.11 or newer.
-- `uv` for Python dependency and environment management.
-- FastAPI and Pydantic for the control API and contracts.
-- Typer for the CLI.
-- SQLite for local metadata.
-- PostgreSQL as an optional self-hosted database.
-- Local filesystem and later S3-compatible artifact storage.
-- Pytest for tests.
-- Ruff for linting and formatting.
-- Mypy or Pyright for type checking.
-- OpenTelemetry-compatible instrumentation, with telemetry opt-in.
-- `torchrun` for validated PyTorch distributed execution.
-- A static-site framework selected through ADR for `site/`.
+### Milestone 2 — Worker protocol and scheduler
 
-Do not add every suggested dependency immediately. Choose only what the current milestone needs.
+- Implement worker registration and heartbeats.
+- Define authenticated worker communication.
+- Implement deterministic capability-aware scheduling.
+- Add fake workers and placement tests.
+- Support explicit local and existing-remote-worker concepts.
 
-## 20. Implementation roadmap
+**Exit criteria:** the control plane can place work on eligible workers using real reported capabilities, with the remote execution path validated before being advertised.
 
-### Milestone 0 — foundations
+### Milestone 3 — GPU execution
 
-- Inspect the existing repository.
-- Confirm package structure and supported Python versions.
-- Establish CI and basic quality checks.
-- Create the ADR process.
-- Decide the license before public release.
-- Define the initial job contract and local security model.
+- Implement NVIDIA GPU detection and a supported execution path.
+- Add optional hardware smoke tests.
+- Implement Apple MPS discovery and supported independent execution as a separate backend.
+- Document runtime compatibility and hardware requirements.
 
-**Exit criteria:** the repository has reproducible development setup, tests, and documented implementation boundaries.
+**Exit criteria:** each advertised backend has a concrete tested workload path and clearly documented limitations.
 
-### Milestone 1 — local execution
+### Milestone 4 — Distributed execution
 
-- Implement the job contract and lifecycle.
-- Run CPU command/function jobs locally.
-- Add logs, results, artifacts, status, and cancellation.
-- Add local coordinator and SQLite persistence.
-- Add GPU discovery interfaces.
-- Add macOS MPS detection and a hardware-gated smoke test.
+- Implement distributed job contracts.
+- Allocate worker groups.
+- Assign ranks and configure rendezvous.
+- Launch a supported PyTorch distributed workload.
+- Add coordinated status, logs, cancellation, and failure handling.
 
-**Exit criteria:** a local job can be submitted, executed, inspected, and retrieved without an account or hosted service. MPS discovery degrades cleanly when unavailable.
+**Exit criteria:** a documented end-to-end distributed integration test passes in a supported environment. Multi-process single-node testing is a useful step, but does not establish multi-node support.
 
-### Milestone 2 — local GPU execution
+### Milestone 5 — Cloud provider integration
 
-- Add validated NVIDIA GPU execution.
-- Add the `pytorch-metal-mps` profile for eligible Apple Silicon jobs.
-- Add backend-aware resource matching.
-- Document MPS limitations and memory semantics.
-- Add compatibility tests.
+- Implement provider adapter contracts and `FakeProvider`.
+- Select a real provider through an ADR.
+- Implement provisioning, bootstrap, registration, execution, and cleanup.
+- Add resource estimates when supported by reliable data.
+- Test failure and orphaned-resource cleanup.
 
-**Exit criteria:** supported local GPU workloads run on declared backends and incompatible jobs are rejected clearly.
+**Exit criteria:** a real cloud GPU can be provisioned or acquired, verified, used for an actual workload, and released according to policy.
 
-### Milestone 3 — local distributed execution
+### Milestone 6 — Unified placement
 
-- Add the `DistributedJob` contract.
-- Launch validated multi-GPU PyTorch jobs.
-- Implement rank assignment, rendezvous, monitoring, and cleanup.
-- Add failure injection.
+- Combine local, remote, and cloud worker pools.
+- Implement explicit placement constraints and policies.
+- Support distributed worker-group selection across approved environments.
+- Add cost and data-locality preferences where reliable information exists.
 
-**Exit criteria:** a documented distributed smoke test works on a supported multi-GPU configuration. The initial target is validated NVIDIA/CUDA hardware; distributed MPS is not implied.
+**Exit criteria:** a single job interface can target multiple supported environments while respecting compatibility and security constraints.
 
-### Milestone 4 — private mesh independent jobs
+### Milestone 7 — Production hardening and hosted deployment
 
-- Implement worker enrollment and authentication.
-- Add heartbeat and capability reporting.
-- Add scheduling and resource leases.
-- Support independent jobs across trusted machines.
-- Add logs, artifacts, and recovery.
+- Harden authentication and authorization.
+- Document trust boundaries and deployment models.
+- Add operational metrics, audit events, and failure recovery.
+- Evaluate shared databases and remote object storage.
+- Add service deployment and operational documentation.
 
-**Exit criteria:** compatible independent jobs can execute across a private mesh.
+**Exit criteria:** a documented deployment model can operate with explicit reliability, security, and recovery guarantees.
 
-### Milestone 5 — two-node distributed execution
+### Milestone 8 — Website and public beta
 
-- Add multi-node rendezvous and network validation.
-- Reserve worker groups.
-- Launch and monitor all ranks.
-- Handle partial launch and group cleanup.
-- Document LAN/VPN requirements.
+- Select the website stack through an ADR.
+- Publish installation, architecture, compatibility, and deployment documentation.
+- Document actual provider and distributed support.
+- Establish contribution, release, and security-reporting procedures.
 
-**Exit criteria:** distributed execution works on a documented and tested topology.
+**Exit criteria:** the public website and documentation accurately represent the product's validated capabilities.
 
-### Milestone 6 — first external provider
+## 19. Architecture Decision Records
 
-- Implement the provider adapter contract.
-- Add `FakeProvider`.
-- Add one real provider after verifying its current API and terms.
-- Support independent jobs first.
-- Add usage and cancellation handling.
+Store ADRs in `docs/decisions/`.
 
-**Exit criteria:** an external provider can be used without provider-specific logic leaking into the core scheduler.
+Each ADR should include:
 
-### Milestone 7 — provider routing
+- Title and status.
+- Context and problem.
+- Decision.
+- Alternatives considered.
+- Consequences and trade-offs.
+- Security and operational implications.
+- Follow-up work.
 
-- Add additional providers.
-- Normalize capabilities.
-- Improve placement explanations.
-- Add configurable cost and placement preferences.
-- Add explicit support checks for distributed provider workloads.
+Suggested initial ADRs:
 
-**Exit criteria:** the scheduler can select among compatible offers without misrepresenting capabilities or costs.
+1. `ADR-0001-control-plane-and-deployment-model.md`
+2. `ADR-0002-job-contracts-and-packaging.md`
+3. `ADR-0003-worker-protocol-and-authentication.md`
+4. `ADR-0004-scheduling-and-placement-policy.md`
+5. `ADR-0005-gpu-capabilities-and-runtime-profiles.md`
+6. `ADR-0006-apple-metal-mps-boundaries.md`
+7. `ADR-0007-distributed-launch-and-rendezvous.md`
+8. `ADR-0008-storage-and-artifact-management.md`
+9. `ADR-0009-security-and-workload-isolation.md`
+10. `ADR-0010-provider-adapters-and-provisioning.md`
+11. `ADR-0011-cost-accounting-and-retry-semantics.md`
+12. `ADR-0012-licensing-and-project-governance.md`
+13. `ADR-0013-website-and-documentation-stack.md`
 
-### Milestone 8 — self-hosting
+Create an ADR index. Use `Proposed` for decisions that still need validation; do not present an undecided option as established policy.
 
-- Add PostgreSQL support where needed.
-- Add S3-compatible artifact storage.
-- Document deployment, upgrades, backup, and restore.
-- Verify hosted features are not required for local operation.
+## 20. Open questions
 
-**Exit criteria:** users can run the control plane under their own infrastructure.
+Resolve these before the relevant milestone, rather than prematurely committing the entire project:
 
-### Milestone 9 — website and public documentation
+- Which license and contribution model should be used?
+- Which provider should receive the first real integration?
+- Which job packaging strategy should be the default?
+- Should the first remote protocol use an HTTP API, a persistent connection, or a combination?
+- What authentication mechanism should be used for workers?
+- Which database and object storage implementations are needed for the first multi-worker deployment?
+- What isolation guarantees are required for single-user, team, and hosted multi-tenant deployments?
+- Which cost and placement policies are necessary for the initial supported providers?
+- Which distributed runtime and network topology are supported first?
+- Which website stack best fits the documentation and product needs?
 
-- Add `site/` and choose its framework through ADR.
-- Publish the landing page and quickstart.
-- Document hardware/runtime compatibility.
-- Publish local, mesh, distributed, and self-hosting guides.
-- Publish contribution, license, and security information.
-- Add site build checks to CI.
+Decisions should be made using implementation cost, security, operability, compatibility, and user needs—not by maximizing abstraction.
 
-**Exit criteria:** contributors can build the site locally, and users can understand supported capabilities and limitations.
+## 21. Success criteria
 
-### Milestone 10 — public beta hardening
+GpuLayer is successful when a developer can use a consistent interface to run supported jobs on local resources, remote workers, and cloud GPU infrastructure, and can submit a supported distributed workload across a compatible worker group.
 
-- Review workload isolation and security.
-- Validate provider integrations and terms.
-- Improve metering and reconciliation.
-- Complete installation and upgrade documentation.
-- Verify licensing and dependencies.
-- Publish known limitations and a compatibility matrix.
-- Run end-to-end tests on supported hardware.
+The platform must make placement decisions explainable, keep provider-specific behavior modular, report execution status accurately, and expose limitations honestly.
 
-**Exit criteria:** the supported feature set is documented, reproducible, and tested.
+The core architectural promise is:
 
-## 21. Non-goals for the initial release
+**One job model, one capability system, one scheduling layer, and multiple execution environments.**
 
-Do not initially promise:
-
-- Universal CUDA-to-ROCm or CUDA-to-Metal portability.
-- Arbitrary distributed training across any internet-connected computers.
-- Multi-node distributed MPS across Macs.
-- Transparent remote execution of individual PyTorch tensor operations.
-- Exactly-once job execution.
-- Secure public execution of arbitrary untrusted code without a reviewed isolation architecture.
-- Universal compatibility across every provider and GPU.
-- Accurate cost estimates where provider pricing or usage data is unavailable.
-
-## 22. Initial priorities
-
-The recommended first implementation sequence is:
-
-1. Local CPU execution.
-2. Versioned job contracts and reliable lifecycle.
-3. Local artifact and log handling.
-4. GPU discovery and runtime compatibility.
-5. NVIDIA and Apple Silicon MPS independent-job support.
-6. Validated local multi-GPU distributed execution.
-7. Private mesh independent jobs.
-8. Two-node distributed execution.
-9. Provider adapter and first provider.
-10. Self-hosting, website, and public beta hardening.
-
-The design should anticipate all required execution modes, but implementation must remain narrow enough that every advertised feature can be tested and supported.
+Local, cloud, and distributed execution are integrated parts of the same platform. Their implementation may mature at different rates, but none should be relegated to an unrelated future architecture.
