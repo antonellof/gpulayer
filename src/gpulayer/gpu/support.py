@@ -28,11 +28,11 @@ SUPPORT: dict[Accelerator, BackendSupport] = {
         "Distributed CPU uses torchrun + gloo; tested multi-process on one host.",
     ),
     Accelerator.CUDA: BackendSupport(
-        SupportLevel.TESTED,
-        SupportLevel.TESTED,
-        "Detection and scheduling are unit-tested with mocks; execution uses the same "
-        "process path as CPU. Hardware smoke test exists but has not been run on NVIDIA "
-        "hardware in this repository's CI.",
+        SupportLevel.IMPLEMENTED,
+        SupportLevel.IMPLEMENTED,
+        "Detection and scheduling are unit-tested with mocks and execution shares the tested "
+        "CPU process path, but neither single-GPU nor NCCL multi-GPU execution has been run "
+        "on NVIDIA hardware yet (tests/hardware/test_gpu_smoke.py is skipped without a GPU).",
     ),
     Accelerator.MPS: BackendSupport(
         SupportLevel.HARDWARE_VALIDATED,
@@ -46,7 +46,7 @@ SUPPORT: dict[Accelerator, BackendSupport] = {
     ),
 }
 
-EXECUTABLE = {SupportLevel.HARDWARE_VALIDATED, SupportLevel.TESTED}
+EXECUTABLE = {SupportLevel.HARDWARE_VALIDATED, SupportLevel.TESTED, SupportLevel.IMPLEMENTED}
 
 
 def unsupported_reason(accelerator: Accelerator, workload: WorkloadType) -> str | None:

@@ -152,6 +152,7 @@ class SupportLevel(str, Enum):
 
     HARDWARE_VALIDATED = "hardware-validated"
     TESTED = "tested"
+    IMPLEMENTED = "implemented"  # execution path exists; not exercised on this hardware
     SIMULATED = "simulated"
     DETECTION_ONLY = "detection-only"
     PLANNED = "planned"
