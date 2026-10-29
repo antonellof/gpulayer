@@ -1,8 +1,21 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import {
+  ArrowRight,
+  Check,
+  CircleDashed,
+  Clock,
+  Cloud,
+  Cpu,
+  Layers,
+  Network,
+  Server,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { SiteFooter } from "@/components/site/footer";
 import { SiteHeader } from "@/components/site/header";
+import { LayerStack } from "@/components/landing/layer-stack";
 
 export const metadata: Metadata = {
   title: "GpuLayer compared | PyTorch Lightning, Ray, SkyPilot, dstack, Modal and more",
@@ -87,6 +100,116 @@ const ROWS: Row[] = [
     hosting: "Open source; needs cluster administration",
   },
 ];
+
+type Mark = "yes" | "partial" | "no" | "planned";
+
+const TOOLS = [
+  "GpuLayer",
+  "PyTorch Lightning",
+  "Accelerate",
+  "Ray",
+  "SkyPilot",
+  "dstack",
+  "Modal",
+  "Slurm / K8s",
+] as const;
+
+type MatrixRow = { feature: string; marks: Mark[]; note?: string };
+
+// Order of marks follows TOOLS.
+const MATRIX: MatrixRow[] = [
+  {
+    feature: "Run any command or binary",
+    marks: ["yes", "no", "no", "partial", "yes", "yes", "partial", "yes"],
+  },
+  {
+    feature: "Run Python functions remotely",
+    marks: ["yes", "no", "no", "yes", "no", "no", "yes", "no"],
+  },
+  {
+    feature: "PyTorch training helpers (devices, DDP, precision)",
+    marks: ["partial", "yes", "yes", "yes", "no", "no", "no", "partial"],
+    note: "GpuLayer's Trainer is small; Kubernetes via training operators",
+  },
+  {
+    feature: "Multi-node jobs",
+    marks: ["partial", "yes", "yes", "yes", "yes", "yes", "partial", "yes"],
+    note: "GpuLayer: torchrun groups, tested on one host only",
+  },
+  {
+    feature: "Chooses a machine that fits the job",
+    marks: ["yes", "no", "no", "yes", "yes", "yes", "yes", "yes"],
+  },
+  {
+    feature: "Uses machines you already have",
+    marks: ["yes", "yes", "yes", "yes", "partial", "yes", "no", "yes"],
+  },
+  {
+    feature: "Provisions cloud capacity",
+    marks: ["planned", "no", "no", "yes", "yes", "yes", "yes", "partial"],
+    note: "GpuLayer: provider interface exists, only a simulated adapter",
+  },
+  {
+    feature: "Long-running services",
+    marks: ["planned", "no", "no", "yes", "yes", "yes", "yes", "partial"],
+    note: "Kubernetes yes, Slurm no",
+  },
+  {
+    feature: "Start without operating a cluster",
+    marks: ["yes", "yes", "yes", "partial", "yes", "partial", "yes", "no"],
+    note: "Ray: a cluster for multi-node; dstack: a small server",
+  },
+  {
+    feature: "Runs on your own hardware (self-hosted)",
+    marks: ["yes", "yes", "yes", "yes", "yes", "yes", "no", "yes"],
+  },
+];
+
+function MarkIcon({ mark }: { mark: Mark }) {
+  const base = "mx-auto flex h-6 w-6 items-center justify-center rounded-full";
+  if (mark === "yes")
+    return (
+      <span className={`${base} bg-emerald-500/15 text-emerald-600 dark:text-emerald-400`} title="Yes">
+        <Check className="h-3.5 w-3.5" strokeWidth={3} />
+      </span>
+    );
+  if (mark === "partial")
+    return (
+      <span className={`${base} bg-amber-500/15 text-amber-600 dark:text-amber-400`} title="Partly">
+        <CircleDashed className="h-3.5 w-3.5" strokeWidth={2.5} />
+      </span>
+    );
+  if (mark === "planned")
+    return (
+      <span className={`${base} bg-sky-500/15 text-sky-600 dark:text-sky-400`} title="Planned">
+        <Clock className="h-3.5 w-3.5" strokeWidth={2.5} />
+      </span>
+    );
+  return (
+    <span className={`${base} bg-muted text-muted-foreground/60`} title="No">
+      <X className="h-3.5 w-3.5" strokeWidth={2.5} />
+    </span>
+  );
+}
+
+function Legend() {
+  const items: [Mark, string][] = [
+    ["yes", "Yes"],
+    ["partial", "Partly"],
+    ["planned", "Planned"],
+    ["no", "No / not its job"],
+  ];
+  return (
+    <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+      {items.map(([m, label]) => (
+        <span key={m} className="inline-flex items-center gap-1.5">
+          <MarkIcon mark={m} />
+          {label}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 type Note = { name: string; summary: string; choose: string; together: string };
 
@@ -174,13 +297,18 @@ export default function ComparePage() {
     <>
       <SiteHeader />
       <main>
-        <section className="border-b border-border">
-          <div className="mx-auto max-w-6xl px-6 py-16">
-            <p className="text-sm font-medium text-primary">Compare</p>
-            <h1 className="mt-2 text-4xl font-semibold tracking-tight">
+        <section className="relative overflow-hidden bg-[#070a10] text-white">
+          <div className="hero-grid pointer-events-none absolute inset-0" aria-hidden />
+          <div
+            className="pointer-events-none absolute -left-32 -top-32 h-[420px] w-[420px] rounded-full bg-emerald-500/15 blur-[110px]"
+            aria-hidden
+          />
+          <div className="relative mx-auto max-w-6xl px-6 py-20">
+            <p className="font-mono text-xs uppercase tracking-[0.16em] text-emerald-400">Compare</p>
+            <h1 className="mt-3 font-display text-4xl font-semibold tracking-tight sm:text-5xl">
               GpuLayer and the alternatives
             </h1>
-            <p className="mt-4 max-w-3xl text-lg text-muted-foreground">
+            <p className="mt-5 max-w-3xl text-lg leading-relaxed text-slate-300">
               Training frameworks decide <em>how</em> a model trains on the machines they are
               started on. Cloud orchestrators decide <em>which</em> cloud capacity to rent.
               GpuLayer decides where any GPU workload runs among the machines you can reach,
@@ -190,9 +318,76 @@ export default function ComparePage() {
           </div>
         </section>
 
+        {/* Layer diagram */}
         <section className="border-b border-border">
           <div className="mx-auto max-w-6xl px-6 py-16">
-            <h2 className="text-2xl font-semibold tracking-tight">At a glance</h2>
+            <h2 className="section-title">Where each tool sits</h2>
+            <p className="mt-2 max-w-3xl text-muted-foreground">
+              Most of these tools work at different layers, so they combine more often than they
+              compete.
+            </p>
+            <div className="mt-8">
+              <LayerStack />
+            </div>
+          </div>
+        </section>
+
+        {/* Capability matrix */}
+        <section className="border-b border-border">
+          <div className="mx-auto max-w-6xl px-6 py-16">
+            <h2 className="section-title">Capabilities</h2>
+            <div className="mt-4">
+              <Legend />
+            </div>
+            <div className="mt-6 overflow-x-auto rounded-lg border border-border">
+              <table className="w-full min-w-[960px] text-sm">
+                <thead className="bg-secondary text-xs text-muted-foreground">
+                  <tr>
+                    <th className="w-[26%] px-4 py-3 text-left font-semibold uppercase tracking-wider">
+                      Capability
+                    </th>
+                    {TOOLS.map((t, i) => (
+                      <th
+                        key={t}
+                        className={`px-2 py-3 text-center font-semibold ${
+                          i === 0 ? "bg-primary/10 text-primary" : ""
+                        }`}
+                      >
+                        {t}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {MATRIX.map((row) => (
+                    <tr key={row.feature} className="border-t border-border">
+                      <td className="px-4 py-3 align-top">
+                        <div className="font-medium">{row.feature}</div>
+                        {row.note && (
+                          <div className="mt-0.5 text-xs text-muted-foreground">{row.note}</div>
+                        )}
+                      </td>
+                      {row.marks.map((m, i) => (
+                        <td key={TOOLS[i]} className={`px-2 py-3 ${i === 0 ? "bg-primary/5" : ""}`}>
+                          <MarkIcon mark={m} />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground">
+              {"\"Accelerate\" is Hugging Face Accelerate. Marks summarize each project's public"}
+              documentation at the time of writing and simplify features with many options;
+              check each project for current details.
+            </p>
+          </div>
+        </section>
+
+        <section className="border-b border-border">
+          <div className="mx-auto max-w-6xl px-6 py-16">
+            <h2 className="section-title">At a glance</h2>
             <div className="mt-8 overflow-x-auto rounded-lg border border-border">
               <table className="w-full min-w-[1000px] text-left text-sm">
                 <thead className="bg-secondary text-xs uppercase tracking-wider text-muted-foreground">
@@ -235,7 +430,7 @@ export default function ComparePage() {
           <div className="mx-auto max-w-6xl space-y-10 px-6 py-16">
             {NOTES.map((n) => (
               <div key={n.name}>
-                <h2 className="text-xl font-semibold tracking-tight">GpuLayer and {n.name}</h2>
+                <h2 className="font-display text-xl font-semibold tracking-tight">GpuLayer and {n.name}</h2>
                 <p className="mt-3 max-w-3xl text-muted-foreground">
                   <Code text={n.summary} />
                 </p>
@@ -261,7 +456,7 @@ export default function ComparePage() {
         <section className="border-b border-border">
           <div className="mx-auto grid max-w-6xl gap-10 px-6 py-16 md:grid-cols-2">
             <div>
-              <h2 className="text-xl font-semibold tracking-tight">GpuLayer fits when</h2>
+              <h2 className="font-display text-xl font-semibold tracking-tight">GpuLayer fits when</h2>
               <ul className="mt-4 list-disc space-y-2 pl-5 text-sm text-muted-foreground">
                 {FITS.map((f) => (
                   <li key={f}>
@@ -271,7 +466,7 @@ export default function ComparePage() {
               </ul>
             </div>
             <div>
-              <h2 className="text-xl font-semibold tracking-tight">Where GpuLayer is behind today</h2>
+              <h2 className="font-display text-xl font-semibold tracking-tight">Where GpuLayer is behind today</h2>
               <ul className="mt-4 list-disc space-y-2 pl-5 text-sm text-muted-foreground">
                 {BEHIND.map((b) => (
                   <li key={b}>{b}</li>
