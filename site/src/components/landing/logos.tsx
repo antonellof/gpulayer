@@ -64,16 +64,15 @@ function Chip({ item }: { item: Item }) {
 
 export function WorksWith() {
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-6 text-sm lg:flex-row lg:items-center lg:gap-10">
+    <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-6 text-sm">
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-        <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-slate-500">Works with</span>
+        <span className="w-24 font-mono text-[11px] uppercase tracking-[0.16em] text-slate-500">Works with</span>
         {FRAMEWORKS.map((f) => (
           <Chip key={f.label} item={f} />
         ))}
       </div>
-      <span className="hidden h-6 w-px bg-white/10 lg:block" aria-hidden />
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-        <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-slate-500">On</span>
+        <span className="w-24 font-mono text-[11px] uppercase tracking-[0.16em] text-slate-500">Runs on</span>
         {HARDWARE.map((h) => (
           <span
             key={h.label}
