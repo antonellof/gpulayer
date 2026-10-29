@@ -2,19 +2,19 @@ import Link from "next/link";
 import {
   ArrowRight,
   Boxes,
-  CircleCheck,
-  CircleX,
+  Check,
   FileCode2,
   Flame,
   Library,
+  Minus,
   Network,
   ScrollText,
-  SearchCheck,
 } from "lucide-react";
 import { ArchitectureDiagram } from "@/components/landing/architecture-diagram";
+import { CopyCommand } from "@/components/landing/copy-command";
 import { LayerStack } from "@/components/landing/layer-stack";
-import { Quickstart } from "@/components/landing/quickstart";
 import { WorksWith } from "@/components/landing/logos";
+import { Quickstart } from "@/components/landing/quickstart";
 import { Terminal, type TerminalTab } from "@/components/landing/terminal";
 import { SiteFooter } from "@/components/site/footer";
 import { SiteHeader } from "@/components/site/header";
@@ -23,10 +23,13 @@ import { REPO } from "@/lib/docs";
 // Output below is copied from real runs on an Apple Silicon Mac (see the quickstart).
 const TERMINAL_TABS: TerminalTab[] = [
   {
-    label: "any command",
-    title: "~/gpulayer · bash",
+    label: "Command",
+    title: "bash",
     lines: [
-      { t: "cmd", s: "gpulayer submit --source examples/shell_job --input sales.csv -- bash report.sh" },
+      {
+        t: "cmd",
+        s: "gpulayer submit --source examples/shell_job --input sales.csv -- bash report.sh",
+      },
       { t: "dim", s: "submitted job-88eeb3960503 (independent, target local)" },
       { t: "out", s: "running on my-mac, accelerator=cpu" },
       { t: "out", s: "east,99.99\nnorth,162.75\nsouth,90.00" },
@@ -34,8 +37,8 @@ const TERMINAL_TABS: TerminalTab[] = [
     ],
   },
   {
-    label: "any library",
-    title: "~/gpulayer · matmul.py (MLX on the Apple GPU)",
+    label: "Python function",
+    title: "matmul.py · MLX on the Apple GPU",
     lines: [
       {
         t: "code",
@@ -49,12 +52,12 @@ matmul_benchmark.map([1024, 2048, 4096])`,
       { t: "cmd", s: "python examples/mlx_metal/matmul.py" },
       { t: "out", s: "{'n': 1024, 'gpu_s': 0.0013, 'gpu_gflops': 1716.0}" },
       { t: "out", s: "{'n': 2048, 'gpu_s': 0.0042, 'gpu_gflops': 4118.0}" },
-      { t: "ok", s: "{'n': 4096, 'gpu_s': 0.0316, 'gpu_gflops': 4349.9}" },
+      { t: "out", s: "{'n': 4096, 'gpu_s': 0.0316, 'gpu_gflops': 4349.9}" },
     ],
   },
   {
-    label: "pytorch",
-    title: "~/gpulayer · train.py",
+    label: "PyTorch",
+    title: "train.py",
     lines: [
       {
         t: "code",
@@ -66,18 +69,19 @@ trainer.fit(model, train_loader, val_loader)`,
       { t: "dim", s: "[gpulayer] job-4f5c1e1bc659: train.py on 2 node(s) x 2 cpu process(es)" },
       { t: "out", s: "[node0] epoch 4 done: train_loss=1.6501 val_loss=1.3001" },
       { t: "ok", s: "[gpulayer] job-4f5c1e1bc659 succeeded; checkpoint downloaded" },
-      { t: "out", s: "model is trained in this process too" },
     ],
   },
   {
-    label: "placement",
-    title: "~/gpulayer · asking for hardware this machine lacks",
+    label: "Placement",
+    title: "asking for hardware this machine does not have",
     lines: [
       { t: "cmd", s: "python train.py --accelerator cuda --target local" },
-      { t: "dim", s: "[gpulayer] job-e8061b7e6ccc: train.py on 1 node(s) x 1 cuda process(es)" },
-      { t: "err", s: "[gpulayer] job-e8061b7e6ccc failed: unschedulable: no eligible worker" },
-      { t: "err", s: "  wkr-10c5089a6044: needs 1 usable cuda device(s), worker has 0" },
-      { t: "dim", s: "# rejected before it starts, with a reason per worker" },
+      { t: "dim", s: "[gpulayer] job-df9c63e7c4d8: train.py on 1 node(s) x 1 cuda process(es)" },
+      { t: "err", s: "[gpulayer] job-df9c63e7c4d8 failed: unschedulable: no eligible worker" },
+      {
+        t: "err",
+        s: "  wkr-f50e620bfaef: torch on this worker cannot use CUDA, needs 1 usable cuda device(s), worker has 0",
+      },
     ],
   },
 ];
@@ -85,38 +89,33 @@ trainer.fit(model, train_loader, val_loader)`,
 const FEATURES = [
   {
     icon: FileCode2,
-    title: "Any workload",
-    body: "Commands, scripts and binaries in any language. Anything that runs in a shell can be a job.",
+    title: "Any command",
+    body: "Scripts and binaries in any language run as jobs, with inputs staged and output files returned.",
   },
   {
     icon: Library,
     title: "Any library",
-    body: "PyTorch, JAX, MLX, CuPy, NumPy and others are detected per worker and required per job.",
+    body: "PyTorch, JAX, MLX, CuPy and NumPy are detected on each worker and required per job.",
   },
   {
     icon: Boxes,
-    title: "Any GPU you can reach",
-    body: "Your laptop, servers that join, cloud VMs. NVIDIA CUDA and Apple Metal; ROCm is detection only for now.",
-  },
-  {
-    icon: SearchCheck,
-    title: "Placement that explains itself",
-    body: "Jobs go to workers whose GPUs, memory and frameworks fit. When none fits, the job is rejected with a reason for each worker.",
+    title: "Any machine you can reach",
+    body: "Your laptop, servers that join with one command, cloud VMs. NVIDIA CUDA and Apple Metal.",
   },
   {
     icon: Network,
-    title: "Distributed when you need it",
-    body: "A group of workers is placed together, with ranks and rendezvous set up for you. Launched with torchrun.",
+    title: "Distributed when needed",
+    body: "Worker groups are placed together, with ranks and rendezvous set up. Launched with torchrun.",
   },
   {
     icon: ScrollText,
     title: "Results come back",
-    body: "Logs stream while the job runs, and output files and checkpoints come back when it ends. Jobs can be cancelled or time out.",
+    body: "Logs stream while a job runs. Output files and checkpoints download when it ends.",
   },
   {
     icon: Flame,
     title: "PyTorch integration",
-    body: "A small Trainer and Module, launch() for existing scripts, and Runtime helpers for devices, DDP and precision.",
+    body: "A small Trainer, launch() for existing scripts, and helpers for devices, DDP and precision.",
   },
 ];
 
@@ -124,80 +123,53 @@ const COMPARISON: { situation: string; without: string; with: string }[] = [
   {
     situation: "Code on a laptop, GPU somewhere else",
     without: "ssh, copy code, rebuild the environment, run in tmux, copy results back",
-    with: "`gpulayer submit --target remote -- <cmd>` or `python train.py --target remote`",
+    with: "`gpulayer submit --target remote -- <cmd>`",
   },
   {
     situation: "Several GPU machines",
-    without: "track free boxes by hand; jobs crash on the wrong GPU, driver or library version",
-    with: "one queue; each job lands where its accelerator and frameworks are available, or is rejected with the reason",
+    without: "track free machines by hand; jobs crash on the wrong GPU, driver or library",
+    with: "one queue; each job lands where it fits, or is rejected with the reason",
   },
   {
-    situation: "Mixed hardware (NVIDIA boxes and Apple Silicon Macs)",
+    situation: "NVIDIA boxes and Apple Silicon Macs",
     without: "separate scripts and setup per machine",
-    with: "one interface; CUDA jobs go to NVIDIA workers, Metal jobs to Macs",
+    with: "ask for `cuda` or `mps`; one interface for both",
   },
   {
-    situation: "Batch of independent tasks (sweeps, rendering, data processing)",
+    situation: "A batch of independent tasks",
     without: "loops and ad-hoc scripts",
     with: "`fn.map([...])` in parallel across free workers",
   },
   {
     situation: "Multi-node training",
-    without: "torchrun on every node with matching ranks, addresses and ports",
-    with: "`Trainer(num_nodes=2, devices=4)` or `launch(nodes=2, ...)`",
+    without: "torchrun on every node with matching ranks, address and port",
+    with: "`Trainer(num_nodes=2, devices=4)`",
   },
 ];
 
-const CONS = [
-  "One machine, one GPU, interactive work: plain `python train.py` is simpler; GpuLayer adds a control plane, workers and tokens.",
-  "Pre-alpha: multi-machine and NVIDIA runs not validated yet; automatic cloud provisioning is simulated.",
-  "Trusted users only: workloads run as normal processes on the workers, without a sandbox.",
-  "`@gl.remote` arguments and results must be JSON; code ships as files.",
-  "The Trainer is small: no callbacks, early stopping or FSDP yet.",
-  "Long-running services (an inference server that must stay up) are not supported yet; GpuLayer runs batch jobs.",
-];
-
-const STATUS: { label: string; tone: string; items: string[] }[] = [
+const STATUS: { label: string; dot: string; items: string }[] = [
   {
     label: "Tested",
-    tone: "text-emerald-600 dark:text-emerald-400",
-    items: [
-      "Local execution, SDK and CLI",
-      "Capability-aware scheduling",
-      "DDP: 2 nodes x 2 processes on one host",
-      "Remote worker over HTTPS (one host)",
-      "Non-PyTorch workloads (MLX on Apple GPU, NumPy, shell) on one host",
-    ],
+    dot: "bg-emerald-500",
+    items:
+      "Local execution, SDK and CLI · scheduling · servers and workers over HTTPS (one host) · DDP, 2 nodes × 2 processes (one host) · MLX, NumPy and shell jobs",
   },
-  {
-    label: "Hardware-validated",
-    tone: "text-emerald-600 dark:text-emerald-400",
-    items: ["Apple MPS, single-process jobs"],
-  },
-  {
-    label: "Implemented, not hardware-validated",
-    tone: "text-amber-600 dark:text-amber-400",
-    items: ["NVIDIA CUDA and NCCL"],
-  },
-  {
-    label: "Simulated",
-    tone: "text-amber-600 dark:text-amber-400",
-    items: ["Cloud provisioning (FakeProvider)"],
-  },
+  { label: "Hardware-validated", dot: "bg-emerald-500", items: "Apple Metal (MPS), single-process jobs" },
+  { label: "Implemented, not validated", dot: "bg-amber-500", items: "NVIDIA CUDA and NCCL · workers on separate machines" },
+  { label: "Simulated", dot: "bg-amber-500", items: "Cloud provisioning (FakeProvider)" },
   {
     label: "Planned",
-    tone: "text-muted-foreground",
-    items: ["Real cloud provider", "Multi-machine validation", "Hosted control plane", "Long-running services"],
+    dot: "bg-neutral-400",
+    items: "A real cloud provider · long-running services · hosted control plane",
   },
 ];
 
-/** Render `inline code` spans inside short table/list strings. */
 function Inline({ text }: { text: string }) {
   return (
     <>
       {text.split(/(`[^`]+`)/g).map((part, i) =>
         part.startsWith("`") && part.endsWith("`") ? (
-          <code key={i} className="rounded bg-secondary px-1 py-0.5 font-mono text-[0.85em] text-foreground">
+          <code key={i} className="rounded border border-border bg-secondary px-1 py-0.5 font-mono text-[0.82em]">
             {part.slice(1, -1)}
           </code>
         ) : (
@@ -208,137 +180,134 @@ function Inline({ text }: { text: string }) {
   );
 }
 
+function SectionHeader({ eyebrow, title, lede }: { eyebrow: string; title: string; lede?: string }) {
+  return (
+    <div className="max-w-2xl">
+      <p className="eyebrow">{eyebrow}</p>
+      <h2 className="section-title mt-3">{title}</h2>
+      {lede && <p className="lede mt-4">{lede}</p>}
+    </div>
+  );
+}
+
 export default function Home() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
       <main className="flex-1">
-        {/* Hero: always dark */}
-        <section className="relative overflow-hidden bg-[#070a10] text-white">
-          <div className="hero-grid pointer-events-none absolute inset-0" aria-hidden />
-          <div
-            className="pointer-events-none absolute -left-40 -top-40 h-[520px] w-[520px] rounded-full bg-emerald-500/20 blur-[120px]"
-            aria-hidden
-          />
-          <div
-            className="pointer-events-none absolute -right-40 top-20 h-[480px] w-[480px] rounded-full bg-violet-500/20 blur-[120px]"
-            aria-hidden
-          />
-          <div className="relative mx-auto grid max-w-6xl items-start gap-12 px-6 pb-20 pt-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:pb-28 lg:pt-24">
-            <div className="flex flex-col">
-              <span className="mb-6 inline-flex w-fit items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                Pre-alpha · tested on CPU and Apple Silicon
-              </span>
-              <h1 className="font-display text-5xl font-semibold leading-[1.05] tracking-tight sm:text-6xl">
-                Run any GPU workload on <span className="text-gradient">any GPU you can reach.</span>
-              </h1>
-              <p className="mt-6 max-w-xl text-lg leading-relaxed text-slate-300">
-                One layer between your code and your GPUs: your laptop, workstations, servers and cloud VMs.
-                Run commands in any language, Python functions with any library and distributed jobs. PyTorch
-                gets a deeper integration on top.
-              </p>
-              <div className="mt-8 flex flex-wrap items-center gap-3">
-                <Link
-                  href="/docs/get-started/quickstart/"
-                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-[#04120c] transition hover:bg-emerald-400"
-                >
-                  Get started <ArrowRight className="h-4 w-4" />
-                </Link>
-                <Link
-                  href="/docs/"
-                  className="inline-flex items-center rounded-lg border border-white/15 bg-white/5 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-white/10"
-                >
-                  Read the docs
-                </Link>
-                <a
-                  href={REPO}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center px-3 py-2.5 text-sm font-medium text-slate-400 transition hover:text-white"
-                >
-                  GitHub
-                </a>
-              </div>
-              <code className="mt-8 w-fit rounded-lg border border-white/10 bg-white/5 px-3 py-2 font-mono text-xs text-slate-300">
-                <span className="text-emerald-400">$</span> gpulayer up
-                <span className="text-slate-500">{"   # then: gpulayer join <url> on each GPU machine"}</span>
-              </code>
+        {/* Hero */}
+        <section className="border-b border-border">
+          <div className="mx-auto max-w-6xl px-6 pb-16 pt-20 lg:pt-28">
+            <Link
+              href="/docs/project/status/"
+              className="inline-flex items-center gap-2 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              Pre-alpha · tested on CPU and Apple Silicon
+              <ArrowRight className="h-3 w-3" />
+            </Link>
+            <h1 className="mt-6 max-w-4xl text-5xl font-semibold leading-[1.02] tracking-[-0.045em] sm:text-6xl lg:text-7xl">
+              Run any GPU workload on any GPU you can reach.
+            </h1>
+            <p className="lede mt-6 max-w-2xl sm:text-xl">
+              GpuLayer sits between your code and your GPUs, on your laptop, workstations, servers and cloud
+              VMs. Commands, Python functions and distributed jobs go to a machine that can run them, and the
+              results come back.
+            </p>
+            <div className="mt-9 flex flex-wrap items-center gap-3">
+              <Link href="/docs/get-started/quickstart/" className="btn-primary">
+                Get started <ArrowRight className="h-4 w-4" />
+              </Link>
+              <Link href="/docs/" className="btn-secondary">
+                Documentation
+              </Link>
+              <CopyCommand command="gpulayer up" />
             </div>
-            <Terminal tabs={TERMINAL_TABS} />
+            <div className="mt-16">
+              <Terminal tabs={TERMINAL_TABS} />
+            </div>
           </div>
-          <div className="relative border-t border-white/10 bg-white/[0.02]">
-            <WorksWith />
-          </div>
+        </section>
+
+        <section className="border-b border-border bg-card">
+          <WorksWith />
         </section>
 
         {/* Quickstart */}
         <section id="quickstart" className="border-b border-border">
-          <div className="mx-auto max-w-6xl px-6 py-20">
-            <p className="eyebrow">Quickstart</p>
-            <h2 className="section-title mt-3">From one machine to all your GPUs</h2>
-            <div className="mt-8">
+          <div className="mx-auto max-w-6xl px-6 py-24">
+            <SectionHeader
+              eyebrow="Quickstart"
+              title="From one machine to all of your GPUs"
+              lede="Start on your laptop with nothing to set up. Add machines when you need them."
+            />
+            <div className="mt-12">
               <Quickstart />
             </div>
-            <Link
-              href="/docs/get-started/quickstart/"
-              className="mt-12 inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
-            >
-              Full quickstart with every step and its output <ArrowRight className="h-3.5 w-3.5" />
+            <Link href="/docs/get-started/quickstart/" className="link-arrow mt-12">
+              Full quickstart, with the output of every step <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
         </section>
 
         {/* Features */}
-        <section className="border-b border-border bg-card/40">
-          <div className="mx-auto max-w-6xl px-6 py-20">
-            <p className="eyebrow">What you get</p>
-            <h2 className="section-title mt-3">What GpuLayer handles</h2>
-            <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {FEATURES.map(({ icon: Icon, title, body }, i) => (
-                <div
-                  key={title}
-                  className={`rounded-xl border border-border bg-background p-6 card-hover ${
-                    i === 3 || i === 6 ? "lg:col-span-2" : ""
-                  }`}
-                >
-                  <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary/20 to-accent/20 text-primary">
-                    <Icon className="h-5 w-5" />
-                  </span>
-                  <h3 className="mt-4 font-display text-lg font-semibold">{title}</h3>
-                  <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{body}</p>
-                  {i === 3 && (
-                    <pre className="mt-4 overflow-x-auto rounded-lg bg-[#0b0f17] p-3 font-mono text-[12px] leading-relaxed text-slate-300">
-                      <span className="text-rose-400">scheduling: no eligible worker</span>
-                      {"\n  gpu-box-1: needs 2 usable cuda device(s), worker has 1"}
-                      {"\n  mac-studio: framework 'jax' not installed"}
-                      {"\n  "}
-                      <span className="text-emerald-400">gpu-box-2: eligible</span>
-                    </pre>
-                  )}
+        <section className="border-b border-border">
+          <div className="mx-auto max-w-6xl px-6 py-24">
+            <SectionHeader eyebrow="Capabilities" title="What GpuLayer handles for you" />
+            <div className="mt-14 grid overflow-hidden rounded-xl border border-border sm:grid-cols-2 lg:grid-cols-3">
+              {FEATURES.map(({ icon: Icon, title, body }) => (
+                <div key={title} className="-mb-px -mr-px border-b border-r border-border p-8">
+                  <Icon className="h-5 w-5 text-muted-foreground" strokeWidth={1.75} />
+                  <h3 className="mt-5 font-medium tracking-[-0.01em]">{title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{body}</p>
                 </div>
               ))}
             </div>
           </div>
         </section>
 
-        {/* Where it sits */}
-        <section className="border-b border-border">
-          <div className="mx-auto grid max-w-6xl gap-12 px-6 py-20 lg:grid-cols-[1fr_1.4fr]">
+        {/* Placement spotlight */}
+        <section className="border-b border-border bg-card">
+          <div className="mx-auto grid max-w-6xl items-center gap-12 px-6 py-24 lg:grid-cols-2">
             <div>
-              <p className="eyebrow">Positioning</p>
-              <h2 className="section-title mt-3">The layer underneath your framework</h2>
-              <p className="mt-4 leading-relaxed text-muted-foreground">
-                Frameworks decide how a computation uses the hardware they are given. GpuLayer decides which
-                hardware runs it, gets code and data there, starts it, and returns the results: for training,
-                inference, rendering, simulation or data jobs, in PyTorch, JAX, MLX, CuPy, NumPy or no Python
-                at all.
-              </p>
-              <Link
-                href="/compare/"
-                className="mt-6 inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
-              >
-                Compare with PyTorch Lightning, Ray, SkyPilot and others <ArrowRight className="h-3.5 w-3.5" />
+              <SectionHeader
+                eyebrow="Placement"
+                title="Every decision comes with a reason"
+                lede="Workers report their GPUs, memory, drivers and installed frameworks. Each job goes to a worker that has what it asks for. When none does, it is rejected before it starts, and you see why for every worker."
+              />
+              <Link href="/docs/architecture/scheduling/" className="link-arrow mt-8">
+                How scheduling works <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+            <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950 shadow-frame">
+              <div className="border-b border-neutral-800 px-4 py-2.5 font-mono text-[11px] text-neutral-500">
+                gpulayer job status job-1ebd35a459b9
+              </div>
+              <pre className="overflow-x-auto p-5 font-mono text-[12.5px] leading-[1.8] text-neutral-300">
+                <span className="text-neutral-500">scheduling: </span>
+                <span className="text-rose-400">no eligible worker</span>
+                {"\n  gpu-box-1    needs 2 usable cuda device(s), worker has 1"}
+                {"\n  mac-studio   framework 'jax' not installed"}
+                {"\n  laptop       torch on this worker cannot use CUDA"}
+                {"\n  "}
+                <span className="text-neutral-100">gpu-box-2    eligible</span>
+              </pre>
+            </div>
+          </div>
+        </section>
+
+        {/* Positioning */}
+        <section className="border-b border-border">
+          <div className="mx-auto grid max-w-6xl gap-14 px-6 py-24 lg:grid-cols-[1fr_1.35fr]">
+            <div>
+              <SectionHeader
+                eyebrow="Positioning"
+                title="The layer underneath your framework"
+                lede="Frameworks decide how a computation uses the hardware they are given. GpuLayer decides which hardware runs it, gets code and data there, starts it, and returns the results."
+              />
+              <Link href="/compare/" className="link-arrow mt-8">
+                Compare with PyTorch Lightning, Ray, SkyPilot and others{" "}
+                <ArrowRight className="h-3.5 w-3.5" />
               </Link>
             </div>
             <LayerStack />
@@ -346,129 +315,108 @@ export default function Home() {
         </section>
 
         {/* With and without */}
-        <section id="comparison" className="border-b border-border bg-card/40">
-          <div className="mx-auto max-w-6xl px-6 py-20">
-            <p className="eyebrow">Before and after</p>
-            <h2 className="section-title mt-3">With and without GpuLayer</h2>
-            <div className="mt-12 space-y-3">
-              {COMPARISON.map((row) => (
-                <div
-                  key={row.situation}
-                  className="grid overflow-hidden rounded-xl border border-border bg-background md:grid-cols-[220px_1fr_1fr]"
-                >
-                  <div className="border-b border-border p-4 font-display font-semibold md:border-b-0 md:border-r">
-                    {row.situation}
-                  </div>
-                  <div className="flex gap-2.5 p-4 text-sm text-muted-foreground">
-                    <CircleX className="mt-0.5 h-4 w-4 shrink-0 text-rose-500/70" />
-                    <span>{row.without}</span>
-                  </div>
-                  <div className="flex gap-2.5 border-t border-border bg-primary/[0.05] p-4 text-sm md:border-l md:border-t-0">
-                    <CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                    <span>
-                      <Inline text={row.with} />
-                    </span>
-                  </div>
-                </div>
-              ))}
+        <section id="comparison" className="border-b border-border bg-card">
+          <div className="mx-auto max-w-6xl px-6 py-24">
+            <SectionHeader eyebrow="Before and after" title="With and without GpuLayer" />
+            <div className="mt-14 overflow-x-auto rounded-xl border border-border bg-background">
+              <table className="w-full min-w-[720px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-border text-xs text-muted-foreground">
+                    <th className="w-[28%] px-6 py-3 font-medium" />
+                    <th className="px-6 py-3 font-medium">Without</th>
+                    <th className="px-6 py-3 font-medium text-foreground">With GpuLayer</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {COMPARISON.map((row) => (
+                    <tr key={row.situation} className="border-b border-border align-top last:border-0">
+                      <td className="px-6 py-4 font-medium">{row.situation}</td>
+                      <td className="px-6 py-4 text-muted-foreground">
+                        <span className="flex gap-2.5">
+                          <Minus className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/60" />
+                          {row.without}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="flex gap-2.5">
+                          <Check className="mt-0.5 h-4 w-4 shrink-0" />
+                          <span>
+                            <Inline text={row.with} />
+                          </span>
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <div className="mt-12 rounded-xl border border-border bg-background p-6">
-              <h3 className="font-display text-lg font-semibold">When not to use it</h3>
-              <ul className="mt-4 grid gap-x-8 gap-y-2.5 text-sm text-muted-foreground md:grid-cols-2">
-                {CONS.map((c) => (
-                  <li key={c} className="flex gap-2">
-                    <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-muted-foreground/60" />
-                    <span>
-                      <Inline text={c} />
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              <Link
-                href="/docs/get-started/why-gpulayer/"
-                className="mt-5 inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
-              >
-                Why GpuLayer <ArrowRight className="h-3.5 w-3.5" />
+            <p className="mt-6 max-w-3xl text-sm text-muted-foreground">
+              On a single machine with a single GPU, running your code directly is simpler. GpuLayer runs jobs that
+              finish (long-running services are planned) and is meant for people who trust each other.{" "}
+              <Link href="/docs/get-started/why-gpulayer/" className="link-arrow">
+                When to use it
               </Link>
-            </div>
+            </p>
           </div>
         </section>
 
         {/* Architecture */}
         <section id="architecture" className="border-b border-border">
-          <div className="mx-auto max-w-6xl px-6 py-20">
-            <p className="eyebrow">Architecture</p>
-            <h2 className="section-title mt-3">One job model, one scheduler, every environment</h2>
-            <p className="mt-4 max-w-3xl leading-relaxed text-muted-foreground">
-              Workers poll the control plane, so they can sit behind NAT. Code travels as source bundles and
-              functions are called by name. The control plane runs inside your process or as a small
-              self-hosted server.
-            </p>
-            <div className="mt-10 rounded-2xl border border-border bg-card p-4 shadow-soft md:p-8">
+          <div className="mx-auto max-w-6xl px-6 py-24">
+            <SectionHeader
+              eyebrow="Architecture"
+              title="One job model and one scheduler for every environment"
+              lede="Workers poll the control plane, so they can sit behind NAT. Code travels as source bundles and functions are called by name. The control plane runs inside your process or as a small self-hosted server."
+            />
+            <div className="mt-14 rounded-xl border border-border bg-card p-4 md:p-10">
               <ArchitectureDiagram />
             </div>
-            <Link
-              href="/docs/architecture/overview/"
-              className="mt-5 inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
-            >
+            <Link href="/docs/architecture/overview/" className="link-arrow mt-8">
               Architecture overview <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
         </section>
 
         {/* Status */}
-        <section className="border-b border-border bg-card/40">
-          <div className="mx-auto max-w-6xl px-6 py-20">
-            <p className="eyebrow">Status</p>
-            <h2 className="section-title mt-3">What works today</h2>
-            <p className="mt-4 max-w-3xl text-muted-foreground">
-              Each capability is labelled by how it has been tested so far.
-            </p>
-            <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <section className="border-b border-border bg-card">
+          <div className="mx-auto max-w-6xl px-6 py-24">
+            <SectionHeader
+              eyebrow="Status"
+              title="What works today"
+              lede="Each capability is labelled by how it has been tested so far."
+            />
+            <dl className="mt-12 divide-y divide-border rounded-xl border border-border bg-background">
               {STATUS.map((s) => (
-                <div key={s.label} className="rounded-xl border border-border bg-background p-5">
-                  <p className={`font-mono text-[11px] font-semibold uppercase tracking-[0.12em] ${s.tone}`}>
+                <div key={s.label} className="grid gap-2 px-6 py-4 sm:grid-cols-[240px_1fr]">
+                  <dt className="flex items-center gap-2.5 text-sm font-medium">
+                    <span className={`h-2 w-2 rounded-full ${s.dot}`} />
                     {s.label}
-                  </p>
-                  <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-                    {s.items.map((it) => (
-                      <li key={it}>{it}</li>
-                    ))}
-                  </ul>
+                  </dt>
+                  <dd className="text-sm text-muted-foreground">{s.items}</dd>
                 </div>
               ))}
-            </div>
+            </dl>
+            <Link href="/docs/project/status/" className="link-arrow mt-8">
+              Status and roadmap <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
           </div>
         </section>
 
         {/* CTA */}
-        <section className="relative overflow-hidden bg-[#070a10] text-white">
-          <div className="hero-grid pointer-events-none absolute inset-0" aria-hidden />
-          <div
-            className="pointer-events-none absolute left-1/2 top-0 h-[300px] w-[700px] -translate-x-1/2 rounded-full bg-emerald-500/15 blur-[100px]"
-            aria-hidden
-          />
-          <div className="relative mx-auto flex max-w-6xl flex-col items-center px-6 py-20 text-center">
-            <h2 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">
-              Try it on your own machines
-            </h2>
-            <p className="mt-4 max-w-xl text-slate-300">
-              The quickstart takes about fifteen minutes. You run a shell job and a NumPy job, then train one
-              PyTorch file in several places.
-            </p>
-            <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <Link
-                href="/docs/get-started/quickstart/"
-                className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-[#04120c] transition hover:bg-emerald-400"
-              >
+        <section>
+          <div className="mx-auto flex max-w-6xl flex-col items-start gap-8 px-6 py-24 md:flex-row md:items-end md:justify-between">
+            <div className="max-w-xl">
+              <h2 className="section-title">Try it on your own machines</h2>
+              <p className="lede mt-4">
+                The quickstart takes about fifteen minutes: a shell job, a NumPy job, then one PyTorch file trained
+                in several places.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <Link href="/docs/get-started/quickstart/" className="btn-primary">
                 Start the quickstart <ArrowRight className="h-4 w-4" />
               </Link>
-              <a
-                href={REPO}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center rounded-lg border border-white/15 bg-white/5 px-5 py-2.5 text-sm font-medium transition hover:bg-white/10"
-              >
+              <a href={REPO} target="_blank" rel="noreferrer" className="btn-secondary">
                 View on GitHub
               </a>
             </div>

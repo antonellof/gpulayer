@@ -106,7 +106,7 @@ function CopyButton({ text }: { text: string }) {
           /* clipboard unavailable */
         }
       }}
-      className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-slate-300 opacity-0 transition hover:bg-white/10 group-hover:opacity-100"
+      className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-neutral-300 opacity-0 transition hover:bg-white/10 group-hover:opacity-100"
       aria-label="Copy command"
     >
       {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
@@ -160,38 +160,38 @@ export function Quickstart() {
 
       <ol role="tabpanel" className="relative mt-10 space-y-10">
         <span
-          className="absolute bottom-6 left-[19px] top-6 w-px bg-gradient-to-b from-primary/60 via-border to-transparent"
+          className="absolute bottom-6 left-[15px] top-6 w-px bg-border"
           aria-hidden
         />
         {track.steps.map((step, i) => (
           <li key={step.title} className="relative grid gap-4 pl-14 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-10">
-            <span className="absolute left-0 top-0 flex h-10 w-10 items-center justify-center rounded-full border border-primary/40 bg-background font-mono text-sm font-semibold text-primary shadow-soft">
+            <span className="absolute left-0 top-0.5 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background font-mono text-xs font-medium">
               {i + 1}
             </span>
             <div className="pt-1.5">
-              <h3 className="font-display text-lg font-semibold">{step.title}</h3>
+              <h3 className="font-medium tracking-[-0.01em]">{step.title}</h3>
               <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
                 <Inline text={step.body} />
               </p>
             </div>
-            <div className="group relative min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#0b0f17] font-mono text-[12.5px] leading-relaxed shadow-soft">
+            <div className="group relative min-w-0 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950 font-mono text-[12.5px] leading-relaxed">
               <CopyButton text={step.command} />
-              <div className="px-4 py-3 pr-20 text-slate-100">
+              <div className="px-4 py-3 pr-20 text-neutral-100">
                 {step.command.split("\n").map((line, k) => (
                   <div key={k} className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                    <span className="select-none text-emerald-400">{line.startsWith("  ") ? "  " : "$ "}</span>
+                    <span className="select-none text-neutral-500">{line.startsWith("  ") ? "  " : "$ "}</span>
                     {line.startsWith("  ") ? line.slice(2) : line}
                   </div>
                 ))}
               </div>
               {step.output && (
-                <div className="border-t border-white/5 bg-white/[0.02] px-4 py-3 text-slate-400">
+                <div className="border-t border-neutral-900 bg-neutral-900/50 px-4 py-3 text-neutral-400">
                   {step.output.map((line) => (
                     <div
                       key={line}
                       className={cn(
                         "whitespace-pre-wrap break-words [overflow-wrap:anywhere]",
-                        /succeeded|registered|is up/.test(line) && "text-emerald-400",
+                        /succeeded|registered|is up/.test(line) && "text-neutral-100",
                       )}
                     >
                       {line}

@@ -49,25 +49,23 @@ export function LayerStack() {
           <div
             key={layer.title}
             className={`rounded-xl border p-4 ${
-              i === 1
-                ? "border-primary/50 bg-primary/[0.06] shadow-glow"
-                : "border-border bg-card"
+              i === 1 ? "border-foreground/40 bg-background shadow-soft" : "border-border bg-card"
             }`}
           >
             <div className="flex items-center gap-2 font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-              <layer.icon className={`h-4 w-4 ${i === 1 ? "text-primary" : ""}`} />
+              <layer.icon className={`h-4 w-4 ${i === 1 ? "text-foreground" : ""}`} strokeWidth={1.75} />
               {layer.title}
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               {layer.tools.map((t) => (
                 <span
                   key={t.name}
-                  className={`rounded-lg border px-3 py-1.5 text-sm ${
+                  className={`rounded-md border px-3 py-1.5 text-sm ${
                     t.strong
-                      ? "border-primary bg-primary font-semibold text-primary-foreground"
+                      ? "border-foreground bg-foreground font-medium text-background"
                       : t.faded
                         ? "border-dashed border-border text-muted-foreground"
-                        : "border-border bg-background"
+                        : "border-border bg-background text-foreground/80"
                   }`}
                 >
                   {t.name}

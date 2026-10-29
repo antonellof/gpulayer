@@ -25,13 +25,25 @@ const FRAMEWORKS: Item[] = [
 ];
 
 const HARDWARE: Item[] = [
-  { label: "NVIDIA CUDA", icon: siNvidia, color: "#76B900" },
-  { label: "Apple Metal", icon: siApple, color: "#ffffff" },
-  { label: "CPU", lucide: Cpu, color: "#cbd5e1" },
+  { label: "NVIDIA CUDA", icon: siNvidia },
+  { label: "Apple Metal", icon: siApple },
+  { label: "CPU", lucide: Cpu },
 ];
+
+/** Relative luminance of a hex colour (0 = black, 1 = white). */
+function luminance(hex: string): number {
+  const [r, g, b] = [0, 2, 4].map((i) => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
 
 function Mark({ item, size = 18 }: { item: Item; size?: number }) {
   if (item.icon) {
+    const hex = item.icon.hex;
+    // Near-black brand colours (Apple, NumPy) use the text colour in dark mode.
+    const dark = luminance(hex) < 0.05;
     return (
       <svg
         role="img"
@@ -39,8 +51,8 @@ function Mark({ item, size = 18 }: { item: Item; size?: number }) {
         viewBox="0 0 24 24"
         width={size}
         height={size}
-        fill={item.color ?? "currentColor"}
-        className="shrink-0"
+        style={{ fill: `#${hex}` }}
+        className={dark ? "shrink-0 dark:!fill-current" : "shrink-0"}
       >
         <path d={item.icon.path} />
       </svg>
@@ -55,7 +67,7 @@ function Mark({ item, size = 18 }: { item: Item; size?: number }) {
 
 function Chip({ item }: { item: Item }) {
   return (
-    <span className="inline-flex items-center gap-2 text-slate-300 transition-colors hover:text-white">
+    <span className="inline-flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground">
       <Mark item={item} />
       <span>{item.label}</span>
     </span>
@@ -64,19 +76,19 @@ function Chip({ item }: { item: Item }) {
 
 export function WorksWith() {
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-6 text-sm">
+    <div className="mx-auto flex max-w-6xl flex-col gap-5 px-6 py-8 text-sm">
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-        <span className="w-24 font-mono text-[11px] uppercase tracking-[0.16em] text-slate-500">Works with</span>
+        <span className="eyebrow w-24">Works with</span>
         {FRAMEWORKS.map((f) => (
           <Chip key={f.label} item={f} />
         ))}
       </div>
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-        <span className="w-24 font-mono text-[11px] uppercase tracking-[0.16em] text-slate-500">Runs on</span>
+        <span className="eyebrow w-24">Runs on</span>
         {HARDWARE.map((h) => (
           <span
             key={h.label}
-            className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 font-medium text-white"
+            className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 font-medium"
           >
             <Mark item={h} />
             {h.label}

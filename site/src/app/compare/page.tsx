@@ -297,18 +297,13 @@ export default function ComparePage() {
     <>
       <SiteHeader />
       <main>
-        <section className="relative overflow-hidden bg-[#070a10] text-white">
-          <div className="hero-grid pointer-events-none absolute inset-0" aria-hidden />
-          <div
-            className="pointer-events-none absolute -left-32 -top-32 h-[420px] w-[420px] rounded-full bg-emerald-500/15 blur-[110px]"
-            aria-hidden
-          />
-          <div className="relative mx-auto max-w-6xl px-6 py-20">
-            <p className="font-mono text-xs uppercase tracking-[0.16em] text-emerald-400">Compare</p>
-            <h1 className="mt-3 font-display text-4xl font-semibold tracking-tight sm:text-5xl">
+        <section className="border-b border-border">
+          <div className="mx-auto max-w-6xl px-6 pb-16 pt-20 lg:pt-24">
+            <p className="eyebrow">Compare</p>
+            <h1 className="mt-3 max-w-3xl text-4xl font-semibold tracking-[-0.04em] sm:text-5xl">
               GpuLayer and the alternatives
             </h1>
-            <p className="mt-5 max-w-3xl text-lg leading-relaxed text-slate-300">
+            <p className="lede mt-5 max-w-3xl">
               Training frameworks shape how a model trains on the machines they are started on,
               and cloud orchestrators rent capacity. GpuLayer places any GPU workload on the
               machines you can reach, starts it there and brings the results back. Several of these
@@ -429,7 +424,7 @@ export default function ComparePage() {
           <div className="mx-auto max-w-6xl space-y-10 px-6 py-16">
             {NOTES.map((n) => (
               <div key={n.name}>
-                <h2 className="font-display text-xl font-semibold tracking-tight">GpuLayer and {n.name}</h2>
+                <h2 className="text-xl font-semibold tracking-[-0.02em]">GpuLayer and {n.name}</h2>
                 <p className="mt-3 max-w-3xl text-muted-foreground">
                   <Code text={n.summary} />
                 </p>
@@ -455,7 +450,7 @@ export default function ComparePage() {
         <section className="border-b border-border">
           <div className="mx-auto grid max-w-6xl gap-10 px-6 py-16 md:grid-cols-2">
             <div>
-              <h2 className="font-display text-xl font-semibold tracking-tight">GpuLayer fits when</h2>
+              <h2 className="text-xl font-semibold tracking-[-0.02em]">GpuLayer fits when</h2>
               <ul className="mt-4 list-disc space-y-2 pl-5 text-sm text-muted-foreground">
                 {FITS.map((f) => (
                   <li key={f}>
@@ -465,7 +460,7 @@ export default function ComparePage() {
               </ul>
             </div>
             <div>
-              <h2 className="font-display text-xl font-semibold tracking-tight">Where GpuLayer is behind today</h2>
+              <h2 className="text-xl font-semibold tracking-[-0.02em]">Where GpuLayer is behind today</h2>
               <ul className="mt-4 list-disc space-y-2 pl-5 text-sm text-muted-foreground">
                 {BEHIND.map((b) => (
                   <li key={b}>{b}</li>
