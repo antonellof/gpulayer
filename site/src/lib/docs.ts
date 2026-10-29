@@ -144,6 +144,10 @@ export function resolveHref(href: string, currentFile: string): string {
     const entry = allDocs().find((d) => candidates.includes(d.file));
     if (entry) return routeHref(entry.route) + hash;
   }
+  if (repoPath.startsWith("docs/assets/")) {
+    // Served by the site (scripts/copy-docs-assets.mjs), not fetched from GitHub.
+    return `/docs-assets/${repoPath.slice("docs/assets/".length)}${hash}`;
+  }
   const kind = path.posix.extname(repoPath) ? "blob" : "tree";
   return `${REPO}/${kind}/main/${repoPath}${hash}`;
 }

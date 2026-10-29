@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/copy-docs-assets.mjs",
+    "prebuild": "node scripts/copy-docs-assets.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "npx --yes serve@14.2.4 out",

@@ -46,14 +46,28 @@ export function Markdown({ content, file }: { content: string; file: string }) {
             if (lang === "mermaid") return <Mermaid chart={code.trim()} />;
             return <CodeBlock code={code} language={lang} />;
           },
-          img: ({ src, alt }) => (
+          img: ({ src, alt }) => {
+            const url =
+              typeof src === "string" ? resolveHref(src, file).replace("/blob/", "/raw/") : undefined;
+            // Images published as a -light/-dark pair follow the site theme.
+            if (url && /-light\.svg$/.test(url)) {
+              return (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={url} alt={alt ?? ""} className="rounded-lg border border-border dark:hidden" />
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={url.replace(/-light\.svg$/, "-dark.svg")}
+                    alt=""
+                    aria-hidden
+                    className="hidden rounded-lg border border-border dark:block"
+                  />
+                </>
+              );
+            }
             // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={typeof src === "string" ? resolveHref(src, file).replace("/blob/", "/raw/") : undefined}
-              alt={alt ?? ""}
-              className="rounded-lg border border-border"
-            />
-          ),
+            return <img src={url} alt={alt ?? ""} className="rounded-lg border border-border" />;
+          },
         }}
       >
         {content}

@@ -32,6 +32,8 @@ The dashboard shows:
 
 ![A failed job with its traceback](../assets/dashboard/job-failed-dark.png)
 
+![A 2 x 2 DDP job: every log line tagged with the rank that wrote it](../assets/dashboard/job-ddp-dark.png)
+
 ![Workers with their GPUs, frameworks and load](../assets/dashboard/workers-dark.png)
 
 Links can open a view directly: `/ui/?tab=workers`, `/ui/?range=15` (minutes: 15, 60 or 360)
