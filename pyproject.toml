@@ -32,6 +32,21 @@ gpulayer = "gpulayer.cli.main:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/gpulayer"]
 
+# The source distribution carries the Python project only (not the website or its builds).
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src",
+  "/tests",
+  "/examples",
+  "/benchmarks",
+  "/docs",
+  "/deploy",
+  "/install.sh",
+  "/README.md",
+  "/CHANGELOG.md",
+  "/pyproject.toml",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["tests", "tests/integration"]
