@@ -4,7 +4,7 @@
 
 # GPUlayer
 
-Run any GPU workload on any GPU you can reach: this machine, a GPU server down the hall, a cloud
+Run any workload on every GPU you can reach: this machine, a server down the hall, a cloud
 VM, or several of them at once. A workload can be a command in any language, a Python function
 using any library, or a distributed job. GPUlayer finds a machine that can run it, starts it
 there, and brings back logs, outputs and results. PyTorch gets a deeper integration on top.
