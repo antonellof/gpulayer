@@ -174,12 +174,28 @@ class WorkerAgent:
         idle_exit_seconds: float | None = None,
         deregister: bool = True,
     ) -> int:
-        """Process assignments until stopped. Returns the number of tasks executed."""
+        """Process assignments until stopped. Returns the number of tasks executed.
+
+        Up to ``capabilities.max_concurrent_tasks`` tasks run at once, each on its own thread
+        with the devices the control plane reserved for it.
+        """
         self.start_heartbeats()
         done = 0
         idle_since = time.monotonic()
+        slots = threading.BoundedSemaphore(max(1, self.caps.max_concurrent_tasks))
+        running: list[threading.Thread] = []
         try:
             while not self.stop.is_set():
+                got_slot = False
+                while not self.stop.is_set():
+                    if slots.acquire(timeout=0.2):  # wait for a free task slot
+                        got_slot = True
+                        break
+                if not got_slot:
+                    break
+                running = [t for t in running if t.is_alive()]
+                if running:
+                    idle_since = time.monotonic()  # busy, so not idle
                 wait = self.long_poll
                 if idle_exit_seconds is not None:
                     left = idle_exit_seconds - (time.monotonic() - idle_since)
@@ -191,19 +207,35 @@ class WorkerAgent:
                     log.warning("acquire failed: %s", e)
                     assignment = None
                 if assignment is None:
+                    slots.release()
+                    running = [t for t in running if t.is_alive()]
                     if (
                         idle_exit_seconds is not None
+                        and not running
                         and time.monotonic() - idle_since >= idle_exit_seconds
                     ):
                         break
                     if time.monotonic() - asked < min(wait, self.poll_interval) / 2:
                         self.stop.wait(self.poll_interval)  # no long poll: do not spin
                     continue
-                self.execute(assignment)
+                # Mark it started here, before the next acquire, so it is never handed out twice.
+                if not self._begin(assignment):
+                    slots.release()
+                    continue
+                t = threading.Thread(
+                    target=self._run_and_release,
+                    args=(assignment, slots),
+                    daemon=True,
+                    name=f"gpulayer-task-{assignment.task_id}",
+                )
+                t.start()
+                running.append(t)
                 done += 1
                 idle_since = time.monotonic()
                 if max_tasks is not None and done >= max_tasks:
                     break
+            for t in running:  # report every outcome before deregistering
+                t.join()
         finally:
             self.stop.set()
             if deregister and not self.revoked:
@@ -216,11 +248,25 @@ class WorkerAgent:
     # ------------------------------------------------------------- execution
 
     def execute(self, a: TaskAssignment) -> None:
+        """Start, run and report one task on the calling thread."""
+        if self._begin(a):
+            self._execute_started(a)
+
+    def _begin(self, a: TaskAssignment) -> bool:
         try:
             self.channel.start(a.task_id)
         except Conflict as e:
             log.info("skipping task %s: %s", a.task_id, e)
-            return
+            return False
+        return True
+
+    def _run_and_release(self, a: TaskAssignment, slots: threading.BoundedSemaphore) -> None:
+        try:
+            self._execute_started(a)
+        finally:
+            slots.release()
+
+    def _execute_started(self, a: TaskAssignment) -> None:
         cancel = threading.Event()
         with self._cancel_lock:
             self._cancel[a.task_id] = cancel
@@ -277,10 +323,16 @@ class WorkerAgent:
             }
         )
         if spec.resources.accelerator == Accelerator.CUDA:
-            env["CUDA_VISIBLE_DEVICES"] = ",".join(
-                str(d.index)
-                for d in self.caps.devices(Accelerator.CUDA)[: spec.resources.gpu_count]
+            # The devices the control plane reserved for this task, so concurrent tasks on a
+            # multi-GPU worker never share a GPU. Older control planes do not send them.
+            indices = (
+                a.devices
+                if a.devices is not None
+                else [d.index for d in self.caps.devices(Accelerator.CUDA)][
+                    : spec.resources.gpu_count
+                ]
             )
+            env["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in indices)
         elif spec.resources.accelerator == Accelerator.CPU:
             env["CUDA_VISIBLE_DEVICES"] = ""  # CPU jobs must not grab a GPU by accident
         if isinstance(spec.workload, DistributedJob):

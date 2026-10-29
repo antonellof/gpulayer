@@ -16,7 +16,7 @@ Global options go before the command:
 | Command | Description |
 |---|---|
 | `gpulayer up [--host --port --advertise-address --no-worker --name --label K=V --python --tls --tls-cert --tls-key --insecure-http]` | start a server and use this machine as a worker; prints join and connect commands |
-| `gpulayer join URL --token T [--fingerprint FP --name --label K=V --python --advertise-address --workdir --max-tasks N --idle-exit S]` | add this machine as a worker of a server |
+| `gpulayer join URL --token T [--fingerprint FP --name --label K=V --python --advertise-address --workdir --concurrency N --max-tasks N --idle-exit S]` | add this machine as a worker of a server; `--concurrency` sets how many tasks run at once (default one per GPU), `--max-tasks` exits after N tasks |
 | `gpulayer dashboard [--port 8471 --no-open]` | open the web dashboard for local jobs |
 | `gpulayer metrics` | print Prometheus metrics (embedded, or a server with `--url`) |
 | `gpulayer gc --older-than AGE [--delete-jobs --dry-run]` | remove logs and events of jobs that finished before AGE (e.g. `7d`), optionally the jobs, plus unreferenced artifacts; admin only |
@@ -25,7 +25,7 @@ Global options go before the command:
 | `gpulayer token revoke NAME` | revoke a token; a running server applies it on the next request |
 | `gpulayer server init [--rotate]` | create client and join tokens for `server start` (printed once) |
 | `gpulayer server start [--host --port --tls-cert --tls-key --allow-insecure-remote --public-url]` | serve the API only |
-| `gpulayer worker start [--name --label --join-token --python --advertise-address --workdir --max-tasks --idle-exit]` | run a worker: embedded without `--url`, remote with it |
+| `gpulayer worker start [--name --label --join-token --python --advertise-address --workdir --concurrency --max-tasks --idle-exit]` | run a worker: embedded without `--url`, remote with it |
 | `gpulayer worker status [--json]` | registered workers |
 | `gpulayer worker revoke WORKER_ID` | revoke a worker's credentials |
 | `gpulayer resources detect [--json --python]` | what this machine offers |

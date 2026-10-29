@@ -38,7 +38,12 @@ whole compatible group or not at all.
 - **Reservations:** workers labelled `gpulayer.dev/reserved-for=<job>`, which the
   provisioning flow sets, only serve that job.
 - Jobs are considered in FIFO order each pass. Within one pass, placed tasks reduce
-  free slots (`max_concurrent_tasks`, default 1).
+  free slots (`max_concurrent_tasks`, default one per usable discrete GPU, at least 1).
+- **Device reservation** (added with ADR-0016): each task is given specific device indices
+  (`pick_devices`: free devices that meet the per-device requirements, lowest index
+  first), stored on the task and sent in `TaskAssignment.devices`. A worker never gives
+  one GPU to two tasks; a job that needs more GPUs than are free waits, with the reason
+  "devices are in use by other tasks".
 
 ## Alternatives considered
 
@@ -55,8 +60,6 @@ whole compatible group or not at all.
   `tests/unit/test_scheduler.py`.
 - FIFO has head-of-line behavior only per job, not per queue. There are no priorities,
   quotas or fairness, and no preemption.
-- Devices are not individually reserved: a worker with `max_concurrent_tasks>1` and GPUs
-  could oversubscribe them. The default of 1 avoids this.
 - There is no topology or interconnect awareness, and data locality is limited to
   labels.
 

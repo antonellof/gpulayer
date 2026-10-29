@@ -671,6 +671,9 @@ class TaskAssignment(_Model):
     node_rank: int = 0
     lease_expires_at: datetime
     rendezvous: RendezvousInfo | None = None
+    # Indices of the accelerator devices reserved for this task on the worker (for example
+    # CUDA_VISIBLE_DEVICES). None from control planes that do not assign devices.
+    devices: list[int] | None = None
 
 
 class TaskOutcome(_Model):

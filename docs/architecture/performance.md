@@ -68,8 +68,8 @@ environment to change it.
 
 ## Known limits
 
-- A worker runs one task at a time. A machine with several GPUs runs one single-GPU job at a
-  time until concurrent tasks per worker land (next on the roadmap).
+- Several tasks share a worker only up to its slot count (one per NVIDIA or AMD GPU by
+  default), and each gets whole GPUs. Fractional GPU sharing is not supported.
 - Each waiting worker holds one server thread during its long poll; the built-in server suits
   tens to low hundreds of workers.
 - Distributed placement does not yet consider network topology.

@@ -94,7 +94,9 @@ uncommitted local changes, so it was deliberately left untouched.
 - Done: long-poll dispatch and job waits, event-driven process exit, background log shipping,
   no per-step device sync in the Trainer (1.6x faster steps on MPS), bundles skip
   GpuLayer state. Idle-job latency 626 ms to 31 ms, burst throughput 27 to 87 jobs/s (one Mac).
-- Next: several tasks per worker (one per free GPU), per-rank log streams, topology-aware
+- Done: several tasks per worker, each with its own reserved GPUs (tested with simulated
+  multi-GPU workers and real concurrent CPU processes).
+- Next: per-rank log streams, topology-aware
   group placement, faster distributed start-up. FSDP and `torch.compile` need CUDA hardware.
 
 ### Iteration 3: validate across machines

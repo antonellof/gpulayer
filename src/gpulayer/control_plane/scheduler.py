@@ -37,6 +37,7 @@ class WorkerView:
     capabilities: WorkerCapabilities
     running_tasks: int = 0
     reserved: set[str] = field(default_factory=set)  # job ids holding a reservation
+    busy_devices: set[int] = field(default_factory=set)  # device indices held by active tasks
 
     @property
     def free_slots(self) -> int:
@@ -173,6 +174,40 @@ def _accelerator_reasons(r: ResourceRequest, caps: WorkerCapabilities) -> list[s
     return reasons
 
 
+def pick_devices(r: ResourceRequest, caps: WorkerCapabilities, busy: set[int]) -> list[int] | None:
+    """Indices of the devices a task gets on this worker: free devices that meet every
+    per-device requirement, lowest index first. ``[]`` for CPU jobs; None if too few are free."""
+    if r.accelerator == Accelerator.CPU or r.gpu_count == 0:
+        return []
+    ok = []
+    for d in caps.devices(r.accelerator):
+        if not d.execution_supported or d.index in busy:
+            continue
+        if r.gpu_memory_kind and d.memory_kind != r.gpu_memory_kind:
+            continue
+        if r.gpu_memory_gb is not None and (d.memory_gb is None or d.memory_gb < r.gpu_memory_gb):
+            continue
+        if r.min_cuda_compute_capability and not (
+            d.compute_capability
+            and _cc_tuple(d.compute_capability) >= _cc_tuple(r.min_cuda_compute_capability)
+        ):
+            continue
+        ok.append(d.index)
+    ok.sort()
+    return ok[: r.gpu_count] if len(ok) >= r.gpu_count else None
+
+
+def default_max_tasks(caps: WorkerCapabilities) -> int:
+    """One task slot per usable discrete GPU, so a multi-GPU machine runs one single-GPU job
+    per GPU at the same time. Machines without such GPUs run one task at a time."""
+    n = sum(
+        1
+        for d in caps.accelerators
+        if d.execution_supported and d.accelerator in (Accelerator.CUDA, Accelerator.ROCM)
+    )
+    return max(1, n)
+
+
 def _rank_key(spec: JobSpec, w: WorkerView) -> tuple:
     # Deterministic: strategy key first, worker_id as the final tiebreak.
     if spec.placement.strategy == "most_free_memory":
@@ -206,6 +241,11 @@ def schedule(
                     reasons.append(f"worker is {w.state.value}")
                 elif not w.available:
                     reasons.append("compatible but no free task slot")
+                elif pick_devices(spec.resources, w.capabilities, w.busy_devices) is None:
+                    reasons.append(
+                        f"compatible but its {spec.resources.accelerator.value} devices are in "
+                        "use by other tasks"
+                    )
             candidates.append(
                 CandidateEvaluation(worker_id=w.worker_id, eligible=not reasons, reasons=reasons)
             )

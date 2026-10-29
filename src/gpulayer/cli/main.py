@@ -403,6 +403,7 @@ def cmd_worker_start(args: argparse.Namespace) -> int:
             labels=labels,
             advertise_address=args.advertise_address or default_advertise_address(),
             runner=_python_runner(python),
+            max_concurrent_tasks=getattr(args, "concurrency", None),
         )
         channel: Any = HttpWorkerChannel.register(
             args.url,
@@ -420,6 +421,7 @@ def cmd_worker_start(args: argparse.Namespace) -> int:
             labels=labels,
             advertise_address=args.advertise_address or "127.0.0.1",
             runner=_python_runner(python),
+            max_concurrent_tasks=getattr(args, "concurrency", None),
         )
         channel = EmbeddedChannel.register(
             open_control_plane(args.home), args.name or f"local-{os.getpid()}", caps
@@ -787,6 +789,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--label", action="append", metavar="KEY=VALUE")
     s.add_argument("--python", help="interpreter used for jobs (default: this one)")
     s.add_argument("--advertise-address", help="address peers use for distributed rendezvous")
+    s.add_argument("--concurrency", type=int, help="tasks to run at once (default: one per GPU)")
     s.add_argument("--workdir")
     s.add_argument("--max-tasks", type=int)
     s.add_argument("--idle-exit", type=float, metavar="SECONDS")
@@ -851,6 +854,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--join-token", help="default $GPULAYER_JOIN_TOKEN (remote mode)")
     s.add_argument("--python", help="interpreter used for workloads (default: this one)")
     s.add_argument("--advertise-address", help="address peers use for distributed rendezvous")
+    s.add_argument("--concurrency", type=int, help="tasks to run at once (default: one per GPU)")
     s.add_argument("--workdir")
     s.add_argument("--max-tasks", type=int)
     s.add_argument(

@@ -49,7 +49,12 @@ from gpulayer.contracts import (
     utcnow,
 )
 from gpulayer.contracts.models import JOB_TRANSITIONS
-from gpulayer.control_plane.scheduler import WorkerView, ever_schedulable, schedule
+from gpulayer.control_plane.scheduler import (
+    WorkerView,
+    ever_schedulable,
+    pick_devices,
+    schedule,
+)
 from gpulayer.errors import Conflict, Forbidden, NotFound, Unauthorized, ValidationFailed
 from gpulayer.observability.metrics import observe
 from gpulayer.storage.sqlite import SqliteStore, parse_ts, ts
@@ -311,13 +316,14 @@ class ControlPlane:
     # ============================================================ scheduling
 
     def _worker_views(self) -> list[WorkerView]:
-        running = {
-            r["worker_id"]: r["n"]
-            for r in self.store.query(
-                "SELECT worker_id, COUNT(*) n FROM tasks WHERE state IN (?,?) GROUP BY worker_id",
-                ACTIVE_TASK_STATES,
-            )
-        }
+        running: dict[str, int] = {}
+        busy: dict[str, set[int]] = {}
+        for r in self.store.query(
+            "SELECT worker_id, devices FROM tasks WHERE state IN (?,?)", ACTIVE_TASK_STATES
+        ):
+            running[r["worker_id"]] = running.get(r["worker_id"], 0) + 1
+            if r["devices"]:
+                busy.setdefault(r["worker_id"], set()).update(json.loads(r["devices"]))
         views = []
         for r in self.store.query("SELECT * FROM workers WHERE revoked=0"):
             views.append(
@@ -326,6 +332,7 @@ class ControlPlane:
                     state=WorkerState(r["state"]),
                     capabilities=WorkerCapabilities.model_validate_json(r["capabilities"]),
                     running_tasks=running.get(r["id"], 0),
+                    busy_devices=busy.get(r["id"], set()),
                 )
             )
         return views
@@ -348,10 +355,7 @@ class ControlPlane:
                     "UPDATE jobs SET scheduling=? WHERE id=?", (decision.model_dump_json(), job_id)
                 )
                 if decision.placed:
-                    self._place(c, job_id, spec, row["attempts"] + 1, decision)
-                    for v in views:
-                        if v.worker_id in decision.worker_ids:
-                            v.running_tasks += 1
+                    self._place(c, job_id, spec, row["attempts"] + 1, decision, views)
                     continue
                 if spec.placement.provisioning and JobState(row["state"]) == JobState.QUEUED:
                     self.provisioning.mark(job_id, spec, decision)
@@ -369,15 +373,39 @@ class ControlPlane:
         self.provisioning.pump()
 
     def _place(
-        self, c: Any, job_id: str, spec: JobSpec, attempt: int, decision: SchedulingDecision
+        self,
+        c: Any,
+        job_id: str,
+        spec: JobSpec,
+        attempt: int,
+        decision: SchedulingDecision,
+        views: list[WorkerView],
     ) -> None:
+        """Create one task per node and reserve its devices (updating ``views`` so later
+        jobs in the same scheduling pass see the reservation)."""
         lease = ts(self.now() + timedelta(seconds=self.config.lease_ttl_seconds))
+        by_id = {v.worker_id: v for v in views}
         for rank, worker_id in enumerate(decision.worker_ids):
+            view = by_id[worker_id]
+            devices = pick_devices(spec.resources, view.capabilities, view.busy_devices)
+            if devices is None:  # schedule() checked this; never place on a busy device
+                raise Conflict(f"devices on {worker_id} were taken during placement")
+            view.running_tasks += 1
+            view.busy_devices.update(devices)
             task_id = _new_id("task")
             c.execute(
                 "INSERT INTO tasks (id, job_id, attempt, node_rank, worker_id, state, "
-                "lease_expires_at) VALUES (?,?,?,?,?,?,?)",
-                (task_id, job_id, attempt, rank, worker_id, TaskState.ASSIGNED.value, lease),
+                "lease_expires_at, devices) VALUES (?,?,?,?,?,?,?,?)",
+                (
+                    task_id,
+                    job_id,
+                    attempt,
+                    rank,
+                    worker_id,
+                    TaskState.ASSIGNED.value,
+                    lease,
+                    json.dumps(devices) if devices else None,
+                ),
             )
         c.execute("UPDATE jobs SET attempts=?, rendezvous=NULL WHERE id=?", (attempt, job_id))
         self._set_job_state(job_id, JobState.SCHEDULED, message=decision.summary)
@@ -596,6 +624,7 @@ class ControlPlane:
                 node_rank=r["node_rank"],
                 lease_expires_at=parse_ts(r["lease_expires_at"]),
                 rendezvous=rdzv,
+                devices=json.loads(r["devices"]) if r["devices"] else None,
             )
         return None
 

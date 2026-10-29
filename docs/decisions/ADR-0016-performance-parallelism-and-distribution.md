@@ -106,9 +106,10 @@ can hold at most one server thread per open request; the failed-login limiter st
 
 ## Follow-up (roadmap, in order)
 
-1. **Several tasks per worker.** A worker runs one task at a time today, so a machine with 8
-   GPUs runs one single-GPU job at a time. Track free GPUs per worker, pin each task to its
-   devices with `CUDA_VISIBLE_DEVICES`, and run tasks concurrently.
+1. **Several tasks per worker.** Done: a worker runs up to `max_concurrent_tasks` tasks at
+   once (default one per discrete GPU), and the control plane reserves specific GPUs per task
+   (`TaskAssignment.devices`). Tested with simulated 4-GPU workers and with real concurrent
+   processes on CPU; not yet run on a multi-GPU NVIDIA machine.
 2. **Per-rank log streams.** All local ranks share one pipe today, so output from two ranks can
    interleave mid-line when a program writes a line in more than one call.
 3. **Topology-aware group placement.** Prefer GPUs on one host, then hosts on one fast network,

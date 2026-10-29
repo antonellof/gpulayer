@@ -23,8 +23,10 @@ The reasons for every candidate are stored on the job, and `gpulayer job status`
 ## What is not scheduled on (yet)
 
 - `cpu_cores` and `memory_gb` only constrain placement; nothing enforces them at runtime.
-- Each worker runs `max_concurrent_tasks` tasks (default 1); devices are not partitioned
-  between concurrent tasks.
+- Each worker runs up to `max_concurrent_tasks` tasks at once (default: one per usable
+  NVIDIA or AMD GPU, at least 1; `--concurrency N` overrides it). Each task is given its own
+  GPUs, which the worker exposes through `CUDA_VISIBLE_DEVICES`. CPU jobs take a slot but no
+  GPU. Apple Silicon Macs have one GPU, so they run one task at a time by default.
 - Data locality, topology/interconnect and cost optimization are planned once reliable
   capability and pricing data exist.
 

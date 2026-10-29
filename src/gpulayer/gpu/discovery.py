@@ -261,8 +261,9 @@ def detect_capabilities(
     workdir: str | None = None,
     runner: CommandRunner = run_command,
     torch_probe: Callable[[], TorchProbe] | None = None,
-    max_concurrent_tasks: int = 1,
+    max_concurrent_tasks: int | None = None,
 ) -> WorkerCapabilities:
+    """``max_concurrent_tasks`` defaults to one task per usable discrete GPU (at least 1)."""
     notes: list[str] = []
     tp = torch_probe() if torch_probe else probe_torch(runner=runner)
 
@@ -338,7 +339,7 @@ def detect_capabilities(
         notes.append(f"torch unavailable: {tp.error}")
 
     disk = shutil.disk_usage(workdir or os.getcwd())
-    return WorkerCapabilities(
+    caps = WorkerCapabilities(
         hostname=socket.gethostname(),
         os=platform.system().lower(),
         cpu_arch=platform.machine().lower(),
@@ -353,6 +354,11 @@ def detect_capabilities(
         advertise_address=advertise_address,
         origin=origin,
         labels=dict(labels or {}),
-        max_concurrent_tasks=max_concurrent_tasks,
+        max_concurrent_tasks=max_concurrent_tasks or 1,
         notes=notes,
     )
+    if max_concurrent_tasks is None:
+        from gpulayer.control_plane.scheduler import default_max_tasks
+
+        caps = caps.model_copy(update={"max_concurrent_tasks": default_max_tasks(caps)})
+    return caps
