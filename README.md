@@ -7,6 +7,7 @@
   <a href="#install">Install</a> ·
   <a href="#quickstart">Quickstart</a> ·
   <a href="#for-ai-and-coding-agents">AI agents</a> ·
+  <a href="#why-gpulayer">Why GPUlayer</a> ·
   <a href="#where-gpulayer-sits">Where it sits</a> ·
   <a href="https://www.gpulayer.dev/docs/">Docs</a> ·
   <a href="examples">Examples</a> ·
@@ -76,16 +77,32 @@ claude mcp add gpulayer -- gpulayer mcp
 
 See [AI and coding agents](docs/guides/ai-agents.md).
 
+## Why GPUlayer
+
+Most GPU code assumes the GPU is on the machine where you run it. With GPUlayer you describe
+what a workload needs (an accelerator, GPU memory, frameworks) and it runs on a machine that
+has it, wherever that machine is.
+
+| Situation | Without GPUlayer | With GPUlayer |
+|---|---|---|
+| Code on a laptop, GPU elsewhere | ssh, copy code, rebuild the environment, tmux, copy results back | `gpulayer submit --target remote -- <cmd>` |
+| Several GPU machines | track free machines by hand; jobs crash on the wrong GPU or library | one queue; each job lands where it can run, or is rejected with the reason |
+| NVIDIA servers and Apple Silicon Macs | separate scripts and setup per machine | ask for `cuda` or `mps`; one interface |
+| Many independent tasks | loops and ad hoc scripts | `fn.map([...])` across free GPUs |
+| Multi-node training | `torchrun` on every node with matching ranks and addresses | `Trainer(num_nodes=2, devices=4)` |
+
+On one machine with one GPU, running your code directly is simpler. GPUlayer runs jobs that
+finish (long-running services are planned) and is not a sandbox for untrusted code. More in
+[Why GPUlayer](https://www.gpulayer.dev/docs/get-started/why-gpulayer/).
+
 ## Where GPUlayer sits
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/where-gpulayer-sits-dark.svg">
-  <img alt="Your workloads go through GPUlayer to the machines you can reach" src="docs/assets/where-gpulayer-sits-light.svg">
-</picture>
+![Your workloads go through GPUlayer to the machines you can reach](docs/assets/where-gpulayer-sits-light.svg#gh-light-mode-only)
+![Your workloads go through GPUlayer to the machines you can reach](docs/assets/where-gpulayer-sits-dark.svg#gh-dark-mode-only)
 
-Frameworks decide how a computation uses the hardware they are given; GPUlayer decides which
-hardware runs it. On one machine with one GPU, running your code directly is simpler. See
-[Why GPUlayer](docs/get-started/why-gpulayer.md).
+Frameworks such as PyTorch, JAX, MLX and CuPy decide how a computation uses the hardware they
+are given. GPUlayer decides which hardware runs it, gets code and data there, starts it, and
+returns the results.
 
 ## Development
 
