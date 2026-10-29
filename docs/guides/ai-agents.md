@@ -1,9 +1,9 @@
 # AI and coding agents
 
-AI and coding agents (Claude Code, Claude Desktop, Cursor, Codex, VS Code agents, your own)
-can use GPUlayer to run work on GPUs: train a model on the NVIDIA box, run a sweep on several
-machines, render on whatever GPU is free, then read the logs and fetch the results. There are
-three ways in, from most to least structured:
+AI and coding agents (Claude Code, Claude Desktop, Cursor, Codex, VS Code agents, or your own)
+can use GPUlayer to run work on GPUs, for example training a model on an NVIDIA server or
+running a sweep across several machines, and then read the logs and fetch the results. There
+are three ways to connect them, from most to least structured:
 
 | Way | Best for | Setup |
 |---|---|---|
@@ -11,8 +11,8 @@ three ways in, from most to least structured:
 | [Agent Skill](#agent-skill) | agents that run shell commands and read `SKILL.md` files | copy one folder |
 | [HTTP API](#http-api) | your own agents and services | a token |
 
-All three use the same API, permissions and placement as people do. An agent cannot do
-more than the token it holds.
+All three go through the same API, placement rules and permissions as people do, so an agent
+can do only what its token allows.
 
 ## MCP server
 
@@ -103,8 +103,8 @@ Check the configuration format of your agent's version; these change between rel
 The agent calls `gpulayer_resources`, sees a worker with CUDA and torch, calls
 `gpulayer_submit` with `command: ["python", "train.py", "--epochs", "3"]`,
 `source_dir: "."`, `accelerator: "cuda"`, then `gpulayer_wait` until the job finishes and
-reads the loss from the log tail. If no worker has CUDA, the submit result says so for each
-worker, and the agent can tell you instead of guessing.
+reads the loss from the log tail. If no worker has CUDA, the submit result gives the reason
+for each worker, and the agent can report it.
 
 ## Agent Skill
 
@@ -132,7 +132,7 @@ calls.
 
 ## Security
 
-- **Submitting a job runs code on a worker.** Give an agent the narrowest access that works:
+- Submitting a job runs code on a worker, so give an agent the narrowest access that works:
   `gpulayer mcp --read-only` for monitoring, and otherwise a `submitter` token
   (`gpulayer token create my-agent --role submitter --ttl 12h`), never an admin token.
   Submitters can cancel only their own jobs.
