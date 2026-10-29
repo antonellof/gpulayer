@@ -38,19 +38,22 @@ def test_mps_available_reports_unified_memory():
     )
     mps = caps.devices(Accelerator.MPS)
     assert len(mps) == 1 and mps[0].memory_kind == MemoryKind.UNIFIED
-    assert caps.frameworks == {"torch": "2.4.0"} and caps.launchers == ["torchrun"]
+    assert caps.frameworks == {"torch": "2.4.0", "torch.mps": "2.4.0"}
+    assert caps.launchers == ["torchrun"]
 
 
-def test_mps_built_but_unavailable():
+def test_mps_built_but_unavailable(monkeypatch):
+    monkeypatch.setattr("gpulayer.gpu.discovery.apple_silicon", lambda: False)
     caps = detect_capabilities(
         runner=runner_for({}),
         torch_probe=lambda: TorchProbe(torch_version="2.4.0", mps_built=True, mps_available=False),
     )
     assert caps.devices(Accelerator.MPS) == []
-    assert any("MPS is not available" in n for n in caps.notes)
+    assert "torch.mps" not in caps.frameworks
 
 
-def test_missing_torch_is_graceful():
+def test_missing_torch_is_graceful(monkeypatch):
+    monkeypatch.setattr("gpulayer.gpu.discovery.apple_silicon", lambda: False)
     caps = detect_capabilities(
         runner=runner_for({}), torch_probe=lambda: TorchProbe(error="No module named 'torch'")
     )
@@ -73,14 +76,40 @@ def test_probe_torch_parses_subprocess_output():
     assert probe_torch(runner=lambda cmd, t: (0, "garbage")).error
 
 
-def test_nvidia_visible_without_cuda_runtime_is_not_executable():
+def test_nvidia_usable_without_torch_cuda(monkeypatch):
+    """The driver alone makes CUDA usable; torch's CUDA support is a separate capability."""
+    monkeypatch.setattr("gpulayer.gpu.discovery.apple_silicon", lambda: False)
     out = "0, NVIDIA L4, 23034, 8.9, 550.54\n"
     caps = detect_capabilities(
         runner=runner_for({"nvidia-smi": (0, out)}),
-        torch_probe=lambda: TorchProbe(error="no torch"),
+        torch_probe=lambda: TorchProbe(torch_version="2.4.0", packages={"cupy-cuda12x": "13.3"}),
     )
     dev = caps.devices(Accelerator.CUDA)[0]
-    assert dev.execution_supported is False
+    assert dev.execution_supported is True
+    assert caps.frameworks["cupy"] == "13.3" and "torch.cuda" not in caps.frameworks
+    assert any("no CUDA support" in n for n in caps.notes)
+
+
+def test_torch_cuda_capability_reported(monkeypatch):
+    monkeypatch.setattr("gpulayer.gpu.discovery.apple_silicon", lambda: False)
+    out = "0, NVIDIA L4, 23034, 8.9, 550.54\n"
+    caps = detect_capabilities(
+        runner=runner_for({"nvidia-smi": (0, out)}),
+        torch_probe=lambda: TorchProbe(torch_version="2.4.0", cuda_available=True),
+    )
+    assert caps.frameworks["torch.cuda"] == "2.4.0"
+
+
+def test_apple_gpu_without_torch(monkeypatch):
+    """An Apple Silicon Mac offers its GPU (Metal) to MLX etc. even without torch."""
+    monkeypatch.setattr("gpulayer.gpu.discovery.apple_silicon", lambda: True)
+    caps = detect_capabilities(
+        runner=runner_for({"sysctl": (0, str(16 * 1024**3))}),
+        torch_probe=lambda: TorchProbe(error="no torch", packages={"mlx": "0.20.0"}),
+    )
+    (gpu,) = caps.devices(Accelerator.MPS)
+    assert gpu.memory_kind == MemoryKind.UNIFIED and "Metal" in gpu.name
+    assert caps.frameworks == {"mlx": "0.20.0"}
 
 
 def test_rocm_is_detection_only():

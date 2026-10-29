@@ -38,7 +38,16 @@ CommandRunner = Callable[[list[str], float], "tuple[int, str]"]
 
 _TORCH_PROBE = r"""
 import json, sys
-out = {"torch": None}
+out = {"torch": None, "packages": {}}
+try:
+    from importlib.metadata import PackageNotFoundError, version
+    for dist in %(packages)r:
+        try:
+            out["packages"][dist] = version(dist)
+        except PackageNotFoundError:
+            pass
+except Exception:
+    pass
 try:
     import torch
 except Exception as e:  # ImportError or a broken install
@@ -67,6 +76,27 @@ except Exception:
 print(json.dumps(out))
 """
 
+# GPU-relevant packages reported as frameworks, read from installed-distribution metadata
+# (nothing is imported). Distribution name -> framework name used in ResourceRequest.
+GPU_PACKAGES: dict[str, str] = {
+    "torch": "torch",
+    "jax": "jax",
+    "jaxlib": "jaxlib",
+    "tensorflow": "tensorflow",
+    "mlx": "mlx",
+    "cupy": "cupy",
+    "cupy-cuda12x": "cupy",
+    "cupy-cuda11x": "cupy",
+    "onnxruntime": "onnxruntime",
+    "onnxruntime-gpu": "onnxruntime",
+    "tensorrt": "tensorrt",
+    "triton": "triton",
+    "vllm": "vllm",
+    "transformers": "transformers",
+    "numpy": "numpy",
+}
+_TORCH_PROBE = _TORCH_PROBE % {"packages": sorted(GPU_PACKAGES)}
+
 
 def run_command(cmd: list[str], timeout: float) -> tuple[int, str]:
     try:
@@ -88,6 +118,7 @@ class TorchProbe:
     mps_available: bool = False
     gloo: bool = False
     nccl: bool = False
+    packages: dict[str, str] = field(default_factory=dict)
 
 
 def probe_torch(
@@ -101,8 +132,9 @@ def probe_torch(
         data = json.loads(out.strip().splitlines()[-1])
     except json.JSONDecodeError:
         return TorchProbe(error="torch probe returned unparseable output")
+    packages = {k: str(v) for k, v in (data.get("packages") or {}).items()}
     if not data.get("torch"):
-        return TorchProbe(error=data.get("error", "torch not installed"))
+        return TorchProbe(error=data.get("error", "torch not installed"), packages=packages)
     return TorchProbe(
         torch_version=data["torch"],
         cuda_available=bool(data.get("cuda_available")),
@@ -111,6 +143,7 @@ def probe_torch(
         mps_available=bool(data.get("mps_available")),
         gloo=bool(data.get("gloo")),
         nccl=bool(data.get("nccl")),
+        packages=packages,
     )
 
 
@@ -206,6 +239,10 @@ def default_advertise_address() -> str:
         return "127.0.0.1"
 
 
+def apple_silicon() -> bool:
+    return platform.system() == "Darwin" and platform.machine().lower() in ("arm64", "aarch64")
+
+
 def detect_capabilities(
     *,
     origin: WorkerOrigin = WorkerOrigin.LOCAL,
@@ -224,12 +261,11 @@ def detect_capabilities(
     if note:
         notes.append(note)
     if nvidia:
+        # The driver works, so CUDA workloads can run (CUDA binaries, CuPy, JAX, ...). Whether
+        # PyTorch can use the GPU is reported separately as the 'torch.cuda' capability.
         accelerators.extend(nvidia)
-        if not tp.cuda_available:
-            # Hardware is visible but no usable CUDA runtime in this Python environment.
-            for d in nvidia:
-                d.execution_supported = False
-            notes.append("NVIDIA GPU visible but torch CUDA runtime unavailable in worker env")
+        if tp.torch_version and not tp.cuda_available:
+            notes.append("NVIDIA GPU usable, but torch in this environment has no CUDA support")
     elif tp.cuda_available:
         for i, cd in enumerate(tp.cuda_devices):
             accelerators.append(
@@ -246,20 +282,22 @@ def detect_capabilities(
             )
 
     mem_gb = host_memory_gb(runner)
-    if tp.mps_available:
+    if apple_silicon() or tp.mps_available:
+        # The Apple GPU is reached through Metal (PyTorch MPS, MLX, Core ML, ...). Whether
+        # PyTorch can use it is reported separately as the 'torch.mps' capability.
         accelerators.append(
             AcceleratorDevice(
                 index=0,
                 accelerator=Accelerator.MPS,
                 vendor=GpuVendor.APPLE,
-                name=f"Apple {platform.machine()} GPU (MPS)",
+                name=f"Apple {platform.machine()} GPU (Metal)",
                 # Unified memory: the GPU shares system RAM. Report it as such, never as VRAM.
                 memory_gb=mem_gb,
                 memory_kind=MemoryKind.UNIFIED,
             )
         )
-    elif tp.mps_built:
-        notes.append("torch built with MPS but MPS is not available on this machine")
+        if tp.torch_version and not tp.mps_available:
+            notes.append("Apple GPU present, but torch in this environment cannot use MPS")
 
     rocm = detect_rocm(runner)
     if rocm:
@@ -267,10 +305,19 @@ def detect_capabilities(
         notes.append("AMD ROCm device detected; ROCm execution is not supported yet")
 
     frameworks: dict[str, str] = {}
+    for dist, version in tp.packages.items():
+        name = GPU_PACKAGES.get(dist)
+        if name:
+            frameworks[name] = version.split("+")[0]
     backends: list[str] = []
     launchers: list[str] = []
     if tp.torch_version:
         frameworks["torch"] = tp.torch_version
+        # Pseudo-frameworks: "this torch can drive that GPU". The PyTorch layer requires them.
+        if tp.cuda_available:
+            frameworks["torch.cuda"] = tp.torch_version
+        if tp.mps_available:
+            frameworks["torch.mps"] = tp.torch_version
         if tp.gloo:
             backends.append("gloo")
         if tp.nccl:

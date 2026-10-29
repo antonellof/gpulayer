@@ -30,14 +30,16 @@ SUPPORT: dict[Accelerator, BackendSupport] = {
     Accelerator.CUDA: BackendSupport(
         SupportLevel.IMPLEMENTED,
         SupportLevel.IMPLEMENTED,
-        "Detection and scheduling are unit-tested with mocks and execution shares the tested "
-        "CPU process path, but neither single-GPU nor NCCL multi-GPU execution has been run "
-        "on NVIDIA hardware yet (tests/hardware/test_gpu_smoke.py is skipped without a GPU).",
+        "Any CUDA workload (binaries, CuPy, JAX, PyTorch, ...) once the driver works. Detection "
+        "and scheduling are unit-tested with mocks and execution shares the tested process "
+        "path, but neither single-GPU nor NCCL multi-GPU runs have been made on NVIDIA "
+        "hardware yet (tests/hardware/test_gpu_smoke.py is skipped without a GPU).",
     ),
     Accelerator.MPS: BackendSupport(
         SupportLevel.HARDWARE_VALIDATED,
         SupportLevel.UNSUPPORTED,
-        "Independent jobs only. Multi-Mac distributed MPS is out of scope (ADR-0006).",
+        "Apple GPU through Metal (PyTorch MPS, MLX, ...). Independent jobs only; "
+        "multi-process and multi-Mac runs are out of scope (ADR-0006).",
     ),
     Accelerator.ROCM: BackendSupport(
         SupportLevel.DETECTION_ONLY,

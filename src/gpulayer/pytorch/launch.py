@@ -93,10 +93,17 @@ def launch(
     target = target or default_target(c)
     source = c.package(script_path.parent)
     accel = Accelerator(accelerator)
+    # This is the PyTorch integration: the worker must have torch, and torch must be able to
+    # drive the requested GPU (a CUDA box whose torch is CPU-only does not qualify).
+    required = {"torch": ">=0"}
+    if accel == Accelerator.CUDA:
+        required["torch.cuda"] = ">=0"
+    elif accel == Accelerator.MPS:
+        required["torch.mps"] = ">=0"
     resources = ResourceRequest(
         accelerator=accel,
         gpu_count=devices if accel != Accelerator.CPU else 0,
-        frameworks=frameworks or {},
+        frameworks={**required, **(frameworks or {})},
     )
     if nodes * devices > 1:
         workload: Any = DistributedJob(
