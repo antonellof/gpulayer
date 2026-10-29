@@ -5,12 +5,12 @@
 
 ## Context
 
-GpuLayer sits between a user's code and the GPUs that run it. Every millisecond it adds to
+GPUlayer sits between a user's code and the GPUs that run it. Every millisecond it adds to
 starting a job, every idle GPU it fails to fill, and every synchronisation it forces inside a
 training step is paid on every run. Users choose a layer like this to finish work sooner, so
 speed has to be a design input and not a later optimisation.
 
-A measurement pass on 2026-10-29 found that most of GpuLayer's own overhead came from fixed
+A measurement pass on 2026-10-29 found that most of GPUlayer's own overhead came from fixed
 sleeps rather than real work:
 
 - idle workers polled for work every 500 ms;
@@ -19,7 +19,7 @@ sleeps rather than real work:
 - log lines were sent to the control plane on the thread that reads the job's output, so a
   slow control plane could fill the pipe and stall the job;
 - the Trainer read the loss with `.item()` on every step, which makes the CPU wait for the GPU;
-- source bundles could include a GpuLayer home or previous run outputs next to the script.
+- source bundles could include a GPUlayer home or previous run outputs next to the script.
 
 ## Decision
 
@@ -49,12 +49,12 @@ sleeps rather than real work:
    (`OMP_NUM_THREADS = cores // procs_per_worker`) was tried and measured: 2-rank CPU DDP got
    48% slower per step on a small model and 2% faster on a larger one, so ranks keep torchrun's
    default of one thread. Jobs can set `OMP_NUM_THREADS` themselves.
-5. **Ship only source.** Bundles skip any GpuLayer home (a directory holding `metadata.db`) and
+5. **Ship only source.** Bundles skip any GPUlayer home (a directory holding `metadata.db`) and
    `gpulayer_runs/`.
 6. **Parallelism and distribution are scheduled, not hoped for.** The roadmap below is ordered by
    expected gain per unit of work; each item needs a benchmark before and after.
 7. **Claims follow measurements.** Published numbers state the hardware, software versions and
-   method, and are marked measured, simulated or hardware-validated as in CLAUDE.md. GpuLayer is
+   method, and are marked measured, simulated or hardware-validated as in CLAUDE.md. GPUlayer is
    not described as "the fastest" anything without a reproducible comparison.
 
 ## Results on the development machine

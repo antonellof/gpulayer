@@ -38,7 +38,7 @@ def test_up_join_connect(tmp_path):
                 break
             time.sleep(0.5)
         text = up_log.read_text()
-        url = re.search(r"GpuLayer is up at (\S+)", text).group(1)
+        url = re.search(r"GPUlayer is up at (\S+)", text).group(1)
         join_token = re.search(r"--token (glj_\S+)", text).group(1)
         client_token = re.search(r'token="(glc_[^"]+)"', text).group(1)
         fingerprint = re.search(r"--fingerprint (sha256:[0-9a-f]{64})", text).group(1)

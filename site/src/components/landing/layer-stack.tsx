@@ -1,46 +1,86 @@
 import { Cloud, Cpu, Network, Server, Sparkles, type LucideIcon } from "lucide-react";
+import {
+  siApple,
+  siHuggingface,
+  siKubernetes,
+  siLightning,
+  siModal,
+  siNvidia,
+  siPytorch,
+  siRay,
+} from "simple-icons";
 
-type Chip = { name: string; strong?: boolean; faded?: boolean };
+import { Mark, type Item } from "@/components/landing/logos";
+import { LogoMark } from "@/components/site/logo";
+
+type Chip = Item & { strong?: boolean; faded?: boolean; gpulayer?: boolean };
 
 const LAYERS: { title: string; icon: LucideIcon; tools: Chip[] }[] = [
   {
     title: "Training code and libraries",
     icon: Sparkles,
     tools: [
-      { name: "PyTorch Lightning" },
-      { name: "Accelerate" },
-      { name: "JAX / MLX / CuPy code" },
-      { name: "GpuLayer Trainer (small)", faded: true },
+      { label: "PyTorch", icon: siPytorch },
+      { label: "PyTorch Lightning", icon: siLightning },
+      { label: "Accelerate", icon: siHuggingface },
+      { label: "JAX", monogram: { text: "JX", bg: "#4285F4" } },
+      { label: "MLX", monogram: { text: "MX", bg: "#525252" } },
+      { label: "CuPy", monogram: { text: "Cp", bg: "#2E9E5B" } },
+      { label: "GPUlayer Trainer (small)", gpulayer: true, faded: true },
     ],
   },
   {
     title: "Place and launch work across machines",
     icon: Network,
-    tools: [{ name: "GpuLayer", strong: true }, { name: "Ray" }, { name: "Slurm / Kubernetes" }],
+    tools: [
+      { label: "GPUlayer", gpulayer: true, strong: true },
+      { label: "Ray", icon: siRay },
+      { label: "Slurm", monogram: { text: "Sl", bg: "#3B6EA8" } },
+      { label: "Kubernetes", icon: siKubernetes },
+    ],
   },
   {
     title: "Provision cloud capacity",
     icon: Cloud,
     tools: [
-      { name: "SkyPilot" },
-      { name: "dstack" },
-      { name: "Ray autoscaler" },
-      { name: "GpuLayer (planned)", faded: true },
+      { label: "SkyPilot", monogram: { text: "SP", bg: "#3D5AFE" } },
+      { label: "dstack", monogram: { text: "ds", bg: "#7C3AED" } },
+      { label: "Ray autoscaler", icon: siRay },
+      { label: "GPUlayer (planned)", gpulayer: true, faded: true },
     ],
   },
   {
     title: "Hardware",
     icon: Cpu,
     tools: [
-      { name: "Laptop / Mac" },
-      { name: "Workstations and servers" },
-      { name: "Cloud VMs" },
-      { name: "Clusters" },
+      { label: "Macs (Apple GPU)", icon: siApple },
+      { label: "NVIDIA servers", icon: siNvidia },
+      { label: "Cloud VMs", lucide: Cloud },
+      { label: "Clusters", lucide: Server },
     ],
   },
 ];
 
-/** Where GpuLayer sits relative to other tools. Shared by the landing and compare pages. */
+function ChipView({ t }: { t: Chip }) {
+  const base = "inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm";
+  const style = t.strong
+    ? "border-foreground bg-foreground font-medium text-background"
+    : t.faded
+      ? "border-dashed border-border text-muted-foreground"
+      : "border-border bg-background text-foreground/80";
+  return (
+    <span className={`${base} ${style}`}>
+      {t.gpulayer ? (
+        <LogoMark className={`h-[18px] w-[18px] ${t.faded ? "opacity-60" : ""}`} />
+      ) : (
+        <Mark item={t} />
+      )}
+      {t.label}
+    </span>
+  );
+}
+
+/** Where GPUlayer sits relative to other tools. Shared by the landing and compare pages. */
 export function LayerStack() {
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_210px]">
@@ -58,18 +98,7 @@ export function LayerStack() {
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               {layer.tools.map((t) => (
-                <span
-                  key={t.name}
-                  className={`rounded-md border px-3 py-1.5 text-sm ${
-                    t.strong
-                      ? "border-foreground bg-foreground font-medium text-background"
-                      : t.faded
-                        ? "border-dashed border-border text-muted-foreground"
-                        : "border-border bg-background text-foreground/80"
-                  }`}
-                >
-                  {t.name}
-                </span>
+                <ChipView key={t.label} t={t} />
               ))}
             </div>
           </div>
@@ -80,7 +109,8 @@ export function LayerStack() {
         <div className="mt-2 font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
           Hosted, all layers
         </div>
-        <span className="mx-auto mt-3 rounded-lg border border-border bg-background px-3 py-1.5 text-sm">
+        <span className="mx-auto mt-3 inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-1.5 text-sm">
+          <Mark item={{ label: "Modal", icon: siModal }} />
           Modal
         </span>
         <p className="mt-3 text-xs text-muted-foreground">Uses Modal&apos;s own GPUs</p>

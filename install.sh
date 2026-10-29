@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install the GpuLayer CLI into its own virtual environment, without sudo.
+# Install the GPUlayer CLI into its own virtual environment, without sudo.
 #
 #   curl -fsSL https://raw.githubusercontent.com/antonellof/gpulayer/main/install.sh | sh
 #
@@ -26,7 +26,7 @@ fail() { printf '%s\n' "gpulayer-install: error: $*" >&2; exit 1; }
 
 case "$(uname -s)" in
   Linux|Darwin) ;;
-  *) fail "unsupported OS $(uname -s); GpuLayer workers run on Linux and macOS" ;;
+  *) fail "unsupported OS $(uname -s); GPUlayer workers run on Linux and macOS" ;;
 esac
 
 if [ -n "${GPULAYER_SOURCE:-}" ]; then

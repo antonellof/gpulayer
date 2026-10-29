@@ -1,6 +1,6 @@
 # Environment variables
 
-## Read by GpuLayer
+## Read by GPUlayer
 
 | Variable | Used by | Meaning |
 |---|---|---|

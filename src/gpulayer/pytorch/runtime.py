@@ -1,6 +1,6 @@
 """Device, process-group, data-sharding and precision helpers.
 
-Works the same in a plain local process, inside a GpuLayer job, and under torchrun:
+Works the same in a plain local process, inside a GPUlayer job, and under torchrun:
 
     rt = Runtime(accelerator="auto", precision="bf16-mixed")
     rt.setup()
@@ -34,7 +34,7 @@ def _mps_available() -> bool:
 
 
 def resolve_accelerator(accelerator: str = "auto") -> str:
-    """'auto' -> the accelerator GpuLayer granted this job, else cuda > mps > cpu."""
+    """'auto' -> the accelerator GPUlayer granted this job, else cuda > mps > cpu."""
     if accelerator == "auto":
         granted = os.environ.get("GPULAYER_ACCELERATOR")
         if granted:

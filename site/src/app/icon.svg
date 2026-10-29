@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- GPUlayer mark: a GPU die on top of a stack of layers (isometric). -->
+  <path d="M3 20.5 16 27.5 29 20.5" stroke="#10b981" stroke-opacity=".4" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M3 15.5 16 22.5 29 15.5" stroke="#10b981" stroke-opacity=".7" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path fill="#10b981" fill-rule="evenodd" d="M16 3.2 29 10.2 16 17.2 3 10.2Z M16 7.4 21.2 10.2 16 13 10.8 10.2Z"/>
+  <path fill="#10b981" fill-opacity=".55" d="M16 8.9 18.4 10.2 16 11.5 13.6 10.2Z"/>
+</svg>

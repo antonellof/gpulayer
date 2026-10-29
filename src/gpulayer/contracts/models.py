@@ -506,7 +506,7 @@ class AcceleratorDevice(_Model):
     compute_capability: str | None = None
     driver_version: str | None = None
     execution_supported: bool = Field(
-        True, description="False when detected but GpuLayer has no validated execution path."
+        True, description="False when detected but GPUlayer has no validated execution path."
     )
 
 

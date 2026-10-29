@@ -5,7 +5,7 @@ import { SiteFooter } from "@/components/site/footer";
 import { readNav, routeHref, slugToRoute } from "@/lib/docs";
 
 export const metadata: Metadata = {
-  title: { default: "Docs", template: "%s | GpuLayer docs" },
+  title: { default: "Docs", template: "%s | GPUlayer docs" },
 };
 
 export default function DocsLayout({ children }: { children: React.ReactNode }) {

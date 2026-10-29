@@ -1,7 +1,7 @@
 # Apple Silicon (Metal)
 
 Apple Silicon Macs have a GPU that frameworks reach through Metal: PyTorch through its MPS
-backend, MLX natively, Core ML and others. GpuLayer reports the GPU of every Apple Silicon worker
+backend, MLX natively, Core ML and others. GPUlayer reports the GPU of every Apple Silicon worker
 as accelerator `mps` and schedules jobs that ask for it there. Whether torch on that machine can
 use it is reported separately as the `torch.mps` capability.
 
@@ -44,7 +44,7 @@ python examples/remote_sweep/sweep.py --accelerator mps
 
 ## Limits
 
-| Topic | MPS behaviour in GpuLayer |
+| Topic | MPS behaviour in GPUlayer |
 |---|---|
 | Multi-process or multi-node | not supported; `devices > 1` or `num_nodes > 1` with MPS is rejected |
 | Memory | unified with the CPU; reported as `memory_kind=unified`, never as dedicated VRAM |

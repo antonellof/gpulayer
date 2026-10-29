@@ -1,4 +1,4 @@
-# A GpuLayer server and a worker on one Docker host.
+# A GPUlayer server and a worker on one Docker host.
 #
 #   docker compose up -d server
 #   docker compose logs server        # prints the join token and certificate fingerprint

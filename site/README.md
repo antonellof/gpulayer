@@ -1,6 +1,6 @@
-# GpuLayer website and docs
+# GPUlayer website and docs
 
-The public website and documentation for GpuLayer: a landing page at `/` and the docs at
+The public website and documentation for GPUlayer: a landing page at `/` and the docs at
 `/docs`. It is a Next.js 14 static site (App Router, TypeScript, Tailwind) that renders the
 Markdown in [`../docs`](../docs) at build time. There is no second copy of the content: edit
 the files in `docs/` and rebuild.

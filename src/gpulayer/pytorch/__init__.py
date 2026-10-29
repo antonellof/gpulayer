@@ -2,7 +2,7 @@
 
 Three layers, each usable alone:
 
-* ``launch()``  -- run any PyTorch script, whatever framework it uses, on GpuLayer workers
+* ``launch()``  -- run any PyTorch script, whatever framework it uses, on GPUlayer workers
 * ``Runtime``   -- device, DDP, data sharding and precision helpers
 * ``Module`` + ``Trainer`` -- a small training API that also picks where training runs
 """

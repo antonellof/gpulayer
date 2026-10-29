@@ -1,4 +1,4 @@
-# Prometheus + Grafana for a GpuLayer server, with the GpuLayer dashboard provisioned.
+# Prometheus + Grafana for a GPUlayer server, with the GPUlayer dashboard provisioned.
 #   1. edit prometheus.yml: target address, and put the token and cert files next to it
 #   2. docker compose up -d
 #   3. open http://localhost:3001 (admin / admin on first login)

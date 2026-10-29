@@ -1,6 +1,6 @@
 # Commands and scripts
 
-Any executable can be a GpuLayer job: a shell script, a compiled CUDA program, a Python script,
+Any executable can be a GPUlayer job: a shell script, a compiled CUDA program, a Python script,
 `ffmpeg`, a Julia or R script. The job runs in a fresh directory on the chosen worker, with
 your source directory and input files staged next to it.
 

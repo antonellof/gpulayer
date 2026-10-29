@@ -28,7 +28,7 @@ if __name__ == "__main__":
 
 | Call | What it does |
 |---|---|
-| `train(*args)` | calls the function in your process, no GpuLayer involved |
+| `train(*args)` | calls the function in your process, no GPUlayer involved |
 | `train.run(*args, stream_logs=True)` | submits a job, streams its logs, returns the return value, raises `gl.RemoteError` on failure |
 | `train.submit(*args)` | submits and returns a `Job` handle without waiting |
 | `train.map(iterable, parallelism=None)` | one job per argument (or argument tuple); results in input order |
@@ -64,7 +64,7 @@ all_reduce_check.run()   # {'world': 4, 'sum': 10.0}
 
 ## Rules
 
-- The function must be defined at module top level, in a file. GpuLayer uploads the file's
+- The function must be defined at module top level, in a file. GPUlayer uploads the file's
   directory and calls the function by name on the worker; it does not pickle closures.
 - Arguments and return values must be JSON: numbers, strings, booleans, lists, dicts, `None`.
   Save tensors and models to `$GPULAYER_OUTPUT_DIR` instead of returning them.

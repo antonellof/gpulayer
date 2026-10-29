@@ -1,10 +1,10 @@
-"""Framework-agnostic launcher: run *this script* on GpuLayer-placed workers.
+"""Framework-agnostic launcher: run *this script* on GPUlayer-placed workers.
 
     import gpulayer.pytorch as glt
     glt.launch(nodes=2, devices=2, accelerator="cuda", target="remote")
     # ... the rest of any PyTorch script, whatever framework it uses ...
 
-Outside a GpuLayer job, ``launch`` packages the script's directory, submits the same
+Outside a GPUlayer job, ``launch`` packages the script's directory, submits the same
 script with the same arguments, streams logs, downloads outputs and (by default) exits with
 the job's exit code. Inside the job it returns ``None`` immediately and the script continues,
 with the standard torchrun environment (RANK, WORLD_SIZE, LOCAL_RANK, MASTER_ADDR, ...).
@@ -75,7 +75,7 @@ def launch(
     quiet: bool = False,
     **placement: Any,
 ) -> LaunchResult | None:
-    """Submit this script as a GpuLayer job, or return ``None`` when already inside one."""
+    """Submit this script as a GPUlayer job, or return ``None`` when already inside one."""
     if not is_launcher_process():
         return None
     if accelerator == "auto":

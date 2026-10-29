@@ -13,7 +13,7 @@ const TRACKS: Track[] = [
     id: "local",
     label: "On this machine",
     icon: Laptop,
-    blurb: "No server, no account. GpuLayer runs a control plane and a worker inside your process.",
+    blurb: "No server, no account. GPUlayer runs a control plane and a worker inside your process.",
     steps: [
       {
         title: "Install",
@@ -60,7 +60,7 @@ const TRACKS: Track[] = [
         body: "On any machine. TLS with a self-signed certificate is set up for you, and the machine runs jobs too.",
         command: "gpulayer up",
         output: [
-          "GpuLayer is up at https://192.168.1.56:8470  (TLS, self-signed certificate pinned by fingerprint)",
+          "GPUlayer is up at https://192.168.1.56:8470  (TLS, self-signed certificate pinned by fingerprint)",
           "Add a machine by running on it:",
           "  gpulayer join https://192.168.1.56:8470 --token glj_… --fingerprint sha256:…",
         ],

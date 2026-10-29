@@ -86,11 +86,11 @@ job is placed, so name it).
 
 ```mermaid
 flowchart TD
-    F["trainer.fit(model, ...)"] --> Q{"inside a GpuLayer job<br/>or torchrun process?"}
+    F["trainer.fit(model, ...)"] --> Q{"inside a GPUlayer job<br/>or torchrun process?"}
     Q -- yes --> LOOP["run the training loop here<br/>(DDP when WORLD_SIZE > 1)"]
     Q -- no --> T{"target set, or<br/>devices x num_nodes > 1?"}
     T -- no --> LOOP
-    T -- yes --> L["launch(): submit this script<br/>to GpuLayer workers"]
+    T -- yes --> L["launch(): submit this script<br/>to GPUlayer workers"]
     L --> W["workers re-run the script;<br/>the same fit() call runs the loop"]
     W --> B["download checkpoint and metrics,<br/>load weights into the local model"]
 ```

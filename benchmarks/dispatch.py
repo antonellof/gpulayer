@@ -1,10 +1,10 @@
-"""Dispatch overhead: how long GpuLayer adds around a job that does nothing.
+"""Dispatch overhead: how long GPUlayer adds around a job that does nothing.
 
     python benchmarks/dispatch.py --jobs 20 --workers 4
 
 Measures, per job, submit -> process started (queue + dispatch), and submit -> the
 client sees the final state (end to end). The job itself is `python -c pass`, so the
-numbers are GpuLayer's overhead plus Python interpreter start-up (shown separately).
+numbers are GPUlayer's overhead plus Python interpreter start-up (shown separately).
 Runs in embedded mode in a throwaway GPULAYER_HOME.
 """
 

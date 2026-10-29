@@ -1,9 +1,9 @@
 # Installation
 
-GpuLayer needs Python 3.10 or newer. PyTorch is optional for the core package and required for
+GPUlayer needs Python 3.10 or newer. PyTorch is optional for the core package and required for
 everything in `gpulayer.pytorch`.
 
-GpuLayer is not on PyPI yet. There are three ways to install it.
+GPUlayer is not on PyPI yet. There are three ways to install it.
 
 ## With the install script
 
@@ -108,7 +108,7 @@ PyTorch with CUDA, or MLX) only go to workers that have it.
 
 ## Where state is kept
 
-Without a remote control plane, GpuLayer keeps its state in `$GPULAYER_HOME`
+Without a remote control plane, GPUlayer keeps its state in `$GPULAYER_HOME`
 (default `~/.gpulayer`, created with mode 0700):
 
 | Path | Contents |

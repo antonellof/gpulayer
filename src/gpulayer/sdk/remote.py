@@ -3,7 +3,7 @@
     @gl.remote(accelerator="mps", frameworks={"torch": ">=2.0"})
     def train(lr: float) -> dict: ...
 
-    train(0.01)                         # plain local call, no GpuLayer involved
+    train(0.01)                         # plain local call, no GPUlayer involved
     train.run(0.01)                     # placed on a compatible worker; logs streamed
     train.map([(0.1,), (0.01,)])        # independent jobs in parallel (a sweep)
     train.options(target="remote").run(0.01)
@@ -49,7 +49,7 @@ _default_lock = threading.Lock()
 def connect(
     url: str, token: str, *, fingerprint: str | None = None, ca_file: str | None = None
 ) -> Client:
-    """Use a GpuLayer server for everything in this process (Trainer, launch, @gl.remote).
+    """Use a GPUlayer server for everything in this process (Trainer, launch, @gl.remote).
 
     Copy the arguments from what ``gpulayer up`` prints.
     """
@@ -87,7 +87,7 @@ def _function_ref(fn: Callable[..., Any]) -> tuple[str, Path]:
         raise ValidationFailed("@gl.remote only supports plain functions")
     if "<locals>" in fn.__qualname__ or "." in fn.__qualname__ or fn.__name__ == "<lambda>":
         raise ValidationFailed(
-            f"{fn.__qualname__} must be defined at module top level: GpuLayer ships source "
+            f"{fn.__qualname__} must be defined at module top level: GPUlayer ships source "
             "code and calls functions by name, it does not pickle closures (ADR-0002)"
         )
     try:

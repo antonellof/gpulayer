@@ -1,6 +1,9 @@
 import { Cpu, Terminal } from "lucide-react";
 import {
   siApple,
+  siBlender,
+  siFfmpeg,
+  siHuggingface,
   siNumpy,
   siNvidia,
   siOnnx,
@@ -9,18 +12,28 @@ import {
   type SimpleIcon,
 } from "simple-icons";
 
-// Brand marks from simple-icons (CC0). They identify the technologies GpuLayer works with;
-// no endorsement by their owners is implied.
-type Item = { label: string; icon?: SimpleIcon; lucide?: typeof Cpu; color?: string };
+// Brand marks from simple-icons (CC0). They identify the technologies GPUlayer works with;
+// no endorsement by their owners is implied. Projects without a simple-icons mark get a
+// neutral two-letter monogram rather than a copy of their logo.
+export type Item = {
+  label: string;
+  icon?: SimpleIcon;
+  lucide?: typeof Cpu;
+  color?: string;
+  monogram?: { text: string; bg: string };
+};
 
 const FRAMEWORKS: Item[] = [
   { label: "PyTorch", icon: siPytorch },
-  { label: "JAX" },
-  { label: "MLX" },
-  { label: "CuPy" },
+  { label: "JAX", monogram: { text: "JX", bg: "#4285F4" } },
+  { label: "MLX", monogram: { text: "MX", bg: "#525252" } },
+  { label: "CuPy", monogram: { text: "Cp", bg: "#2E9E5B" } },
   { label: "NumPy", icon: siNumpy },
   { label: "TensorFlow", icon: siTensorflow },
   { label: "ONNX Runtime", icon: siOnnx },
+  { label: "Transformers", icon: siHuggingface },
+  { label: "Blender", icon: siBlender },
+  { label: "FFmpeg", icon: siFfmpeg },
   { label: "any binary", lucide: Terminal },
 ];
 
@@ -39,7 +52,7 @@ function luminance(hex: string): number {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
-function Mark({ item, size = 18 }: { item: Item; size?: number }) {
+export function Mark({ item, size = 18 }: { item: Item; size?: number }) {
   if (item.icon) {
     const hex = item.icon.hex;
     // Near-black brand colours (Apple, NumPy) use the text colour in dark mode.
@@ -56,6 +69,17 @@ function Mark({ item, size = 18 }: { item: Item; size?: number }) {
       >
         <path d={item.icon.path} />
       </svg>
+    );
+  }
+  if (item.monogram) {
+    return (
+      <span
+        aria-hidden
+        className="inline-flex shrink-0 items-center justify-center rounded-[4px] font-mono text-[9px] font-bold leading-none text-white"
+        style={{ width: size, height: size, background: item.monogram.bg }}
+      >
+        {item.monogram.text}
+      </span>
     );
   }
   if (item.lucide) {

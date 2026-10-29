@@ -1,9 +1,9 @@
-# GpuLayer
+# GPUlayer
 
-GpuLayer runs GPU workloads on any GPU you can reach: the one in your laptop, a workstation
+GPUlayer runs GPU workloads on any GPU you can reach: the one in your laptop, a workstation
 down the hall, a rack of servers, or rented cloud VMs. A workload can be a command in any
 language, a Python function using any library, or a distributed job across several machines.
-GpuLayer finds a machine that can run it, starts it there, and brings back the logs, outputs and
+GPUlayer finds a machine that can run it, starts it there, and brings back the logs, outputs and
 results.
 
 ```bash
@@ -22,33 +22,22 @@ trainer = glt.Trainer(accelerator="cuda", devices=4, num_nodes=2, target="remote
 trainer.fit(model, train_loader)                                         # PyTorch integration
 ```
 
-> **Status: pre-alpha.** Local execution, scheduling, the server and worker protocol, and
+> **Status: v0.1.0, the first release.** Local execution, scheduling, the server and worker protocol, and
 > distributed jobs on one host are implemented and tested, on CPU and Apple Silicon. NVIDIA GPUs
 > and multi-machine runs are implemented but not validated yet, and automatic cloud
 > provisioning is simulated. See [Status and roadmap](project/status.md).
 
-## Where GpuLayer sits
+## Where GPUlayer sits
 
-```mermaid
-flowchart TB
-    subgraph You["Your workload"]
-        A1["Commands and scripts<br/>(any language, any binary)"]
-        A2["Python functions<br/>(PyTorch, JAX, MLX, CuPy, NumPy, ...)"]
-        A3["PyTorch training<br/>(Trainer, launch())"]
-    end
-    You --> G["GpuLayer<br/>placement, launch, logs, artifacts, coordination"]
-    G --> M1["This machine<br/>CPU / Apple GPU / NVIDIA GPU"]
-    G --> M2["Servers that joined<br/>gpulayer join"]
-    G --> M3["Cloud VMs<br/>joined, or via a provider adapter"]
-```
+![Your workloads go through GPUlayer to the machines you can reach](assets/where-gpulayer-sits-light.svg)
 
-Frameworks decide how a computation runs on the hardware they are given. GpuLayer decides which
+Frameworks decide how a computation runs on the hardware they are given. GPUlayer decides which
 hardware runs it, gets the code and data there, starts it, and returns the results. It works
 under any framework, and adds a deeper integration for PyTorch training.
 
 ## What you can do with it
 
-| You want to | With GpuLayer |
+| You want to | With GPUlayer |
 |---|---|
 | Run a script on a GPU that is not in front of you | `gpulayer submit --target remote -- python infer.py` |
 | Use one interface for NVIDIA boxes and Apple Silicon Macs | ask for `cuda` or `mps`; each job lands where that accelerator and its frameworks exist |
@@ -60,7 +49,7 @@ under any framework, and adds a deeper integration for PyTorch training.
 ## Where to go next
 
 - [Quickstart](get-started/quickstart.md): commands, functions and training, from this machine to several
-- [Why GpuLayer](get-started/why-gpulayer.md): what it adds, and when not to use it
+- [Why GPUlayer](get-started/why-gpulayer.md): what it adds, and when not to use it
 - [Commands and scripts](workloads/commands.md), [Python functions](workloads/functions.md), [Any GPU framework](workloads/frameworks.md)
 - [PyTorch integration](pytorch/trainer.md)
 - [Run a server](guides/self-hosting.md): add more machines

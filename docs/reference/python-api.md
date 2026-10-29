@@ -8,7 +8,7 @@ import gpulayer as gl
 
 | Name | Description |
 |---|---|
-| `gl.connect(url, token, *, fingerprint=None, ca_file=None) -> Client` | use a GpuLayer server for this process; checks the connection immediately |
+| `gl.connect(url, token, *, fingerprint=None, ca_file=None) -> Client` | use a GPUlayer server for this process; checks the connection immediately |
 | `gl.default_client() -> Client` | the client set by `connect()`, else one from `$GPULAYER_URL`, else the embedded control plane |
 | `gl.remote(fn=None, **options)` | decorator returning a `RemoteFunction`; see [Python functions](../workloads/functions.md) |
 | `gl.Client(...)` | explicit client, described below |
@@ -58,7 +58,7 @@ import gpulayer.pytorch as glt
 |---|---|---|
 | `glt.Module` | `nn.Module` with `training_step`, `validation_step`, `configure_optimizers`, `log`, `load_from_checkpoint` | [Trainer and Module](../pytorch/trainer.md) |
 | `glt.Trainer(...)` | `fit(model, train, val=None, ckpt_path=None)`, `validate(model, loader)` | [Trainer and Module](../pytorch/trainer.md) |
-| `glt.launch(...) -> LaunchResult or None` | run this script on GpuLayer workers | [launch()](../pytorch/launch.md) |
+| `glt.launch(...) -> LaunchResult or None` | run this script on GPUlayer workers | [launch()](../pytorch/launch.md) |
 | `glt.Runtime(accelerator, precision)` | device, DDP, sharding and precision helpers | [Runtime helpers](../pytorch/runtime.md) |
 | `glt.is_launcher_process()`, `glt.in_gpulayer_job()` | where the code is running | |
 | `glt.resolve_accelerator(name)`, `glt.seed_everything(seed)` | utilities | |

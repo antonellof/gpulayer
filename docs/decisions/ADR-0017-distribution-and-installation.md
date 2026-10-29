@@ -5,17 +5,17 @@
 
 ## Context
 
-Installing GpuLayer meant cloning the repository and creating a virtual environment by hand.
-That is fine for contributors but slows down the people GpuLayer is for: someone adding a GPU
+Installing GPUlayer meant cloning the repository and creating a virtual environment by hand.
+That is fine for contributors but slows down the people GPUlayer is for: someone adding a GPU
 server or a cloud VM as a worker wants one command. Servers and workers on Linux are often run
-as containers. GpuLayer is not on PyPI, and its licence is still undecided (ADR-0012), which
+as containers. GPUlayer is not on PyPI, and its licence is still undecided (ADR-0012), which
 blocks publishing packages and images for others to use.
 
 ## Decision
 
 1. **Install script** (`install.sh`): POSIX `sh`, no sudo. It creates a private virtual
    environment (default `~/.local/share/gpulayer/venv`, with uv when available, otherwise
-   `python3 -m venv`), installs GpuLayer from GitHub (`GPULAYER_REF`, `GPULAYER_EXTRAS`) and
+   `python3 -m venv`), installs GPUlayer from GitHub (`GPULAYER_REF`, `GPULAYER_EXTRAS`) and
    links `gpulayer` into `~/.local/bin`. Served as
    `curl -fsSL https://raw.githubusercontent.com/antonellof/gpulayer/main/install.sh | sh`.
 2. **Docker image** (`Dockerfile`): one image for the CLI, server and worker, built on

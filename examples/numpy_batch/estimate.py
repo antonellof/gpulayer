@@ -1,6 +1,6 @@
 """Any Python library, any workload: a NumPy Monte Carlo job split into parallel chunks.
 
-GpuLayer is not tied to a training framework. A function that uses NumPy, SciPy, pandas,
+GPUlayer is not tied to a training framework. A function that uses NumPy, SciPy, pandas,
 OpenCV, CuPy or anything else runs the same way: decorate it, then .run() or .map() it.
 
     python estimate.py

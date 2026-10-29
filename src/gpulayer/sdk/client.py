@@ -1,4 +1,4 @@
-"""The GpuLayer SDK: one client for local, remote and cloud targets.
+"""The GPUlayer SDK: one client for local, remote and cloud targets.
 
 from gpulayer import Client, command
 with Client() as c:                    # embedded control plane in $GPULAYER_HOME

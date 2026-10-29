@@ -1,12 +1,12 @@
 # Performance
 
 Speed, parallelism and job distribution are primary design goals ([ADR-0016](../decisions/ADR-0016-performance-parallelism-and-distribution.md)).
-This page explains where time goes when GpuLayer runs a job, what has been done about it, and
+This page explains where time goes when GPUlayer runs a job, what has been done about it, and
 how to measure it yourself.
 
 ## Where time goes
 
-| Stage | What happens | How GpuLayer keeps it short |
+| Stage | What happens | How GPUlayer keeps it short |
 |---|---|---|
 | Submit | the spec is validated and stored, the scheduler places it | one database transaction; placement runs at once |
 | Dispatch | a worker learns it has a task | workers hold a long poll open; the control plane wakes them on placement |
@@ -17,7 +17,7 @@ how to measure it yourself.
 
 ## Dispatch overhead
 
-`benchmarks/dispatch.py` measures the time GpuLayer adds around a job that does nothing
+`benchmarks/dispatch.py` measures the time GPUlayer adds around a job that does nothing
 (`python -c pass`):
 
 ```bash
@@ -58,7 +58,7 @@ environment to change it.
 ## Tips for fast jobs
 
 - Keep the script's directory small. Bundles skip `.git`, virtual environments,
-  `gpulayer_runs/` and any GpuLayer home, but large datasets next to the script are uploaded on
+  `gpulayer_runs/` and any GPUlayer home, but large datasets next to the script are uploaded on
   every launch. Pass data as inputs or read it from storage the workers can reach.
 - Use `DataLoader(num_workers=..., pin_memory=True)` on GPU jobs so data loading overlaps with
   compute.

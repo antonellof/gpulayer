@@ -1,6 +1,6 @@
 # Dashboard and monitoring
 
-GpuLayer has a built-in web dashboard for day-to-day job management, and a Prometheus
+GPUlayer has a built-in web dashboard for day-to-day job management, and a Prometheus
 `/metrics` endpoint for Grafana and alerting.
 
 ## Web dashboard
@@ -92,7 +92,7 @@ restarts and `gpulayer gc`. Histogram buckets are 1 s, 5 s, 15 s, 1 min, 5 min, 
 ## Grafana
 
 [`deploy/monitoring/`](../../deploy/monitoring) has everything to run Prometheus and Grafana
-next to a GpuLayer server:
+next to a GPUlayer server:
 
 ```bash
 cd deploy/monitoring
@@ -102,7 +102,7 @@ cp ~/.gpulayer/tls/cert.pem gpulayer-cert.pem                        # the serve
 docker compose up -d
 ```
 
-Grafana runs on http://localhost:3001 with the **GpuLayer** dashboard provisioned. To use your
+Grafana runs on http://localhost:3001 with the **GPUlayer** dashboard provisioned. To use your
 own Grafana instead, import [`grafana/gpulayer-dashboard.json`](../../deploy/monitoring/grafana/gpulayer-dashboard.json)
 and pick your Prometheus data source. The dashboard shows running and waiting jobs, workers and
 GPUs online, 24-hour success rate, the oldest queued job, jobs by state, throughput, run time

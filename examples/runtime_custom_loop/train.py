@@ -17,7 +17,7 @@ ap.add_argument("--devices", type=int, default=1)
 ap.add_argument("--epochs", type=int, default=5)
 args = ap.parse_args()
 
-# Outside a job with more than one process, re-run this script on GpuLayer workers.
+# Outside a job with more than one process, re-run this script on GPUlayer workers.
 if args.devices > 1:
     glt.launch(devices=args.devices, accelerator="cpu")
 

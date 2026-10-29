@@ -44,7 +44,7 @@ token cannot call client endpoints, and the join token can only register.
 - A lost task may still be running. If the worker reconnects, its next heartbeat tells it to
   kill the task, and a late result is recorded as an event and otherwise ignored.
 - Independent jobs are retried only if `retry.max_attempts > 1` and the reason is listed in
-  `retry.retry_on` (default `worker_lost`). A retry can repeat side effects, because GpuLayer
+  `retry.retry_on` (default `worker_lost`). A retry can repeat side effects, because GPUlayer
   gives at-least-once execution at best and never exactly-once.
 
 ## Artifacts across machines

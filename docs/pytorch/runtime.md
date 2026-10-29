@@ -30,7 +30,7 @@ if rt.is_global_zero:
 rt.teardown()
 ```
 
-The same loop runs in a plain process, under `torchrun`, and inside GpuLayer jobs. Combine it
+The same loop runs in a plain process, under `torchrun`, and inside GPUlayer jobs. Combine it
 with [`launch()`](launch.md) to choose where it runs.
 
 ## API

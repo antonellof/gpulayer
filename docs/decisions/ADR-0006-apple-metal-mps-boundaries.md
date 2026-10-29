@@ -21,7 +21,7 @@ CPU.
   job demand `dedicated` memory, which then excludes Macs. Memory rejection reasons
   mention "unified memory shared with the CPU".
 - **Supported:** independent jobs (`accelerator="mps"`). The workload itself selects
-  `torch.device("mps")`. GpuLayer only routes and exposes `GPULAYER_ACCELERATOR`.
+  `torch.device("mps")`. GPUlayer only routes and exposes `GPULAYER_ACCELERATOR`.
 - **Unsupported:** distributed MPS. `JobSpec` validation rejects `DistributedJob` with
   `accelerator="mps"`, and the support matrix marks it unsupported. CPU/gloo distributed
   jobs can run on Macs, because they do not use MPS.
@@ -47,7 +47,7 @@ CPU.
 ## Consequences and trade-offs
 
 - Workloads must be written for MPS (device selection, fallbacks such as
-  `PYTORCH_ENABLE_MPS_FALLBACK`). GpuLayer does not translate CUDA code.
+  `PYTORCH_ENABLE_MPS_FALLBACK`). GPUlayer does not translate CUDA code.
 - Unified memory numbers overstate what a GPU workload can actually use.
 
 ## Security and operational implications
@@ -64,4 +64,4 @@ CPU.
 The `mps` accelerator now means the Apple GPU reached through Metal, by any framework: PyTorch
 MPS, MLX and others. It is reported on every Apple Silicon worker; PyTorch jobs additionally
 require the `torch.mps` capability. MLX matrix products have been run on the Apple GPU through
-GpuLayer (`examples/mlx_metal`). The single-process rule is unchanged.
+GPUlayer (`examples/mlx_metal`). The single-process rule is unchanged.

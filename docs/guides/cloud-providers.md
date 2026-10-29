@@ -25,7 +25,7 @@ instance names are metadata only; the scheduler sees capabilities.
 4. The job moves to `provisioning`; an estimated cost record is attached
    (`kind="estimate"`, currency, unit, source, timestamp).
 5. The booted worker registers with origin `provider` and its token. Identity fields
-   (provider, region, reservation label) come from GpuLayer's record, not the worker's claims.
+   (provider, region, reservation label) come from GPUlayer's record, not the worker's claims.
 6. The worker is reserved for that job. The scheduler places the job only after the worker
    reports compatible capabilities, since a successfully provisioned machine may still lack a
    working GPU runtime.
@@ -39,11 +39,11 @@ instance names are metadata only; the scheduler sees capabilities.
   simulated and provisions nothing. All lifecycle tests use it.
 - No real provider adapter exists. Choosing the first one is an open decision (ADR-0010) that
   depends on validating the provider's current APIs, authentication, regions and instance
-  types, lifecycle and cleanup behaviour, and pricing sources. GpuLayer will not ship invented
+  types, lifecycle and cleanup behaviour, and pricing sources. GPUlayer will not ship invented
   prices or capacities.
 
 ## Existing vs managed workers
 
 A private GPU box that joins with a join token is an existing worker (`target=remote`). A
-machine created by an adapter is a managed worker (`target=cloud`). GpuLayer schedules work on
+machine created by an adapter is a managed worker (`target=cloud`). GPUlayer schedules work on
 both kinds and provisions only managed workers.

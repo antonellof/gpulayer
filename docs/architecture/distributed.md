@@ -2,8 +2,8 @@
 
 A `DistributedJob` is one logical workload across `num_workers` nodes with
 `procs_per_worker` processes each (`world_size = num_workers × procs_per_worker`).
-GpuLayer handles allocation and lifecycle. PyTorch handles communication through torchrun and
-`gloo` or `nccl`, and GpuLayer has no collective layer of its own. See ADR-0007.
+GPUlayer handles allocation and lifecycle. PyTorch handles communication through torchrun and
+`gloo` or `nccl`, and GPUlayer has no collective layer of its own. See ADR-0007.
 
 ## Flow
 
@@ -35,7 +35,7 @@ GpuLayer handles allocation and lifecycle. PyTorch handles communication through
 
 ## Checkpoints and retries
 
-GpuLayer never retries a partially executed group automatically. Checkpointing is up to the
+GPUlayer never retries a partially executed group automatically. Checkpointing is up to the
 workload: write checkpoints to `GPULAYER_OUTPUT_DIR` (returned as artifacts) or to storage your
 workload controls, then resubmit with an input that points at them.
 

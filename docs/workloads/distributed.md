@@ -1,6 +1,6 @@
 # Distributed jobs
 
-A distributed job is one workload spread over several workers and processes. GpuLayer places the
+A distributed job is one workload spread over several workers and processes. GPUlayer places the
 whole group at once, assigns ranks, publishes a rendezvous address, starts every node, collects
 per-node logs and outputs, and stops the group if any node fails.
 

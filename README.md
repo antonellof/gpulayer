@@ -1,8 +1,12 @@
-# GpuLayer
+<p align="center">
+  <img src="docs/assets/logo.svg" alt="GPUlayer" width="300">
+</p>
+
+# GPUlayer
 
 Run any GPU workload on any GPU you can reach: this machine, a GPU server down the hall, a cloud
 VM, or several of them at once. A workload can be a command in any language, a Python function
-using any library, or a distributed job. GpuLayer finds a machine that can run it, starts it
+using any library, or a distributed job. GPUlayer finds a machine that can run it, starts it
 there, and brings back logs, outputs and results. PyTorch gets a deeper integration on top.
 
 ```bash
@@ -27,7 +31,7 @@ trainer = glt.Trainer(max_epochs=5, accelerator="cuda", devices=4, num_nodes=2, 
 trainer.fit(model, train_loader, val_loader)                              # 8 GPUs, two machines
 ```
 
-> **Status: pre-alpha.** Tested on CPU and Apple Silicon (Metal: PyTorch MPS and MLX), with
+> **Status: v0.1.0, the first release.** Tested on CPU and Apple Silicon (Metal: PyTorch MPS and MLX), with
 > multiple workers on one host. NVIDIA GPUs and multi-machine runs are implemented but not
 > validated yet; automatic cloud provisioning is simulated. See
 > [Status and roadmap](docs/project/status.md).
@@ -50,12 +54,12 @@ docker build -t gpulayer .
 docker run -d -p 8470:8470 -v gpulayer-data:/data gpulayer up --no-worker
 ```
 
-**From source**, to run the examples or work on GpuLayer:
+**From source**, to run the examples or work on GPUlayer:
 
 ```bash
 git clone https://github.com/antonellof/gpulayer.git && cd gpulayer
 uv venv && source .venv/bin/activate
-uv pip install -e '.[dev,examples]'   # GpuLayer plus what the examples use (torch, numpy, mlx on Apple Silicon)
+uv pip install -e '.[dev,examples]'   # GPUlayer plus what the examples use (torch, numpy, mlx on Apple Silicon)
 ```
 
 More options in [Installation](docs/get-started/installation.md).
@@ -81,7 +85,7 @@ More options in [Installation](docs/get-started/installation.md).
    python examples/trainer_regression/train.py
    ```
 
-4. **Same file, two processes with DDP.** GpuLayer starts a local worker, launches torchrun,
+4. **Same file, two processes with DDP.** GPUlayer starts a local worker, launches torchrun,
    shards the data, and loads the trained weights back into your `model`.
 
    ```bash
@@ -128,17 +132,22 @@ More options in [Installation](docs/get-started/installation.md).
    Servers also expose Prometheus metrics at `/metrics`, with a ready-made Grafana dashboard
    in [`deploy/monitoring`](deploy/monitoring) ([guide](docs/guides/monitoring.md)).
 
-   ![GpuLayer dashboard: jobs, workers, CPU load, memory and task processes over time](docs/assets/dashboard/overview-dark.png)
+   ![GPUlayer dashboard: jobs, workers, CPU load, memory and task processes over time](docs/assets/dashboard/overview-dark.png)
 
 The [full quickstart](docs/get-started/quickstart.md) shows the output of each step.
 
-## Where GpuLayer sits
+## Where GPUlayer sits
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/where-gpulayer-sits-dark.svg">
+  <img alt="Your workloads go through GPUlayer to the machines you can reach" src="docs/assets/where-gpulayer-sits-light.svg">
+</picture>
 
 Frameworks (PyTorch, JAX, MLX, CuPy, ...) decide how a computation uses the hardware they are
-given. GpuLayer decides which hardware runs it, gets code and data there, starts it, and returns
+given. GPUlayer decides which hardware runs it, gets code and data there, starts it, and returns
 the results: for training, inference batches, rendering, simulation or data processing.
 
-| Situation | Without | With GpuLayer |
+| Situation | Without | With GPUlayer |
 |---|---|---|
 | Code on a laptop, GPU somewhere else | ssh, copy code, rebuild env, tmux, copy results back | `gpulayer submit --target remote -- <cmd>` or `python train.py --target remote` |
 | Several GPU machines | track free boxes by hand; jobs crash on the wrong GPU, driver or library | one queue; each job lands where its accelerator and frameworks exist, or is rejected with the reason |
@@ -146,9 +155,9 @@ the results: for training, inference batches, rendering, simulation or data proc
 | A batch of independent tasks | loops and ad-hoc scripts | `fn.map([...])` in parallel |
 | Multi-node training | `torchrun` on every node with matching ranks, address and port | `Trainer(num_nodes=2, devices=4)` |
 
-On a single machine with a single GPU, running your code directly is simpler. GpuLayer runs jobs
+On a single machine with a single GPU, running your code directly is simpler. GPUlayer runs jobs
 that finish (long-running services are planned) and is not a sandbox for untrusted code.
-Details: [Why GpuLayer](docs/get-started/why-gpulayer.md).
+Details: [Why GPUlayer](docs/get-started/why-gpulayer.md).
 
 ## Ways to use it
 

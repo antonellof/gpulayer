@@ -1,4 +1,4 @@
-"""Functions used by test_remote.py. They live in a file because GpuLayer ships source."""
+"""Functions used by test_remote.py. They live in a file because GPUlayer ships source."""
 
 import os
 

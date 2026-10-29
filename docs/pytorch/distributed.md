@@ -1,6 +1,6 @@
 # Distributed training
 
-GpuLayer runs distributed PyTorch with `torchrun` and DistributedDataParallel. It finds a group
+GPUlayer runs distributed PyTorch with `torchrun` and DistributedDataParallel. It finds a group
 of compatible workers, assigns ranks, publishes the rendezvous address and starts every node.
 PyTorch does the gradient communication.
 

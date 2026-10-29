@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Any executable can be a GpuLayer job: here, plain shell tools.
+# Any executable can be a GPUlayer job: here, plain shell tools.
 # The input file is staged into $GPULAYER_INPUT_DIR; anything written to
 # $GPULAYER_OUTPUT_DIR comes back as an output artifact.
 set -euo pipefail

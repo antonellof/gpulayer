@@ -1,6 +1,6 @@
 # Run a server (gpulayer up)
 
-`gpulayer up` turns any machine into a GpuLayer server in one command. Other machines join it
+`gpulayer up` turns any machine into a GPUlayer server in one command. Other machines join it
 with `gpulayer join`, and your code connects with `gl.connect` or two environment variables.
 
 ```mermaid
@@ -24,7 +24,7 @@ gpulayer up
 ```
 
 ```text
-GpuLayer is up at https://192.168.1.56:8470  (TLS, self-signed certificate pinned by fingerprint)
+GPUlayer is up at https://192.168.1.56:8470  (TLS, self-signed certificate pinned by fingerprint)
 Worker on this machine: gpu-box (cuda, 32 CPU cores)
 
 Add a machine (GPU server, workstation, cloud VM) by running on it:
@@ -65,9 +65,9 @@ The machine reports its hardware (GPUs, memory, torch version, distributed backe
 taking jobs that fit. Stop it with Ctrl+C; its running jobs are marked lost and handled by
 their retry policy.
 
-**Cloud VMs** work the same way: start a VM with a GPU image, install GpuLayer and PyTorch,
+**Cloud VMs** work the same way: start a VM with a GPU image, install GPUlayer and PyTorch,
 and run the `join` line. The VM must reach the server, so run `gpulayer up` somewhere both can
-reach (a cloud VM with a public address, or a VPN). Automatic provisioning, where GpuLayer
+reach (a cloud VM with a public address, or a VPN). Automatic provisioning, where GPUlayer
 creates the VMs itself, is not available yet; see [Cloud and providers](cloud-providers.md).
 
 ## 3. Use it

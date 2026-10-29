@@ -1,6 +1,6 @@
 # Architecture overview
 
-GpuLayer is a modular monolith. The components below live in one Python package and can run
+GPUlayer is a modular monolith. The components below live in one Python package and can run
 in one process (embedded mode) or as a served control plane with remote workers.
 See [ADR-0001](../decisions/ADR-0001-control-plane-and-deployment-model.md).
 
@@ -101,5 +101,5 @@ worker heartbeats and task leases, enforces a deadline backstop, and advances pr
 
 In self-hosted mode the network carries job specs, logs, events, artifacts (source bundles,
 inputs and outputs) and worker capabilities. Job specs include `env` values, so pass secrets as
-secret references; secret values stay on the workers. Nothing is sent to a GpuLayer-operated
+secret references; secret values stay on the workers. Nothing is sent to a GPUlayer-operated
 service, and there is no telemetry.

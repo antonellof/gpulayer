@@ -5,16 +5,16 @@
 
 ## Context
 
-GpuLayer is workload-agnostic (ADR-0015); this ADR covers its first framework integration.
+GPUlayer is workload-agnostic (ADR-0015); this ADR covers its first framework integration.
 
-Milestone 1 made GpuLayer able to place and run jobs, but a PyTorch user still had to split
+Milestone 1 made GPUlayer able to place and run jobs, but a PyTorch user still had to split
 code into a training script and a submission script, and had to handle devices, DDP wrapping,
 data sharding and checkpoints by hand. That offered too little over plain PyTorch.
 
 Training frameworks commonly hide the device and the parallel strategy behind a module with
 step hooks and a trainer object. They work inside the machine or cluster they are started on.
 They do not choose which machine, cluster or cloud runs the job, and they do not provision,
-queue, or collect results across machines. GpuLayer does those things, so its PyTorch API
+queue, or collect results across machines. GPUlayer does those things, so its PyTorch API
 should cover both: how a model trains and where it trains.
 
 ## Decision
@@ -25,7 +25,7 @@ require the `torch` framework and, for GPUs, the `torch.cuda` or `torch.mps` cap
 (ADR-0015), so they only land on workers whose torch can drive the requested GPU.
 
 1. Launcher (framework agnostic). `gpulayer.pytorch.launch(nodes=, devices=, accelerator=,
-   target=, ...)` goes at the top of any script. Outside a GpuLayer job it packages the
+   target=, ...)` goes at the top of any script. Outside a GPUlayer job it packages the
    script's directory and submits the same script with the same arguments: a `CommandJob` for
    one process, otherwise a torchrun `DistributedJob`. It then streams logs, downloads outputs
    and exits with the job's exit code. Inside the job it returns immediately and the script
@@ -51,13 +51,13 @@ works, and it keeps ADR-0002: code travels as source and nothing is pickled.
 ## Alternatives considered
 
 - Make an existing third-party training framework a dependency and ship only a plugin for it.
-  This is the least code, but it makes that framework mandatory and ties GpuLayer to another
+  This is the least code, but it makes that framework mandatory and ties GPUlayer to another
   project's release cycle. Interop stays available through the launcher instead.
 - Ship models, dataloaders and closures to workers with pickle or cloudpickle. Convenient, but
   it breaks across Python and torch versions and turns deserialization into remote code
   execution on workers. Rejected by ADR-0002.
 - Build a large trainer with callbacks, logger integrations, many strategies and dozens of
-  flags. That is a big surface to maintain. The GpuLayer Trainer stays small; users who need
+  flags. That is a big surface to maintain. The GPUlayer Trainer stays small; users who need
   more can run their framework of choice through the launcher.
 
 ## Consequences

@@ -1,6 +1,6 @@
 """Provider adapter interface.
 
-Adapters translate GpuLayer's capability model into an infrastructure provider's API.
+Adapters translate GPUlayer's capability model into an infrastructure provider's API.
 They expose offers as ``WorkerCapabilities`` templates, so the core scheduler never
 sees provider-specific instance names. Each adapter declares what it actually supports.
 """

@@ -1,6 +1,6 @@
 # Run any script with launch()
 
-`launch()` sends an existing training script to GpuLayer workers without changing the rest of
+`launch()` sends an existing training script to GPUlayer workers without changing the rest of
 the script. Add two lines at the top:
 
 ```python
@@ -67,4 +67,4 @@ With more than one node, each node's files come back under `node<rank>/`.
 | Function | Returns |
 |---|---|
 | `glt.is_launcher_process()` | `True` in the process that submits work, `False` on workers |
-| `glt.in_gpulayer_job()` | `True` inside a GpuLayer job |
+| `glt.in_gpulayer_job()` | `True` inside a GPUlayer job |

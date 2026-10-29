@@ -1,6 +1,6 @@
 # Architecture decision records
 
-ADRs record the significant architectural decisions behind GpuLayer: what was decided,
+ADRs record the significant architectural decisions behind GPUlayer: what was decided,
 why, which alternatives were rejected, and what the decision costs us.
 
 Status values:

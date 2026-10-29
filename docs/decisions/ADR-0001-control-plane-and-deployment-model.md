@@ -5,10 +5,10 @@
 
 ## Context
 
-GpuLayer must work on a laptop with no account and no service, and must also coordinate
+GPUlayer must work on a laptop with no account and no service, and must also coordinate
 many remote, cloud and distributed workers. CLAUDE.md asks for logical boundaries without
 premature microservices. It also asks that a "hosted" control plane never imply that user
-data is sent to a GpuLayer-operated service.
+data is sent to a GPUlayer-operated service.
 
 ## Decision
 

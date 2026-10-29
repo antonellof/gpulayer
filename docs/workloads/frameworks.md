@@ -1,6 +1,6 @@
 # Any GPU framework
 
-GpuLayer does not depend on a particular GPU library. Workers report which accelerators they
+GPUlayer does not depend on a particular GPU library. Workers report which accelerators they
 have and which GPU frameworks are installed in the Python that runs jobs; jobs say what they
 need; the scheduler matches the two.
 

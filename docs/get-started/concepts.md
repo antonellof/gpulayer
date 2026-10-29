@@ -2,7 +2,7 @@
 
 ## Jobs, targets and workload types
 
-A job is one thing you asked GpuLayer to run. Two independent choices describe it:
+A job is one thing you asked GPUlayer to run. Two independent choices describe it:
 
 - The **target** says where it may run: `local`, `remote` or `cloud`.
 - The **workload type** says what runs: an `independent` job (one process tree on one worker)
@@ -33,7 +33,7 @@ single process. A job runs on another target only when you list it in
 | `FunctionJob` | independent | `module:function(*args, **kwargs)` | source bundle on `PYTHONPATH`, or an installed module |
 | `DistributedJob` | distributed | `torchrun` on every node, running a script or `module:function` | source bundle |
 
-Code travels as source. GpuLayer zips the directory, uploads it once (addressed by its
+Code travels as source. GPUlayer zips the directory, uploads it once (addressed by its
 SHA-256), and the worker imports your module by name. Function arguments and return values must
 be JSON. Closures, lambdas and pickled objects are not supported, because they break across
 machines, Python versions and trust boundaries ([ADR-0002](../decisions/ADR-0002-job-contracts-and-packaging.md)).
@@ -95,7 +95,7 @@ stateDiagram-v2
 
 Each job has one task per worker per attempt. Task states are `assigned`, `running`,
 `succeeded`, `failed`, `cancelled`, `timed_out` and `lost`. A task becomes `lost` when its
-worker stops sending heartbeats; the process may still be running, so GpuLayer never promises
+worker stops sending heartbeats; the process may still be running, so GPUlayer never promises
 exactly-once execution.
 
 ## Control plane

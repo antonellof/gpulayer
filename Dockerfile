@@ -1,4 +1,4 @@
-# GpuLayer image: the CLI, the control plane (`gpulayer up`) and a worker (`gpulayer join`).
+# GPUlayer image: the CLI, the control plane (`gpulayer up`) and a worker (`gpulayer join`).
 #
 #   docker build -t gpulayer .                                   # CPU base (python:3.12-slim)
 #   docker build -t gpulayer:cuda \

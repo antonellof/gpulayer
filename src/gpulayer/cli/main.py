@@ -120,7 +120,7 @@ def cmd_server_start(args: argparse.Namespace) -> int:
         tls_key=args.tls_key,
         allow_insecure_remote=args.allow_insecure_remote,
     )
-    print(f"GpuLayer control plane listening on {server.url} (state: {home})", flush=True)
+    print(f"GPUlayer control plane listening on {server.url} (state: {home})", flush=True)
     signal.signal(signal.SIGTERM, lambda *_: threading.Thread(target=server.shutdown).start())
     try:
         server.serve_forever()
@@ -226,7 +226,7 @@ def cmd_up(args: argparse.Namespace) -> int:
     )
     print(
         f"""
-GpuLayer is up at {url}  ({tls_note})
+GPUlayer is up at {url}  ({tls_note})
 Worker on this machine: {worker_desc}
 
 Add a machine (GPU server, workstation, cloud VM) by running on it:
@@ -261,7 +261,7 @@ Tokens are kept in {home / "up-tokens.json"}. Press Ctrl+C to stop.
 
 
 def cmd_join(args: argparse.Namespace) -> int:
-    """Register this machine as a worker of a GpuLayer server (`gpulayer up`)."""
+    """Register this machine as a worker of a GPUlayer server (`gpulayer up`)."""
     args.url = args.server_url
     args.join_token = args.token
     return cmd_worker_start(args)
@@ -305,7 +305,7 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
     port = server.httpd.server_address[1]
     url = f"http://127.0.0.1:{port}/ui/#token={token}"
     server.start()
-    print(f"GpuLayer dashboard: {url}\nPress Ctrl+C to stop.", flush=True)
+    print(f"GPUlayer dashboard: {url}\nPress Ctrl+C to stop.", flush=True)
     if not args.no_open:
         webbrowser.open(url)
     stop = threading.Event()
@@ -766,7 +766,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     s.set_defaults(fn=cmd_up)
 
-    s = sub.add_parser("join", help="add this machine as a worker of a GpuLayer server")
+    s = sub.add_parser("join", help="add this machine as a worker of a GPUlayer server")
     s.add_argument("server_url", help="URL printed by `gpulayer up`")
     s.add_argument(
         "--token",

@@ -7,7 +7,7 @@
     trainer.fit(model, train_loader, val_loader)
 
 When the run cannot happen in this process (``target`` given, or more than one process),
-``fit`` re-executes this script on GpuLayer workers through ``launch``; on the workers the
+``fit`` re-executes this script on GPUlayer workers through ``launch``; on the workers the
 same ``fit`` call runs the training loop. Afterwards the final weights are loaded into the
 local ``model`` and ``callback_metrics`` / ``history`` hold the remote metrics.
 """
@@ -81,7 +81,7 @@ class Trainer:
 
     @property
     def will_launch(self) -> bool:
-        """True when ``fit`` will run on GpuLayer workers instead of this process."""
+        """True when ``fit`` will run on GPUlayer workers instead of this process."""
         return is_launcher_process() and (
             self.target is not None or self.devices * self.num_nodes > 1
         )

@@ -18,7 +18,7 @@ distributed systems cannot keep.
   (`control_plane/provisioning.py`). The `FakeProvider` source string says
   "simulated". Records attach to `JobResult.costs`.
 - An unknown price stays unknown. With `max_hourly_cost` set, unpriced offers are
-  rejected rather than assumed cheap. GpuLayer contains no hardcoded prices.
+  rejected rather than assumed cheap. GPUlayer contains no hardcoded prices.
 
 ## Decision: delivery, leases and retries
 

@@ -424,6 +424,7 @@ UI_FILES = {
     "index.html": "text/html; charset=utf-8",
     "app.js": "text/javascript; charset=utf-8",
     "app.css": "text/css; charset=utf-8",
+    "icon.svg": "image/svg+xml",
 }
 UI_HEADERS = {
     "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; "
@@ -461,7 +462,7 @@ def _encode(value: Any) -> Any:
 
 
 class _RequestHandler(BaseHTTPRequestHandler):
-    server_version = "GpuLayer"
+    server_version = "GPUlayer"
     protocol_version = "HTTP/1.1"
 
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002

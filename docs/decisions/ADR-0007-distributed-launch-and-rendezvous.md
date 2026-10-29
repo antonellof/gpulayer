@@ -5,7 +5,7 @@
 
 ## Context
 
-A distributed job is one logical workload across several nodes and processes. GpuLayer
+A distributed job is one logical workload across several nodes and processes. GPUlayer
 should own allocation, rank assignment, rendezvous configuration and lifecycle. It should
 not own collective communication, which PyTorch already provides.
 
@@ -54,7 +54,7 @@ not own collective communication, which PyTorch already provides.
 
 ## Consequences and trade-offs
 
-- Rank-0's advertised address must be reachable from every peer. GpuLayer does not
+- Rank-0's advertised address must be reachable from every peer. GPUlayer does not
   verify reachability before launch, so failures surface as torchrun rendezvous
   timeouts.
 - `free_port()` has a small race: the port could be taken before torchrun binds it.

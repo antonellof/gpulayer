@@ -95,7 +95,7 @@ uncommitted local changes, so it was deliberately left untouched.
 
 - Done: long-poll dispatch and job waits, event-driven process exit, background log shipping,
   no per-step device sync in the Trainer (1.6x faster steps on MPS), bundles skip
-  GpuLayer state. Idle-job latency 626 ms to 31 ms, burst throughput 27 to 87 jobs/s (one Mac).
+  GPUlayer state. Idle-job latency 626 ms to 31 ms, burst throughput 27 to 87 jobs/s (one Mac).
 - Done: several tasks per worker, each with its own reserved GPUs (tested with simulated
   multi-GPU workers and real concurrent CPU processes).
 - Done: per-rank log streams (every distributed log line carries its global rank).

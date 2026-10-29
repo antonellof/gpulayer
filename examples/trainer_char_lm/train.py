@@ -19,8 +19,8 @@ from torch.utils.data import DataLoader, Dataset
 import gpulayer.pytorch as glt
 
 TEXT = (
-    """GpuLayer runs PyTorch code on whatever compute you can reach. You write one training
-file. GpuLayer decides where it can run, starts it there, and brings back the logs, metrics,
+    """GPUlayer runs PyTorch code on whatever compute you can reach. You write one training
+file. GPUlayer decides where it can run, starts it there, and brings back the logs, metrics,
 checkpoints and results. The same file trains in your process, as a multi-process job on your
 machine, or across a group of remote workers. """
     * 20
@@ -122,4 +122,4 @@ if __name__ == "__main__":
 
     if glt.is_launcher_process():
         print(f"val_ppl={trainer.callback_metrics['val_ppl']:.2f}")
-        print("sample:", model.cpu().generate("GpuLayer "))
+        print("sample:", model.cpu().generate("GPUlayer "))

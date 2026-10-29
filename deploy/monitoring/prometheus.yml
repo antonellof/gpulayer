@@ -1,4 +1,4 @@
-# Scrape a GpuLayer server. Create a read-only token on the server machine first:
+# Scrape a GPUlayer server. Create a read-only token on the server machine first:
 #   gpulayer token create prometheus --role metrics > prometheus-token
 global:
   scrape_interval: 15s

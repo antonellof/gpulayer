@@ -1,6 +1,6 @@
 """Worker-group planning and torchrun launch construction for DistributedJob.
 
-GpuLayer allocates the group, assigns node ranks and publishes the rendezvous endpoint;
+GPUlayer allocates the group, assigns node ranks and publishes the rendezvous endpoint;
 PyTorch (torchrun + the chosen process-group backend) does the collective communication.
 """
 

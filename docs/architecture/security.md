@@ -1,6 +1,6 @@
 # Security and trust model
 
-GpuLayer currently targets a single user or a team whose members trust each other. Running
+GPUlayer currently targets a single user or a team whose members trust each other. Running
 untrusted code for the public or for multiple tenants is out of scope until a dedicated threat
 model and isolation review exist (ADR-0009).
 
@@ -11,7 +11,7 @@ model and isolation review exist (ADR-0009).
 | Client → control plane | named bearer token with role `admin` or `submitter` (hash stored, constant-time compare); TLS required off-loopback |
 | Worker → control plane (join) | named *join token*, valid only for `POST /v1/workers/register`; can expire |
 | Worker → control plane (session) | per-worker random session token; every task call checks ownership |
-| Provisioned worker | single-use token bound to one instance record; identity fields taken from GpuLayer's record |
+| Provisioned worker | single-use token bound to one instance record; identity fields taken from GPUlayer's record |
 | Control plane → workload | job spec, source bundle, inputs; secrets as *references* only |
 | Workload → host | OS process group under the worker's user; this is not a sandbox |
 | Embedded mode | anyone who can write `$GPULAYER_HOME` (created 0700) controls it |

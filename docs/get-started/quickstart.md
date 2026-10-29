@@ -16,7 +16,7 @@ uv pip install -e '.[dev,examples]'
 gpulayer resources detect
 ```
 
-To use GpuLayer without the examples, the
+To use GPUlayer without the examples, the
 [install script](installation.md#with-the-install-script) or the
 [Docker image](installation.md#with-docker) is enough.
 
@@ -145,7 +145,7 @@ back to `gpulayer_runs/`. Your local `model` object now holds the trained weight
 python examples/trainer_regression/train.py --accelerator cpu --nodes 2 --devices 2
 ```
 
-GpuLayer starts two local workers, places one node on each, publishes a rendezvous address
+GPUlayer starts two local workers, places one node on each, publishes a rendezvous address
 from node 0, and launches torchrun on both. World size is 4. On real hardware the workers would
 be different machines; see [Remote workers](../guides/remote-workers.md).
 

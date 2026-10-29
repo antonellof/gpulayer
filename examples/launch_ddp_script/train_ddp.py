@@ -1,7 +1,7 @@
 """A plain PyTorch DDP script made portable with two lines.
 
 Everything below the `launch()` call is ordinary torchrun-style DDP code. `launch()`
-submits this script to GpuLayer workers and returns immediately when it is already
+submits this script to GPUlayer workers and returns immediately when it is already
 running inside a job.
 
     python train_ddp.py                              # 1 node x 2 processes on this machine

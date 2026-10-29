@@ -32,7 +32,7 @@ portable across Python versions or library versions, and they are unsafe to dese
   (`ControlPlane.submit` re-validates and checks that referenced artifacts exist).
   Contradictions such as CPU with gpu_count>0, distributed MPS, NCCL without CUDA,
   retrying distributed jobs, reserved env names and unsafe relative paths are rejected.
-- GpuLayer does not install dependencies. The worker's interpreter (`--python`)
+- GPUlayer does not install dependencies. The worker's interpreter (`--python`)
   must already provide them. Requirements are declared through
   `ResourceRequest.frameworks` and `python` (PEP 440 specifiers) and checked by the
   scheduler.

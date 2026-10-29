@@ -19,7 +19,7 @@ docker run -d --name "gl-server-$$" --network "$NET" --network-alias gl-server "
   up --no-worker --advertise-address gl-server >/dev/null
 
 i=0
-until docker logs "gl-server-$$" 2>&1 | grep -q "GpuLayer is up"; do
+until docker logs "gl-server-$$" 2>&1 | grep -q "GPUlayer is up"; do
   i=$((i + 1)); [ "$i" -lt 60 ] || fail "server did not start"; sleep 1
 done
 LOGS="$(docker logs "gl-server-$$" 2>&1)"

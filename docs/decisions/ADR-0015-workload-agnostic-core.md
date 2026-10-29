@@ -5,7 +5,7 @@
 
 ## Context
 
-GpuLayer's core (job contracts, scheduler, workers, artifacts, server) never depended on a
+GPUlayer's core (job contracts, scheduler, workers, artifacts, server) never depended on a
 particular framework, but two things pulled the project towards being seen as a PyTorch training
 tool. First, the PyTorch integration (ADR-0014) became the most visible API. Second, GPU discovery
 treated an NVIDIA GPU as usable only when a CUDA build of torch was installed, and found Apple
@@ -19,7 +19,7 @@ and data there, starts it, and returns results.
 
 ## Decision
 
-1. GpuLayer is a workload-agnostic GPU layer. Its primary workload kinds are commands in any
+1. GPUlayer is a workload-agnostic GPU layer. Its primary workload kinds are commands in any
    language and Python functions using any library. Distributed jobs are a coordination
    feature, launched with torchrun today.
 2. Hardware capability and framework capability are separate:
@@ -35,7 +35,7 @@ and data there, starts it, and returns results.
    `torch.cuda` or `torch.mps` for the accelerator it asks for.
 4. Framework integrations are optional layers on the core. PyTorch is the first
    (`gpulayer.pytorch`, ADR-0014). The core never imports a GPU framework.
-5. Documentation, examples and the website present GpuLayer by workload first (commands,
+5. Documentation, examples and the website present GPUlayer by workload first (commands,
    functions, distributed jobs) and by framework second.
 
 ## Alternatives considered

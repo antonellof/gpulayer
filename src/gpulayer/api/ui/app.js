@@ -1,4 +1,4 @@
-// GpuLayer dashboard. Plain JS, no dependencies. Every value is inserted with textContent,
+// GPUlayer dashboard. Plain JS, no dependencies. Every value is inserted with textContent,
 // so job names, logs and errors can never inject markup.
 "use strict";
 
@@ -74,17 +74,27 @@ function state(name) {
   return h("span", { class: `state s-${name}` }, h("span", { class: "dot" }), name.replace("_", " "));
 }
 
+// GPUlayer mark: a GPU die on top of a stack of layers (same paths as icon.svg).
 const logo = () => {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  for (const [y, x, w, h2, o] of [[14, 2, 20, 6, 0.35], [9, 4, 16, 5, 0.6], [4, 6, 12, 5, 1]]) {
-    const r = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    Object.entries({ x, y, width: w, height: h2, rx: 1.5, fill: "currentColor", opacity: o })
-      .forEach(([k, v]) => r.setAttribute(k, v));
-    svg.append(r);
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", "0 0 32 32");
+  svg.setAttribute("fill", "none");
+  const stroke = { stroke: "currentColor", "stroke-width": "2.4", "stroke-linecap": "round", "stroke-linejoin": "round" };
+  for (const attrs of [
+    { d: "M3 20.5 16 27.5 29 20.5", "stroke-opacity": ".4", ...stroke },
+    { d: "M3 15.5 16 22.5 29 15.5", "stroke-opacity": ".7", ...stroke },
+    { d: "M16 3.2 29 10.2 16 17.2 3 10.2Z M16 7.4 21.2 10.2 16 13 10.8 10.2Z", fill: "currentColor", "fill-rule": "evenodd" },
+    { d: "M16 8.9 18.4 10.2 16 11.5 13.6 10.2Z", fill: "currentColor", "fill-opacity": ".55" },
+  ]) {
+    const p = document.createElementNS(NS, "path");
+    for (const [k, v] of Object.entries(attrs)) p.setAttribute(k, v);
+    svg.append(p);
   }
   return svg;
 };
+
+const wordmark = () => h("span", { class: "wordmark" }, h("b", {}, "GPU"), h("span", {}, "layer"));
 
 const ACTIVE = new Set(["queued", "provisioning", "scheduled", "running"]);
 
@@ -459,7 +469,7 @@ function drawer() {
 function topbar() {
   const live = S.lastOk && Date.now() - S.lastOk < POLL_MS * 3;
   return h("header", { class: "top" },
-    h("div", { class: "brand" }, logo(), "GpuLayer", h("small", {}, "Dashboard")),
+    h("div", { class: "brand" }, logo(), wordmark(), h("small", {}, "Dashboard")),
     h("span", { class: "spacer" }),
     S.error ? h("span", { class: "pill bad" }, S.error) : null,
     h("span", { class: "pill" }, h("span", { class: `dot ${live ? "live" : ""}` }), live ? "Live" : "Connecting"),
@@ -511,7 +521,7 @@ function renderLogin(message) {
   };
   input.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
   document.getElementById("app").replaceChildren(h("div", { class: "login" },
-    h("div", { class: "brand" }, logo(), "GpuLayer"),
+    h("div", { class: "brand" }, logo(), wordmark()),
     h("h1", {}, "Sign in to the dashboard"),
     h("p", { class: "muted" }, "Use a client token (admin or submitter). `gpulayer up` prints one; `gpulayer token create` makes more."),
     input, err, h("button", { class: "btn primary", onclick: go }, "Sign in")));

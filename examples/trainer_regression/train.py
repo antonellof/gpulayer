@@ -1,4 +1,4 @@
-"""One training file that runs anywhere GpuLayer can place it.
+"""One training file that runs anywhere GPUlayer can place it.
 
 python train.py                                   # this process, best local device
 python train.py --accelerator cpu --devices 2     # 2-process DDP on this machine

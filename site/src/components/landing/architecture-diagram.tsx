@@ -14,7 +14,7 @@ export function ArchitectureDiagram() {
       className="h-auto w-full"
       style={{ fontFamily: "var(--font-sans), system-ui, sans-serif" }}
     >
-      <title id="arch-title">GpuLayer architecture</title>
+      <title id="arch-title">GPUlayer architecture</title>
       <desc id="arch-desc">
         The SDK and CLI talk to a control plane with a scheduler, worker registry, leases, provisioning and
         storage. Local, existing and provider workers poll it and run commands, functions or torchrun.

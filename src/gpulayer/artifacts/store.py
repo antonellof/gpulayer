@@ -126,7 +126,7 @@ def build_source_bundle(directory: str | Path) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for dirpath, dirnames, filenames in os.walk(root):
-            # Also skip any GpuLayer home (metadata.db + artifacts/): bundling the artifact
+            # Also skip any GPUlayer home (metadata.db + artifacts/): bundling the artifact
             # store would make every launch upload all previous jobs' data.
             dirnames[:] = sorted(
                 d
