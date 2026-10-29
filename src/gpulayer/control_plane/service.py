@@ -865,6 +865,108 @@ class ControlPlane:
     ) -> ArtifactReference:
         return self.artifacts.put(data, name, kind)
 
+    # ============================================================ retention
+
+    def gc(
+        self, older_than_seconds: float, *, delete_jobs: bool = False, dry_run: bool = False
+    ) -> dict[str, int]:
+        """Remove old data. Returns counts of what was (or, with ``dry_run``, would be) removed.
+
+        * logs and events of jobs that finished before the cutoff;
+        * with ``delete_jobs``, those jobs with their tasks, costs and released instances;
+        * offline or revoked workers not seen since the cutoff;
+        * artifacts that no remaining job references and that are older than the cutoff
+          (a fresh upload that has not been submitted yet is never removed).
+        """
+        cutoff = self.now() - timedelta(seconds=older_than_seconds)
+        terminal = tuple(st.value for st in JobState if st.terminal)
+        marks = ",".join("?" * len(terminal))
+        old_jobs = [
+            r["id"]
+            for r in self.store.query(
+                f"SELECT id FROM jobs WHERE state IN ({marks}) AND updated_at < ?",
+                (*terminal, ts(cutoff)),
+            )
+        ]
+        report = {
+            "jobs": 0,
+            "logs": 0,
+            "events": 0,
+            "workers": 0,
+            "artifacts": 0,
+            "artifact_bytes": 0,
+        }
+        with self.store.tx() as c:
+            for chunk in _chunks(old_jobs, 500):
+                q = ",".join("?" * len(chunk))
+                report["logs"] += c.execute(
+                    f"SELECT COUNT(*) FROM logs WHERE job_id IN ({q})", chunk
+                ).fetchone()[0]
+                report["events"] += c.execute(
+                    f"SELECT COUNT(*) FROM events WHERE job_id IN ({q})", chunk
+                ).fetchone()[0]
+                if not dry_run:
+                    c.execute(f"DELETE FROM logs WHERE job_id IN ({q})", chunk)
+                    c.execute(f"DELETE FROM events WHERE job_id IN ({q})", chunk)
+                    if delete_jobs:
+                        c.execute(f"DELETE FROM tasks WHERE job_id IN ({q})", chunk)
+                        c.execute(f"DELETE FROM costs WHERE job_id IN ({q})", chunk)
+                        c.execute(
+                            f"DELETE FROM instances WHERE job_id IN ({q}) AND state IN (?,?)",
+                            (*chunk, "terminated", "failed"),
+                        )
+                        c.execute(f"DELETE FROM jobs WHERE id IN ({q})", chunk)
+            if delete_jobs:
+                report["jobs"] = len(old_jobs)
+            stale_workers = [
+                r[0]
+                for r in c.execute(
+                    "SELECT id FROM workers WHERE (state=? OR revoked=1) AND "
+                    "COALESCE(last_heartbeat_at, registered_at) < ? AND id NOT IN "
+                    "(SELECT worker_id FROM tasks WHERE state IN (?,?) AND worker_id IS NOT NULL)",
+                    (WorkerState.OFFLINE.value, ts(cutoff), *ACTIVE_TASK_STATES),
+                ).fetchall()
+            ]
+            report["workers"] = len(stale_workers)
+            if not dry_run:
+                for chunk in _chunks(stale_workers, 500):
+                    c.execute(
+                        f"DELETE FROM workers WHERE id IN ({','.join('?' * len(chunk))})", chunk
+                    )
+        removed_jobs = set(old_jobs) if delete_jobs and not dry_run else set()
+        keep = self._referenced_digests(exclude=set(old_jobs) if delete_jobs else set())
+        for art in list(self.artifacts.list()):
+            if art.sha256 in keep or art.stored_at >= cutoff:
+                continue
+            report["artifacts"] += 1
+            report["artifact_bytes"] += art.size_bytes
+            if not dry_run:
+                self.artifacts.delete(art.sha256)
+        self.store.add_event(
+            "maintenance.gc",
+            ("would remove " if dry_run else "removed ")
+            + ", ".join(f"{v} {k}" for k, v in report.items() if v),
+            data={
+                "older_than_seconds": older_than_seconds,
+                "dry_run": dry_run,
+                "deleted_jobs": len(removed_jobs),
+            },
+        )
+        return report
+
+    def _referenced_digests(self, exclude: set[str]) -> set[str]:
+        keep: set[str] = set()
+        for r in self.store.query("SELECT id, spec, result FROM jobs"):
+            if r["id"] in exclude:
+                continue
+            spec = JobSpec.model_validate_json(r["spec"])
+            keep.update(ref.sha256 for ref in self._referenced_artifacts(spec))
+            if r["result"]:
+                keep.update(o.sha256 for o in JobResult.model_validate_json(r["result"]).outputs)
+        for r in self.store.query("SELECT outcome FROM tasks WHERE outcome IS NOT NULL"):
+            keep.update(o.sha256 for o in TaskOutcome.model_validate_json(r["outcome"]).outputs)
+        return keep
+
     def worker_can_read_artifact(self, worker_id: str, sha256: str) -> bool:
         """Workers may only fetch sources and inputs of tasks currently assigned to them."""
         for r in self.store.query(
@@ -894,3 +996,8 @@ class ControlPlane:
                 "SELECT record FROM costs WHERE job_id=? ORDER BY id", (job_id,)
             )
         ]
+
+
+def _chunks(items: list[str], n: int) -> Iterable[tuple[str, ...]]:
+    for i in range(0, len(items), n):
+        yield tuple(items[i : i + n])

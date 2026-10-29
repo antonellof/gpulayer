@@ -208,6 +208,16 @@ class ControlPlaneServer:
                 "admin",
                 lambda q: cp.revoke_worker(q.params["id"]),
             ),
+            (
+                "POST",
+                r"/v1/admin/gc",
+                "admin",
+                lambda q: cp.gc(
+                    float(q.json()["older_than_seconds"]),
+                    delete_jobs=bool(q.json().get("delete_jobs")),
+                    dry_run=bool(q.json().get("dry_run")),
+                ),
+            ),
             ("PUT", r"/v1/artifacts", "client_or_worker", self._put_artifact),
             (
                 "GET",

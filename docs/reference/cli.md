@@ -17,6 +17,7 @@ Global options go before the command:
 |---|---|
 | `gpulayer up [--host --port --advertise-address --no-worker --name --label K=V --python --tls --tls-cert --tls-key --insecure-http]` | start a server and use this machine as a worker; prints join and connect commands |
 | `gpulayer join URL --token T [--fingerprint FP --name --label K=V --python --advertise-address --workdir --max-tasks N --idle-exit S]` | add this machine as a worker of a server |
+| `gpulayer gc --older-than AGE [--delete-jobs --dry-run]` | remove logs and events of jobs that finished before AGE (e.g. `7d`), optionally the jobs, plus unreferenced artifacts; admin only |
 | `gpulayer token create NAME [--role admin\|submitter\|join --ttl 12h]` | create a named token on the server machine (printed once) |
 | `gpulayer token list` | list tokens with role and status, never their values |
 | `gpulayer token revoke NAME` | revoke a token; a running server applies it on the next request |
@@ -43,7 +44,7 @@ gpulayer submit [options] [-- COMMAND ...]
 | `--input FILE[:DEST]` | stage a file into `$GPULAYER_INPUT_DIR` |
 | `--function MODULE:FUNC --arg JSON ...` | function job |
 | `--distributed --entrypoint SCRIPT --nodes N --procs-per-node P --backend gloo\|nccl` | torchrun job |
-| `--accelerator cpu\|cuda\|mps\|rocm --gpus N --gpu-memory GB --cpus N --memory GB` | resources |
+| `--accelerator cpu\|cuda\|mps\|rocm --gpus N --gpu-memory GB --gpu-memory-kind dedicated\|unified --cpus N --memory GB` | resources |
 | `--framework 'torch>=2.1'` | framework requirement |
 | `--worker ID`, `--label K=V` | pin to workers |
 | `--provider NAME --max-hourly-cost X` | allow provisioning through a provider adapter |

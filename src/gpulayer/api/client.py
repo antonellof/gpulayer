@@ -174,6 +174,20 @@ class HttpControlPlaneClient:
     def list_workers(self) -> list[WorkerStatus]:
         return [WorkerStatus.model_validate(w) for w in self.t.request("GET", "/v1/workers")]
 
+    def gc(
+        self, older_than_seconds: float, *, delete_jobs: bool = False, dry_run: bool = False
+    ) -> dict[str, int]:
+        report: dict[str, int] = self.t.request(
+            "POST",
+            "/v1/admin/gc",
+            {
+                "older_than_seconds": older_than_seconds,
+                "delete_jobs": delete_jobs,
+                "dry_run": dry_run,
+            },
+        )
+        return report
+
     def revoke_worker(self, worker_id: str) -> None:
         self.t.request("POST", f"/v1/workers/{worker_id}/revoke", {})
 

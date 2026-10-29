@@ -13,6 +13,9 @@ import os
 import stat
 import tempfile
 import zipfile
+from collections.abc import Iterator
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Protocol
 
@@ -52,6 +55,15 @@ class ArtifactStore(Protocol):
     ) -> ArtifactReference: ...
     def get(self, sha256: str) -> bytes: ...
     def exists(self, sha256: str) -> bool: ...
+    def list(self) -> Iterator[StoredArtifact]: ...
+    def delete(self, sha256: str) -> None: ...
+
+
+@dataclass(frozen=True)
+class StoredArtifact:
+    sha256: str
+    size_bytes: int
+    stored_at: datetime
 
 
 class LocalArtifactStore:
@@ -92,6 +104,17 @@ class LocalArtifactStore:
 
     def exists(self, sha256: str) -> bool:
         return self._path(sha256).exists()
+
+    def list(self) -> Iterator[StoredArtifact]:
+        for path in self.root.glob("??/*"):
+            if len(path.name) == 64 and path.is_file():
+                st = path.stat()
+                yield StoredArtifact(
+                    path.name, st.st_size, datetime.fromtimestamp(st.st_mtime, timezone.utc)
+                )
+
+    def delete(self, sha256: str) -> None:
+        self._path(sha256).unlink(missing_ok=True)
 
 
 def build_source_bundle(directory: str | Path) -> bytes:

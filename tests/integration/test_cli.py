@@ -63,3 +63,28 @@ def test_function_and_resources_detect(tmp_path):
     assert p.stdout.strip() == "42"
     caps = json.loads(gpl(tmp_path, "resources", "detect", "--json").stdout)
     assert caps["cpu_cores"] >= 1
+
+
+def test_gc_command(tmp_path):
+    gpl(tmp_path, "submit", "--", "python", "-c", "print('to be collected')")
+    out = gpl(tmp_path, "gc", "--older-than", "0m", "--dry-run").stdout
+    assert out.startswith("would remove:") and "log lines" in out
+    out = gpl(tmp_path, "gc", "--older-than", "0m", "--delete-jobs").stdout
+    assert out.startswith("removed:") and "1 jobs" in out
+    assert gpl(tmp_path, "job", "list").stdout.strip() == ""
+
+
+def test_gpu_memory_kind_flag(tmp_path):
+    p = gpl(
+        tmp_path,
+        "submit",
+        "--accelerator",
+        "mps",
+        "--gpu-memory-kind",
+        "dedicated",
+        "--",
+        "true",
+        check=False,
+    )
+    assert p.returncode != 0
+    assert "requires dedicated GPU memory" in p.stderr or "usable mps device" in p.stderr

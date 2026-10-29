@@ -137,6 +137,14 @@ def test_workers_read_only_artifacts_of_their_tasks(server):
     assert admin.get_artifact(unrelated.sha256) == b"someone else's data"
 
 
+def test_gc_is_admin_only(server):
+    srv, _, t = server
+    with pytest.raises(Forbidden, match="admin"):
+        client(srv, t["alice"]).gc(0, dry_run=True)
+    report = client(srv, t["admin"]).gc(0, dry_run=True)
+    assert set(report) >= {"jobs", "logs", "events", "workers", "artifacts"}
+
+
 def test_legacy_credentials_file_still_loads(tmp_path):
     path = tmp_path / "old.json"
     path.write_text(

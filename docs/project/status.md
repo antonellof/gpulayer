@@ -83,8 +83,9 @@ uncommitted local changes, so it was deliberately left untouched.
 - Done: worker artifact reads scoped to their tasks; `admin` and `submitter` client roles.
 - Done: named, expiring, revocable tokens (`gpulayer token`); rate limiting of failed logins.
 - Done: provisioning retries on `CapacityUnavailable`, retried terminations, orphan sweep.
-- Retention and garbage collection for artifacts, logs and events.
-- A CLI flag for `gpu_memory_kind`; `runtime profiles` as an optional compatibility aid.
+- Done: retention and garbage collection (`gpulayer gc`, admin endpoint `POST /v1/admin/gc`).
+- Done: CLI flag `--gpu-memory-kind`. Still planned: runtime profiles as an optional
+  compatibility aid.
 
 ### Iteration 3: validate across machines
 

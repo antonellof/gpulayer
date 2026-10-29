@@ -22,7 +22,8 @@ artifacts used by their current tasks.
 | `GET /v1/jobs/{id}/logs?after=` | | list of `LogLine` |
 | `GET /v1/jobs/{id}/events?after=` | | list of `ExecutionEvent` |
 | `GET /v1/workers` | | list of `WorkerStatus` |
-| `POST /v1/workers/{id}/revoke` | | |
+| `POST /v1/workers/{id}/revoke` | | (admin) |
+| `POST /v1/admin/gc` | `{older_than_seconds, delete_jobs, dry_run}` | counts removed (admin) |
 | `PUT /v1/artifacts` | raw bytes; headers `X-Artifact-Name`, `X-Artifact-Kind` | `ArtifactReference` |
 | `GET /v1/artifacts/{sha256}` | | raw bytes |
 

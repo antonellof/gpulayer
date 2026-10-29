@@ -263,6 +263,25 @@ def cmd_join(args: argparse.Namespace) -> int:
     return cmd_worker_start(args)
 
 
+# --------------------------------------------------------------------- maintenance
+
+
+def cmd_gc(args: argparse.Namespace) -> int:
+    from gpulayer.api.auth import parse_ttl
+
+    age = parse_ttl(args.older_than).total_seconds()
+    with _client(args, local_worker=False) as c:
+        report = c._api.gc(age, delete_jobs=args.delete_jobs, dry_run=args.dry_run)
+    verb = "would remove" if args.dry_run else "removed"
+    mib = report.get("artifact_bytes", 0) / 1024**2
+    print(
+        f"{verb}: {report['logs']} log lines, {report['events']} events, "
+        f"{report['jobs']} jobs, {report['workers']} workers, "
+        f"{report['artifacts']} artifacts ({mib:.1f} MiB)"
+    )
+    return 0
+
+
 # ------------------------------------------------------------------------ tokens
 
 
@@ -483,6 +502,7 @@ def build_spec(args: argparse.Namespace, client: Client) -> JobSpec:
         accelerator=accelerator,
         gpu_count=args.gpus or (1 if accelerator != Accelerator.CPU else 0),
         gpu_memory_gb=args.gpu_memory,
+        gpu_memory_kind=args.gpu_memory_kind,
         cpu_cores=args.cpus,
         memory_gb=args.memory,
         frameworks=frameworks,
@@ -717,6 +737,16 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--idle-exit", type=float, metavar="SECONDS")
     s.set_defaults(fn=cmd_join)
 
+    s = sub.add_parser("gc", help="remove old logs, events, jobs and unused artifacts")
+    s.add_argument("--older-than", required=True, metavar="AGE", help="e.g. 7d, 12h, 90m")
+    s.add_argument(
+        "--delete-jobs",
+        action="store_true",
+        help="also delete finished jobs older than AGE (not only their logs)",
+    )
+    s.add_argument("--dry-run", action="store_true", help="report without deleting")
+    s.set_defaults(fn=cmd_gc)
+
     tk = sub.add_parser("token", help="manage server tokens (on the server machine)")
     tks = tk.add_subparsers(dest="cmd", required=True)
     s = tks.add_parser("create", help="create a named token (printed once)")
@@ -805,6 +835,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--accelerator", choices=[a.value for a in Accelerator], default="cpu")
     s.add_argument("--gpus", type=int)
     s.add_argument("--gpu-memory", type=float, metavar="GB")
+    s.add_argument(
+        "--gpu-memory-kind",
+        choices=["dedicated", "unified"],
+        help="require discrete VRAM or unified memory (Apple Silicon)",
+    )
     s.add_argument("--cpus", type=float, default=1)
     s.add_argument("--memory", type=float, metavar="GB")
     s.add_argument("--framework", action="append", metavar="SPEC", help="e.g. 'torch>=2.1'")
