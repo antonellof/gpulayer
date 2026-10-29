@@ -46,6 +46,7 @@ and `launch()` create them for you; you can also write one as JSON and run
 
 | Field | Default | Notes |
 |---|---|---|
+| `profile` | none | runtime profile (see below); fills in `accelerator` and `frameworks` |
 | `accelerator` | `cpu` | `cpu`, `cuda`, `mps`, `rocm` (rocm is never scheduled yet) |
 | `gpu_count` | `0` (`1` for GPU accelerators) | devices per node |
 | `gpu_memory_gb` | none | minimum per device |
@@ -55,6 +56,30 @@ and `launch()` create them for you; you can also write one as JSON and run
 | `os`, `cpu_arch` | `[]` | e.g. `["linux"]`, `["x86_64"]` |
 | `frameworks` | `{}` | PEP 440 specifiers, e.g. `{"torch": ">=2.2"}` |
 | `python` | none | PEP 440 specifier for the worker's Python |
+
+### Runtime profiles
+
+A profile is a shorthand for common requirements. Explicit `frameworks` entries override the
+profile's, and an explicit `accelerator` must match it. Workers are still matched on what they
+report, so a profile never makes an incompatible worker eligible.
+
+| Profile | Accelerator | Frameworks |
+|---|---|---|
+| `pytorch-cpu` | `cpu` | `torch>=2.1` |
+| `pytorch-cuda` | `cuda` | `torch>=2.1`, `torch.cuda` |
+| `pytorch-mps` | `mps` | `torch>=2.1`, `torch.mps` |
+| `jax-cuda` | `cuda` | `jax>=0.4`, `jaxlib>=0.4` |
+| `cupy-cuda` | `cuda` | `cupy>=12` |
+| `mlx` | `mps` | `mlx>=0.10` |
+
+```python
+@gl.remote(profile="pytorch-cuda", gpus=2)
+def finetune(...): ...
+```
+
+```bash
+gpulayer submit --profile mlx -- python bench.py
+```
 
 ## PlacementPolicy
 

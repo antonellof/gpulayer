@@ -88,3 +88,25 @@ def test_gpu_memory_kind_flag(tmp_path):
     )
     assert p.returncode != 0
     assert "requires dedicated GPU memory" in p.stderr or "usable mps device" in p.stderr
+
+
+def test_profile_flag(tmp_path):
+    ok = gpl(
+        tmp_path,
+        "submit",
+        "--profile",
+        "pytorch-cpu",
+        "--",
+        "python",
+        "-c",
+        "print('ok')",
+        check=False,
+    )
+    try:
+        import torch  # noqa: F401
+    except ImportError:
+        assert ok.returncode != 0 and "framework 'torch' not installed" in ok.stderr
+    else:
+        assert ok.returncode == 0 and "ok" in ok.stdout
+    p = gpl(tmp_path, "submit", "--profile", "jax-cuda", "--", "true", check=False)
+    assert p.returncode != 0 and "unschedulable" in p.stderr

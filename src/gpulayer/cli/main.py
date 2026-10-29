@@ -20,6 +20,7 @@ from pydantic import BaseModel, ValidationError
 
 from gpulayer import __version__
 from gpulayer.contracts import (
+    RUNTIME_PROFILES,
     Accelerator,
     CommandJob,
     DistributedJob,
@@ -505,8 +506,12 @@ def build_spec(args: argparse.Namespace, client: Client) -> JobSpec:
     for f in args.framework or []:
         name = f.split(">")[0].split("<")[0].split("=")[0].split("~")[0].split("!")[0]
         frameworks[name] = f[len(name) :] or ">=0"
-    accelerator = Accelerator(args.accelerator)
+    accel_name = args.accelerator or (
+        RUNTIME_PROFILES[args.profile]["accelerator"] if args.profile in RUNTIME_PROFILES else "cpu"
+    )
+    accelerator = Accelerator(accel_name)
     resources = ResourceRequest(
+        profile=args.profile,
         accelerator=accelerator,
         gpu_count=args.gpus or (1 if accelerator != Accelerator.CPU else 0),
         gpu_memory_gb=args.gpu_memory,
@@ -842,7 +847,17 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--nodes", type=int, default=1)
     s.add_argument("--procs-per-node", type=int, default=1)
     s.add_argument("--backend", choices=["gloo", "nccl"], default="gloo")
-    s.add_argument("--accelerator", choices=[a.value for a in Accelerator], default="cpu")
+    s.add_argument(
+        "--accelerator",
+        choices=[a.value for a in Accelerator],
+        default=None,
+        help="default: the profile's accelerator, else cpu",
+    )
+    s.add_argument(
+        "--profile",
+        choices=sorted(RUNTIME_PROFILES),
+        help="runtime profile, e.g. pytorch-cuda (fills in accelerator and frameworks)",
+    )
     s.add_argument("--gpus", type=int)
     s.add_argument("--gpu-memory", type=float, metavar="GB")
     s.add_argument(

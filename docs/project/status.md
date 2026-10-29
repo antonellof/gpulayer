@@ -84,8 +84,8 @@ uncommitted local changes, so it was deliberately left untouched.
 - Done: named, expiring, revocable tokens (`gpulayer token`); rate limiting of failed logins.
 - Done: provisioning retries on `CapacityUnavailable`, retried terminations, orphan sweep.
 - Done: retention and garbage collection (`gpulayer gc`, admin endpoint `POST /v1/admin/gc`).
-- Done: CLI flag `--gpu-memory-kind`. Still planned: runtime profiles as an optional
-  compatibility aid.
+- Done: CLI flag `--gpu-memory-kind`; runtime profiles (`profile="pytorch-cuda"`,
+  `--profile mlx`) as a shorthand for accelerator and framework requirements.
 
 ### Iteration 3: validate across machines
 

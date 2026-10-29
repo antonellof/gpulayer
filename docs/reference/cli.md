@@ -46,6 +46,7 @@ gpulayer submit [options] [-- COMMAND ...]
 | `--distributed --entrypoint SCRIPT --nodes N --procs-per-node P --backend gloo\|nccl` | torchrun job |
 | `--accelerator cpu\|cuda\|mps\|rocm --gpus N --gpu-memory GB --gpu-memory-kind dedicated\|unified --cpus N --memory GB` | resources |
 | `--framework 'torch>=2.1'` | framework requirement |
+| `--profile pytorch-cuda` | runtime profile: fills in accelerator and frameworks (see [JobSpec](job-spec.md#runtime-profiles)) |
 | `--worker ID`, `--label K=V` | pin to workers |
 | `--provider NAME --max-hourly-cost X` | allow provisioning through a provider adapter |
 | `--env K=V`, `--secret NAME=WORKER_ENV_KEY` | environment and secret references |

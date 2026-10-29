@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from gpulayer.contracts import (
+    RUNTIME_PROFILES,
     ArtifactReference,
     DistributedJob,
     FunctionJob,
@@ -161,12 +162,18 @@ class RemoteFunction:
         opts = dict(self.spec_options)
         resources = opts.pop("resources", None)
         placement = opts.pop("placement", None)
-        accelerator = opts.pop("accelerator", "cpu")
+        profile = opts.pop("profile", None)
+        accelerator = opts.pop("accelerator", None)
+        if accelerator is None:
+            accelerator = (
+                RUNTIME_PROFILES[profile]["accelerator"] if profile in RUNTIME_PROFILES else "cpu"
+            )
         if resources is None:
             gpus = opts.pop("gpus", None)
             if gpus is None and accelerator != "cpu" and self.distributed:
                 gpus = self.procs_per_node
             resources = ResourceRequest(
+                profile=profile,
                 accelerator=accelerator,
                 gpu_count=gpus or 0,
                 gpu_memory_gb=opts.pop("gpu_memory_gb", None),

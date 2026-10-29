@@ -126,3 +126,22 @@ def test_worker_cannot_report_lost():
 def test_unknown_fields_rejected():
     with pytest.raises(ValidationError):
         JobSpec.model_validate({"workload": {"kind": "command", "command": ["x"]}, "gpus": 1})
+
+
+def test_runtime_profiles_fill_in_requirements():
+    from gpulayer.contracts import RUNTIME_PROFILES
+
+    r = ResourceRequest(profile="pytorch-cuda", frameworks={"torch": ">=2.4"})
+    assert r.accelerator.value == "cuda" and r.gpu_count == 1
+    assert r.frameworks == {"torch": ">=2.4", "torch.cuda": ">=0"}  # explicit value wins
+    assert ResourceRequest(profile="mlx").frameworks == {"mlx": ">=0.10"}
+    again = ResourceRequest.model_validate_json(r.model_dump_json())
+    assert again == r
+    assert set(RUNTIME_PROFILES) >= {"pytorch-cpu", "pytorch-cuda", "pytorch-mps", "mlx"}
+
+
+def test_runtime_profile_conflicts_are_rejected():
+    with pytest.raises(ValidationError, match="needs accelerator 'mps'"):
+        ResourceRequest(profile="mlx", accelerator="cuda")
+    with pytest.raises(ValidationError, match="unknown profile"):
+        ResourceRequest(profile="tensorflow-tpu")

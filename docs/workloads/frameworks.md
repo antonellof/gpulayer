@@ -54,6 +54,10 @@ def fft(size: int) -> float:
 gpulayer submit --accelerator cuda --framework 'onnxruntime>=1.18' -- python infer.py
 ```
 
+For common combinations, a [runtime profile](../reference/job-spec.md#runtime-profiles) such
+as `profile="pytorch-cuda"`, `"jax-cuda"` or `"mlx"` fills in the accelerator and frameworks for
+you.
+
 A worker missing a framework, or with the wrong version, is rejected with a reason such as
 `framework 'jax' not installed` or `mlx 0.9.0 does not satisfy >=0.10`. The PyTorch
 integration adds `torch` plus `torch.cuda` or `torch.mps` automatically.

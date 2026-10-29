@@ -164,9 +164,29 @@ class SupportLevel(str, Enum):
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$")
 
 
+# Runtime profiles: named shorthands for common accelerator + framework requirements.
+# A profile only fills in requirements; workers are still matched on what they report.
+RUNTIME_PROFILES: dict[str, dict[str, Any]] = {
+    "pytorch-cpu": {"accelerator": "cpu", "frameworks": {"torch": ">=2.1"}},
+    "pytorch-cuda": {
+        "accelerator": "cuda",
+        "frameworks": {"torch": ">=2.1", "torch.cuda": ">=0"},
+    },
+    "pytorch-mps": {"accelerator": "mps", "frameworks": {"torch": ">=2.1", "torch.mps": ">=0"}},
+    "jax-cuda": {"accelerator": "cuda", "frameworks": {"jax": ">=0.4", "jaxlib": ">=0.4"}},
+    "cupy-cuda": {"accelerator": "cuda", "frameworks": {"cupy": ">=12"}},
+    "mlx": {"accelerator": "mps", "frameworks": {"mlx": ">=0.10"}},
+}
+
+
 class ResourceRequest(_Model):
     """Hardware/runtime requirements for ONE execution unit (one worker / node)."""
 
+    profile: str | None = Field(
+        None,
+        description="Runtime profile, e.g. 'pytorch-cuda'. Fills in accelerator and frameworks; "
+        "explicit values take precedence.",
+    )
     accelerator: Accelerator = Accelerator.CPU
     gpu_count: int = Field(0, ge=0, le=64)
     gpu_memory_gb: float | None = Field(None, gt=0, description="Per-device memory floor.")
@@ -184,6 +204,25 @@ class ResourceRequest(_Model):
         description="Framework -> PEP 440 specifier, e.g. {'torch': '>=2.1'}.",
     )
     python: str | None = Field(None, description="PEP 440 specifier for the worker Python.")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _apply_profile(cls, data: Any) -> Any:
+        if not isinstance(data, dict) or not data.get("profile"):
+            return data
+        name = data["profile"]
+        if name not in RUNTIME_PROFILES:
+            raise ValueError(f"unknown profile {name!r}; known: {sorted(RUNTIME_PROFILES)}")
+        prof = RUNTIME_PROFILES[name]
+        out = dict(data)
+        given = out.get("accelerator")
+        if given is not None and str(getattr(given, "value", given)) != prof["accelerator"]:
+            raise ValueError(
+                f"profile {name!r} needs accelerator {prof['accelerator']!r}, got {given!r}"
+            )
+        out["accelerator"] = prof["accelerator"]
+        out["frameworks"] = {**prof["frameworks"], **(out.get("frameworks") or {})}
+        return out
 
     @model_validator(mode="after")
     def _check_accelerator(self) -> ResourceRequest:
