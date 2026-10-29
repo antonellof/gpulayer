@@ -21,8 +21,9 @@ npm start            # serve site/out locally
 npm run lint
 ```
 
-`next.config.mjs` sets `output: "export"` and `trailingSlash: true`, so `site/out/` is a plain
-folder of HTML, CSS and JS. Host it on any static host (GitHub Pages, Netlify, Cloudflare
+`npm run build` writes a static export (`output: "export"`, `trailingSlash: true`), so
+`site/out/` is a plain folder of HTML, CSS and JS. `npm run dev` runs a normal Next.js server in
+its own folder (`.next-dev`), so a build never breaks a running dev server. Host it on any static host (GitHub Pages, Netlify, Cloudflare
 Pages, S3) or deploy the `site/` directory to Vercel.
 
 ## How content is wired
@@ -52,10 +53,11 @@ Source layout:
 site/src/
 ├── app/                    layout, landing page, docs routes, 404
 ├── components/docs/        markdown renderer, code block, mermaid, sidebar, TOC
-├── components/landing/     architecture diagram (inline SVG)
+├── components/landing/     terminal, quickstart, logo strip, layer stack, architecture diagram
 ├── components/site/        header, footer, logo, theme toggle
 └── lib/docs.ts             nav.json loading, link resolution, heading extraction
 ```
 
-The site has no analytics or telemetry. Fonts (Inter, JetBrains Mono) are fetched from
+The site has no analytics or telemetry. Text uses Geist Sans (the `geist` npm package) and code
+uses JetBrains Mono, fetched from
 Google Fonts at build time by `next/font` and self-hosted in the export.
