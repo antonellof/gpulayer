@@ -59,3 +59,24 @@ reasons are in [ADR-0006](../decisions/ADR-0006-apple-metal-mps-boundaries.md).
 
 A real MPS smoke test (`tests/hardware/test_gpu_smoke.py`) and the examples in this
 documentation have been run on an Apple Silicon Mac.
+
+## Performance notes (measured)
+
+Measured on an Apple Silicon Mac (10 CPU cores, 32 GB) with macOS 26.7, torch 2.15.0 and MLX
+0.32.4:
+
+- **One GPU job at a time is fastest.** Two training jobs sharing the Apple GPU finished no
+  sooner than running them one after the other (1.0x for a small MLP), and were slower for
+  larger ones (0.92x and 0.80x). Mac workers therefore default to one task at a time; raise it
+  with `--concurrency` only for CPU-bound jobs.
+- **Half precision does not speed up PyTorch training on MPS here.** For MLP training, fp16
+  autocast was 3 to 8% slower than fp32 and bf16 about 50% slower, so `Trainer` keeps
+  `bf16-mixed` and `16-mixed` disabled on MPS. Re-measure on your model before relying on it.
+- **Avoid reading values every step.** The `Trainer` keeps logged values on the GPU until it
+  prints them; this made MPS steps 1.6x faster. In your own loops, avoid `.item()` or
+  `print(tensor)` on every step, and in MLX, call `mx.eval` once per step, not per value.
+- **MLX uses unified memory**, so there is no host-to-device copy to optimise. `mx.compile`
+  can help on stable step functions; capture model and optimiser state as the MLX docs
+  describe rather than passing the model as an argument.
+- **Docker cannot use the Apple GPU.** Run Mac workers natively (`gpulayer join` or the
+  install script).
