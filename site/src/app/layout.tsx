@@ -13,7 +13,7 @@ export const metadata: Metadata = {
     template: "%s | GpuLayer",
   },
   description:
-    "A workload-agnostic GPU layer. Run commands in any language, Python functions with any library, and distributed jobs on your laptop, workstations, servers or cloud VMs, with a first-class PyTorch integration. Pre-alpha.",
+    "A workload-agnostic GPU layer. Run commands in any language, Python functions with any library, and distributed jobs on your laptop, workstations, servers or cloud VMs, with a deeper integration for PyTorch. Pre-alpha.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

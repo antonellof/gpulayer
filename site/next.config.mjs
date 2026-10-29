@@ -1,15 +1,18 @@
-/** @type {import('next').NextConfig} */
-const nextConfig = {
-  // Static export for `npm run build` (writes a self-contained site to ./out). Dev mode runs
-  // as a normal server, because Next 14's dev server rejects optional catch-all routes
-  // under `output: "export"`.
-  output: process.env.NODE_ENV === "production" ? "export" : undefined,
-  // Separate build directory so `npm run build` never clobbers a running `npm run dev`.
-  distDir: process.env.NODE_ENV === "production" ? ".next-build" : ".next",
-  trailingSlash: true,
-  images: { unoptimized: true },
-  reactStrictMode: true,
-  poweredByHeader: false,
-};
+import { PHASE_DEVELOPMENT_SERVER } from "next/constants.js";
 
-export default nextConfig;
+/** @type {(phase: string) => import('next').NextConfig} */
+export default function nextConfig(phase) {
+  const isDev = phase === PHASE_DEVELOPMENT_SERVER;
+  return {
+    // `npm run build` writes a static export to ./out (build files in .next). The dev server
+    // uses its own folder so a build never breaks a running `npm run dev`; it also runs as a
+    // normal server because Next 14's dev server rejects optional catch-all routes under
+    // `output: "export"`.
+    output: isDev ? undefined : "export",
+    distDir: isDev ? ".next-dev" : undefined,
+    trailingSlash: true,
+    images: { unoptimized: true },
+    reactStrictMode: true,
+    poweredByHeader: false,
+  };
+}

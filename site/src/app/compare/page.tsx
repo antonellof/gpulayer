@@ -252,7 +252,7 @@ const NOTES: Note[] = [
   {
     name: "Slurm and Kubernetes",
     summary:
-      "Cluster schedulers with queues, quotas, priorities and multi-tenant isolation, run by an operations team. GpuLayer is much lighter, with one command to start a server and one to join a machine, and it is meant for groups that trust each other, not for shared multi-tenant clusters.",
+      "Cluster schedulers with queues, quotas, priorities and multi-tenant isolation, run by an operations team. GpuLayer is much lighter, with one command to start a server and one to join a machine, and it is meant for groups whose members trust each other. Shared multi-tenant clusters are a job for Slurm or Kubernetes.",
     choose: "Choose them for shared, policy-heavy clusters with many users.",
     together:
       "Integrations (submitting to Slurm or Kubernetes as a GpuLayer worker pool) are not built yet.",
@@ -309,11 +309,10 @@ export default function ComparePage() {
               GpuLayer and the alternatives
             </h1>
             <p className="mt-5 max-w-3xl text-lg leading-relaxed text-slate-300">
-              Training frameworks decide <em>how</em> a model trains on the machines they are
-              started on. Cloud orchestrators decide <em>which</em> cloud capacity to rent.
-              GpuLayer decides where any GPU workload runs among the machines you can reach,
-              starts it there, and brings the results back. Several of these tools work well
-              together.
+              Training frameworks shape how a model trains on the machines they are started on,
+              and cloud orchestrators rent capacity. GpuLayer places any GPU workload on the
+              machines you can reach, starts it there and brings the results back. Several of these
+              tools work well together.
             </p>
           </div>
         </section>

@@ -85,7 +85,7 @@ export function LayerStack() {
         <span className="mx-auto mt-3 rounded-lg border border-border bg-background px-3 py-1.5 text-sm">
           Modal
         </span>
-        <p className="mt-3 text-xs text-muted-foreground">Runs on its own GPUs, not yours</p>
+        <p className="mt-3 text-xs text-muted-foreground">Uses Modal&apos;s own GPUs</p>
       </div>
     </div>
   );
