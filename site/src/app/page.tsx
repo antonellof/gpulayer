@@ -211,8 +211,8 @@ export default function Home() {
               Run any workload on every GPU you can reach.
             </h1>
             <p className="lede mt-6 max-w-2xl sm:text-xl">
-              GPUlayer sits between your code and your GPUs, on your laptop, workstations, servers and cloud
-              VMs. Commands, Python functions and distributed jobs go to a machine that can run them, and the
+              GPUlayer sits between your code and your GPUs: your laptop, remote servers, clusters, data
+              centers and cloud VMs. Commands, Python functions and distributed jobs go to a machine that can run them, and the
               results come back.
             </p>
             <div className="mt-9 flex flex-wrap items-center gap-3">
