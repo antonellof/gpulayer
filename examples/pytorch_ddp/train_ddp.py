@@ -46,14 +46,18 @@ for epoch in range(epochs):
         total += torch.tensor([loss.item() * len(xb), len(xb)], device=device)
     dist.all_reduce(total)
     if rank == 0:
-        print(f"epoch {epoch}  global loss {(total[0] / total[1]).item():.4f}  world={world}",
-              flush=True)
+        print(
+            f"epoch {epoch}  global loss {(total[0] / total[1]).item():.4f}  world={world}",
+            flush=True,
+        )
 
 print(f"rank {rank}/{world} on node {os.environ.get('GPULAYER_NODE_RANK')} done", flush=True)
 if rank == 0:
     w = model.module.weight.detach().cpu().squeeze().tolist()
     print("learned weights:", [round(v, 2) for v in w])
-    torch.save(model.module.state_dict(),
-               os.path.join(os.environ.get("GPULAYER_OUTPUT_DIR", "."), "ddp_model.pt"))
+    torch.save(
+        model.module.state_dict(),
+        os.path.join(os.environ.get("GPULAYER_OUTPUT_DIR", "."), "ddp_model.pt"),
+    )
 dist.barrier()
 dist.destroy_process_group()

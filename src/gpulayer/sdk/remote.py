@@ -33,6 +33,7 @@ from gpulayer.contracts import (
     JobResult,
     JobSpec,
     JobState,
+    JobStatus,
     PlacementPolicy,
     ResourceRequest,
 )
@@ -237,7 +238,12 @@ def _value_or_raise(job: Job, *, wait: bool = False) -> Any:
     if result.state == JobState.SUCCEEDED:
         return result.return_value
     status = job.status()
-    detail = result.error or status.error or result.state.value
+    raise RemoteError(f"job {job.id} {result.state.value}: {explain_failure(status)}", job)
+
+
+def explain_failure(status: JobStatus) -> str:
+    """The job's error plus, when it was never placed, why each worker was rejected."""
+    detail = status.error or status.state.value
     if status.scheduling and not status.scheduling.placed:
         reasons = "; ".join(
             f"{c.worker_id}: {', '.join(c.reasons)}"
@@ -245,7 +251,7 @@ def _value_or_raise(job: Job, *, wait: bool = False) -> Any:
             if c.reasons
         )
         detail += f" ({reasons})" if reasons else ""
-    raise RemoteError(f"job {job.id} {result.state.value}: {detail}", job)
+    return detail
 
 
 def remote(fn: Callable[..., Any] | None = None, **options: Any) -> Any:

@@ -33,3 +33,12 @@ __all__ = [
     "function",
     "remote",
 ]
+
+
+def __getattr__(name: str) -> object:
+    # `gl.pytorch` is imported lazily so CPU-only installs without torch keep working.
+    if name == "pytorch":
+        import importlib
+
+        return importlib.import_module("gpulayer.pytorch")
+    raise AttributeError(f"module 'gpulayer' has no attribute {name!r}")

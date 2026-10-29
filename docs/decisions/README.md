@@ -30,6 +30,7 @@ proposed. Each ADR says which part is which.
 | [0011](ADR-0011-cost-accounting-and-retry-semantics.md) | Cost accounting and retry semantics | Accepted (milestone 1) | Estimates and charges are distinct record kinds; delivery is at-least-once; retries are opt-in. |
 | [0012](ADR-0012-licensing-and-project-governance.md) | Licensing and project governance | Proposed | Compares Apache-2.0, MIT, MPL-2.0 and AGPL-3.0. Undecided. |
 | [0013](ADR-0013-website-and-documentation-stack.md) | Website and documentation stack | Proposed | Compares MkDocs-Material, Docusaurus and Astro Starlight. Undecided. |
+| [0014](ADR-0014-pytorch-integration.md) | PyTorch integration and a training API | Accepted (milestone 2, first slice) | Framework-agnostic launcher, runtime helpers for devices/DDP/precision, and a small Module + Trainer API; code ships as source. |
 
 ## Template
 

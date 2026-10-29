@@ -8,3 +8,4 @@ dist/
 *.egg-info/
 .gpulayer/
 examples/*/outputs/
+gpulayer_runs/

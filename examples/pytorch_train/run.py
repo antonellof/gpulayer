@@ -29,10 +29,17 @@ with gl.Client(url=args.url, token=args.token) as client:
     resources = gl.ResourceRequest(accelerator=args.accelerator, frameworks={"torch": ">=2.0"})
     placement = gl.PlacementPolicy(target=args.target, on_unschedulable="fail")
 
-    train = client.submit(gl.command(
-        ["python", "train.py"], name="train-mlp", source=source, resources=resources,
-        placement=placement, env={"EPOCHS": args.epochs}, timeout_seconds=600,
-    ))
+    train = client.submit(
+        gl.command(
+            ["python", "train.py"],
+            name="train-mlp",
+            source=source,
+            resources=resources,
+            placement=placement,
+            env={"EPOCHS": args.epochs},
+            timeout_seconds=600,
+        )
+    )
     for line in train.follow_logs():
         print(f"[train] {line.line}")
     result = train.result()
@@ -52,8 +59,15 @@ with gl.Client(url=args.url, token=args.token) as client:
         print(f"downloaded {ref.name} ({ref.size_bytes} bytes, sha256 {ref.sha256[:12]}...)")
     print("metrics:", json.loads((out_dir / "metrics.json").read_text()))
 
-    infer = client.run(gl.function(
-        "predict:predict", [[1.0, 1.0], [0.0, 2.0]], name="predict", source=source,
-        resources=gl.ResourceRequest(frameworks={"torch": ">=2.0"}), placement=placement,
-    ), timeout=300)
+    infer = client.run(
+        gl.function(
+            "predict:predict",
+            [[1.0, 1.0], [0.0, 2.0]],
+            name="predict",
+            source=source,
+            resources=gl.ResourceRequest(frameworks={"torch": ">=2.0"}),
+            placement=placement,
+        ),
+        timeout=300,
+    )
     print("predict:", infer.state.value, infer.return_value or infer.error)
