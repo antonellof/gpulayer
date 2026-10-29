@@ -103,8 +103,8 @@ class Client:
         self._worker_python = (
             worker_python or os.environ.get("GPULAYER_WORKER_PYTHON") or sys.executable
         )
-        self._worker_thread: threading.Thread | None = None
-        self._agent: Any = None
+        self._local: list[tuple[Any, threading.Thread]] = []  # (agent, thread)
+        self._local_caps: Any = None
         self._lock = threading.Lock()
         self.cp: ControlPlane | None = None
         if url:
@@ -129,7 +129,8 @@ class Client:
 
     def submit(self, spec: JobSpec) -> Job:
         if self.mode == "embedded" and spec.placement.target == ExecutionTarget.LOCAL:
-            self.ensure_local_worker()
+            # A local distributed job needs one in-process worker per node.
+            self.ensure_local_workers(spec.num_nodes)
         return Job(self, self._api.submit(spec).job_id)
 
     def submit_batch(self, specs: list[JobSpec]) -> list[Job]:
@@ -175,35 +176,50 @@ class Client:
 
     def ensure_local_worker(self) -> None:
         """Start an in-process local worker (embedded mode) if none is running."""
+        self.ensure_local_workers(1)
+
+    def ensure_local_workers(self, n: int) -> None:
+        """Run at least ``n`` in-process local workers (embedded mode only).
+
+        Each one is a separate registered worker, so independent jobs run in parallel and
+        a local distributed job can span ``n`` nodes on this machine.
+        """
         if not self._local_worker_enabled or self.cp is None:
             return
         with self._lock:
-            if self._worker_thread and self._worker_thread.is_alive():
+            self._local = [(a, t) for a, t in self._local if t.is_alive()]
+            if len(self._local) >= n:
                 return
             from gpulayer.gpu.discovery import detect_capabilities
             from gpulayer.worker.agent import WorkerAgent
             from gpulayer.worker.channel import EmbeddedChannel
 
-            caps = detect_capabilities(
-                origin=WorkerOrigin.LOCAL,
-                advertise_address="127.0.0.1",
-                runner=_python_runner(self._worker_python),
-            )
-            channel = EmbeddedChannel.register(self.cp, f"local-{os.getpid()}", caps)
-            self._agent = WorkerAgent(
-                channel, caps, self.home / "workers" / channel.worker_id, python=self._worker_python
-            )
-            self._worker_thread = threading.Thread(
-                target=self._agent.run, daemon=True, name="gpulayer-local-worker"
-            )
-            self._worker_thread.start()
+            if self._local_caps is None:
+                self._local_caps = detect_capabilities(
+                    origin=WorkerOrigin.LOCAL,
+                    advertise_address="127.0.0.1",
+                    runner=_python_runner(self._worker_python),
+                )
+            while len(self._local) < n:
+                name = f"local-{os.getpid()}-{len(self._local)}"
+                channel = EmbeddedChannel.register(self.cp, name, self._local_caps)
+                agent = WorkerAgent(
+                    channel,
+                    self._local_caps,
+                    self.home / "workers" / channel.worker_id,
+                    python=self._worker_python,
+                )
+                thread = threading.Thread(target=agent.run, daemon=True, name=name)
+                thread.start()
+                self._local.append((agent, thread))
 
     def close(self) -> None:
-        if self._agent is not None:
-            self._agent.stop.set()
-            if self._worker_thread:
-                self._worker_thread.join(timeout=30)
-            self._agent = None
+        with self._lock:
+            for agent, _ in self._local:
+                agent.stop.set()
+            for _, thread in self._local:
+                thread.join(timeout=30)
+            self._local = []
 
 
 def _python_runner(python: str) -> Any:

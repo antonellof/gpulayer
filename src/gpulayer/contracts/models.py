@@ -340,12 +340,22 @@ class RendezvousSpec(_Model):
 
 
 class DistributedJob(_Model):
-    """ONE logical workload spanning ``num_workers`` nodes, launched with torchrun."""
+    """ONE logical workload spanning ``num_workers`` nodes, launched with torchrun.
+
+    Give exactly one of ``entrypoint`` (a script; ``args`` are its CLI arguments) or
+    ``function`` (``module:function`` called on every rank with JSON ``function_args``;
+    rank 0's JSON return value becomes the job's return value).
+    """
 
     kind: Literal["distributed"] = "distributed"
     launcher: Literal["torchrun"] = "torchrun"
-    entrypoint: str = Field(description="Script path relative to the source bundle root.")
+    entrypoint: str | None = Field(
+        None, description="Script path relative to the source bundle root."
+    )
     args: list[str] = Field(default_factory=list)
+    function: str | None = Field(None, pattern=r"^[A-Za-z_][\w.]*:[A-Za-z_]\w*$")
+    function_args: list[Any] = Field(default_factory=list)
+    function_kwargs: dict[str, Any] = Field(default_factory=dict)
     source: ArtifactReference | None = None
     num_workers: int = Field(1, ge=1, le=1024)
     procs_per_worker: int = Field(1, ge=1, le=64)
@@ -355,7 +365,17 @@ class DistributedJob(_Model):
         "fail_fast", description="Any rank/node failure fails the logical job."
     )
 
-    _p = field_validator("entrypoint")(classmethod(lambda cls, v: _safe_relpath(v)))
+    _p = field_validator("entrypoint")(
+        classmethod(lambda cls, v: v if v is None else _safe_relpath(v))
+    )
+
+    @model_validator(mode="after")
+    def _one_entry(self) -> DistributedJob:
+        if (self.entrypoint is None) == (self.function is None):
+            raise ValueError("give exactly one of 'entrypoint' (script) or 'function'")
+        if self.function is None and (self.function_args or self.function_kwargs):
+            raise ValueError("function_args/function_kwargs require 'function'")
+        return self
 
     @property
     def world_size(self) -> int:

@@ -28,7 +28,7 @@ packages = ["src/gpulayer"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["tests"]
+pythonpath = ["tests", "tests/integration"]
 markers = [
   "integration: real local processes / sockets on one machine",
   "distributed: real multi-process torch.distributed run (requires torch)",

@@ -31,7 +31,7 @@ from gpulayer.contracts import (
     WorkerCapabilities,
 )
 from gpulayer.errors import Conflict, GpuLayerError
-from gpulayer.runtime import function_runner
+from gpulayer.runtime import dist_function_runner, function_runner
 from gpulayer.runtime.distributed import free_port, torchrun_argv
 from gpulayer.runtime.process import run_process
 from gpulayer.worker.channel import WorkerChannel
@@ -290,10 +290,32 @@ class WorkerAgent:
                 f"torchrun node {rdzv.node_rank}/{rdzv.num_nodes} rendezvous "
                 f"{rdzv.master_addr}:{rdzv.master_port} world_size {rdzv.world_size}",
             )
-            entry = (src / w.entrypoint).resolve()
-            if not entry.is_relative_to(src.resolve()) or not entry.is_file():
-                raise GpuLayerError(f"entrypoint {w.entrypoint!r} not found in source bundle")
-            argv = torchrun_argv(self.python, w, rdzv, str(entry))
+            if w.function is not None:
+                # Every rank calls module:function; rank 0 writes the JSON result.
+                entry = ws / "dist_function_runner.py"
+                shutil.copyfile(dist_function_runner.__file__, entry)
+                call = ws / "call.json"
+                call.write_text(
+                    json.dumps(
+                        {
+                            "entrypoint": w.function,
+                            "args": w.function_args,
+                            "kwargs": w.function_kwargs,
+                        }
+                    )
+                )
+                if a.node_rank == 0:
+                    result_file = ws / "result.json"
+                if source is not None:
+                    env["PYTHONPATH"] = str(src)
+                argv = torchrun_argv(self.python, w, rdzv, str(entry))
+                argv += [str(call), str(ws / "result.json")]
+            else:
+                assert w.entrypoint is not None
+                entry = (src / w.entrypoint).resolve()
+                if not entry.is_relative_to(src.resolve()) or not entry.is_file():
+                    raise GpuLayerError(f"entrypoint {w.entrypoint!r} not found in source bundle")
+                argv = torchrun_argv(self.python, w, rdzv, str(entry))
         else:  # pragma: no cover - exhaustiveness
             raise GpuLayerError(f"unsupported workload {type(w).__name__}")
 
