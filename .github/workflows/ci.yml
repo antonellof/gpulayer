@@ -1,0 +1,79 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: tests (python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install (CPU-only torch for the distributed tests)
+        run: |
+          uv venv
+          uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+          uv pip install -e '.[dev]' numpy
+      - name: Lint
+        run: uv run --no-sync ruff check src tests benchmarks && uv run --no-sync ruff format --check src tests benchmarks
+      - name: Type check
+        run: uv run --no-sync mypy src
+      - name: Tests (CPU only; CUDA and MPS tests skip themselves)
+        run: uv run --no-sync pytest -q
+
+  installer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck install.sh deploy/docker/smoke-test.sh
+      - name: Install script, pip path (no uv)
+        run: |
+          GPULAYER_SOURCE="$PWD" GPULAYER_INSTALL_DIR="$RUNNER_TEMP/gl" GPULAYER_BIN_DIR="$RUNNER_TEMP/bin" sh install.sh
+          "$RUNNER_TEMP/bin/gpulayer" --version
+          "$RUNNER_TEMP/bin/gpulayer" resources detect
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t gpulayer:ci .
+      - name: Server, worker and a job across containers
+        run: sh deploy/docker/smoke-test.sh gpulayer:ci
+
+  site:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
