@@ -1,17 +1,33 @@
-"""DistributedDataParallel training launched by GpuLayer through torchrun.
+"""A plain PyTorch DDP script made portable with two lines.
 
-torchrun provides RANK / WORLD_SIZE / LOCAL_RANK / MASTER_ADDR / MASTER_PORT; GpuLayer
-provides GPULAYER_COMM_BACKEND (gloo or nccl), GPULAYER_NODE_RANK and GPULAYER_OUTPUT_DIR.
+Everything below the `launch()` call is ordinary torchrun-style DDP code. `launch()`
+submits this script to GpuLayer workers and returns immediately when it is already
+running inside a job.
+
+    python train_ddp.py                              # 1 node x 2 processes on this machine
+    python train_ddp.py --nodes 2 --devices 2        # 2 workers x 2 processes
+    python train_ddp.py --accelerator cuda --devices 4 --target remote
 """
 
+import argparse
 import os
 
-import torch
-import torch.distributed as dist
-from torch import nn
-from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.utils.data import DataLoader, TensorDataset
-from torch.utils.data.distributed import DistributedSampler
+import gpulayer.pytorch as glt
+
+ap = argparse.ArgumentParser()
+ap.add_argument("--nodes", type=int, default=1)
+ap.add_argument("--devices", type=int, default=2)
+ap.add_argument("--accelerator", default="cpu")
+ap.add_argument("--target", default="local")
+args = ap.parse_args()
+glt.launch(nodes=args.nodes, devices=args.devices, accelerator=args.accelerator, target=args.target)
+
+import torch  # noqa: E402
+import torch.distributed as dist  # noqa: E402
+from torch import nn  # noqa: E402
+from torch.nn.parallel import DistributedDataParallel as DDP  # noqa: E402
+from torch.utils.data import DataLoader, TensorDataset  # noqa: E402
+from torch.utils.data.distributed import DistributedSampler  # noqa: E402
 
 backend = os.environ.get("GPULAYER_COMM_BACKEND", "gloo")
 dist.init_process_group(backend)

@@ -29,13 +29,13 @@ been run on NVIDIA hardware in this repository yet.
 
 ```bash
 # one node, two processes
-gpulayer submit --distributed --source examples/pytorch_ddp --entrypoint train_ddp.py \
+gpulayer submit --distributed --source examples/launch_ddp_script --entrypoint train_ddp.py \
     --nodes 1 --procs-per-node 2 --framework 'torch>=2.0'
 
 # two nodes x two processes: two workers, one logical job (world size 4)
 gpulayer worker start --name node-a &
 gpulayer worker start --name node-b &
-gpulayer submit --detach --distributed --source examples/pytorch_ddp \
+gpulayer submit --detach --distributed --source examples/launch_ddp_script \
     --entrypoint train_ddp.py --nodes 2 --procs-per-node 2
 gpulayer job logs <job-id>
 gpulayer job result <job-id> --download ./out          # node0/ddp_model.pt

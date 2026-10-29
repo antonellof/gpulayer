@@ -14,8 +14,9 @@ from torch.utils.data import DataLoader, DistributedSampler, TensorDataset  # no
 
 import gpulayer.pytorch as glt  # noqa: E402
 from gpulayer.errors import ValidationFailed  # noqa: E402
+from gpulayer.pytorch.trainer import _run_name  # noqa: E402
 
-EXAMPLE = Path(__file__).parents[2] / "examples" / "pytorch_trainer" / "train.py"
+EXAMPLE = Path(__file__).parents[2] / "examples" / "trainer_regression" / "train.py"
 
 
 class Lin(glt.Module):
@@ -90,7 +91,7 @@ def test_in_process_fit_checkpoint_and_resume(tmp_path):
     trainer.fit(model, train, val)
     first, last = trainer.history[0], trainer.history[-1]
     assert last["train_loss"] < first["train_loss"] and "val_loss" in last
-    ckpt = tmp_path / "local" / "checkpoints" / "last.ckpt"
+    ckpt = tmp_path / _run_name() / "checkpoints" / "last.ckpt"
     assert trainer.checkpoint_path == ckpt and ckpt.exists()
     restored = Lin.load_from_checkpoint(ckpt)
     assert torch.equal(restored.lin.weight, model.lin.weight.cpu())

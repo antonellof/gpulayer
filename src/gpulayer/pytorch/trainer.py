@@ -141,6 +141,9 @@ class Trainer:
             self._fit_loop(rt, model, train_dataloaders, val_dataloaders, ckpt_path)
         finally:
             rt.teardown()
+        if is_launcher_process():
+            # Same result as a submitted run: the trained model comes back on the CPU.
+            model.cpu()
 
     def _optimizers(self, model: Module) -> tuple[torch.optim.Optimizer, Any, str]:
         cfg = model.configure_optimizers()
@@ -181,7 +184,7 @@ class Trainer:
         step_fn = rt.module(_TrainingStep(model))
         train = rt.dataloader(train)
         val = rt.dataloader(val, shuffle=False) if val is not None else None
-        out_dir = rt.output_dir(self.default_root_dir / "local")
+        out_dir = rt.output_dir(self.default_root_dir / _run_name())
         where = f"{rt.accelerator}" + (
             f", rank {rt.global_rank}/{rt.world_size}" if rt.distributed else ""
         )
@@ -281,3 +284,14 @@ class Trainer:
         tmp.replace(path)
         (out_dir / "metrics.json").write_text(json.dumps(self.history, indent=2))
         self.checkpoint_path = path
+
+
+def _run_name() -> str:
+    """Folder for in-process runs, named after the script and its directory,
+    e.g. gpulayer_runs/my_project-train for my_project/train.py."""
+    import sys
+
+    if not sys.argv or not sys.argv[0] or sys.argv[0] in ("-c", "-m"):
+        return "local"
+    script = Path(sys.argv[0]).resolve()
+    return f"{script.parent.name}-{script.stem}"
