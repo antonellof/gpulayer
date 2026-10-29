@@ -76,6 +76,26 @@ Distinguish clearly between:
 
 Never describe a simulated provider or distributed executor as a real integration.
 
+### 2.6 Speed, parallelism and distribution come first
+
+GpuLayer exists to get GPU work done sooner. When choosing between designs, prefer the one
+that is faster end to end, keeps more GPUs busy, or distributes work better, unless it costs
+correctness or security. See ADR-0016.
+
+- Do not put fixed sleeps or polling on hot paths (dispatch, worker loop, process supervision,
+  log and artifact transfer, job waits). Use events, long polls or blocking waits.
+- Never block a job on the control plane: ship logs and results asynchronously.
+- Do not force host-device synchronisation in training loops (`.item()`, `.cpu()`, printing
+  tensors) except where a value is actually needed.
+- Use the resources a job was granted: all its GPUs, a fair share of CPU threads, overlapping
+  data loading with compute.
+- Prefer running independent work in parallel (more tasks per worker, more workers) and
+  placing distributed groups where communication is cheapest.
+- Measure before and after. Changes to hot paths come with a benchmark result in `benchmarks/`
+  or a test that guards the behaviour. Report the hardware, versions and method with numbers.
+- Never claim GpuLayer is faster than another system without a reproducible comparison, and
+  never present CPU or single-machine results as GPU or multi-node results.
+
 ## 3. Read the architecture first
 
 Before implementing a feature:
@@ -328,7 +348,8 @@ Do not advertise planned functionality as available.
 
 A feature is complete only when:
 
-1. Its behavior is implemented within a defined scope.
+1. Its behavior is implemented within a defined scope, and its performance impact on hot paths
+   has been measured.
 2. Its public contracts and failure behavior are documented.
 3. Appropriate tests are added and run.
 4. Relevant compatibility constraints are explicit.

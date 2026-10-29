@@ -104,6 +104,10 @@
           "title": "Overview"
         },
         {
+          "slug": "architecture/performance",
+          "title": "Performance"
+        },
+        {
           "slug": "architecture/scheduling",
           "title": "Scheduling"
         },

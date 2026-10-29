@@ -259,10 +259,22 @@ const NOTES: Note[] = [
   },
 ];
 
+// Measured with the same model, data, optimizer and torch version in both trainers; see the
+// method note under the table. Filled from the benchmark run of 2026-10-29.
+const PERF_ROWS: { case: string; gl: number; pl: number; glOver: number; plOver: number }[] = [
+  { case: "CPU, 1 process, width 256", gl: 0.51, pl: 0.83, glOver: 1.06, plOver: 1.14 },
+  { case: "CPU, 1 process, width 2048", gl: 3.59, pl: 3.99, glOver: 1.07, plOver: 1.17 },
+  { case: "Apple GPU (MPS), width 256", gl: 0.57, pl: 1.26, glOver: 1.16, plOver: 1.25 },
+  { case: "Apple GPU (MPS), width 2048", gl: 0.83, pl: 3.33, glOver: 1.23, plOver: 1.14 },
+  { case: "DDP, 2 CPU processes, width 256", gl: 1.82, pl: 3.52, glOver: 3.79, plOver: 2.46 },
+  { case: "DDP, 2 CPU processes, width 2048", gl: 40.17, pl: 41.03, glOver: 3.72, plOver: 2.7 },
+];
+
 const BEHIND = [
   "No real cloud provisioning or autoscaling yet (simulated adapter only); SkyPilot, dstack and Ray already do this.",
   "No long-running services yet; dstack, Ray Serve, Modal and Kubernetes handle them.",
   "A small PyTorch Trainer: no FSDP, DeepSpeed, callbacks or logger integrations, unlike PyTorch Lightning.",
+  "Distributed jobs start about a second slower than PyTorch Lightning's DDP on one machine, because they go through job packaging and scheduling.",
   "Distributed jobs use torchrun only; no JAX multi-host or MPI launcher yet.",
   "Pre-alpha: NVIDIA GPUs and multi-machine runs are implemented but not validated yet. Not a sandbox for untrusted users.",
 ];
@@ -417,6 +429,70 @@ export default function ComparePage() {
               Descriptions of other projects are summaries of their public documentation at the
               time of writing; check each project for current details.
             </p>
+          </div>
+        </section>
+
+        <section className="border-b border-border">
+          <div className="mx-auto max-w-6xl px-6 py-16">
+            <h2 className="section-title">Training speed: GpuLayer and PyTorch Lightning</h2>
+            <p className="mt-2 max-w-3xl text-muted-foreground">
+              The same model, data and optimizer, trained with GpuLayer&apos;s Trainer and with
+              Lightning&apos;s Trainer on one Apple Silicon Mac. Lower is better.
+            </p>
+            <div className="mt-8 overflow-x-auto rounded-lg border border-border">
+              <table className="w-full min-w-[760px] text-sm">
+                <thead className="bg-secondary text-xs uppercase tracking-wider text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold">Case</th>
+                    <th className="bg-primary/10 px-4 py-3 text-right font-semibold text-primary">
+                      GpuLayer, ms per step
+                    </th>
+                    <th className="px-4 py-3 text-right font-semibold">Lightning, ms per step</th>
+                    <th className="px-4 py-3 text-right font-semibold">Step time ratio</th>
+                    <th className="bg-primary/10 px-4 py-3 text-right font-semibold text-primary">
+                      GpuLayer start-up
+                    </th>
+                    <th className="px-4 py-3 text-right font-semibold">Lightning start-up</th>
+                  </tr>
+                </thead>
+                <tbody className="font-mono text-[13px]">
+                  {PERF_ROWS.map((r) => (
+                    <tr key={r.case} className="border-t border-border">
+                      <td className="px-4 py-3 font-sans">{r.case}</td>
+                      <td className="bg-primary/5 px-4 py-3 text-right">{r.gl.toFixed(2)}</td>
+                      <td className="px-4 py-3 text-right">{r.pl.toFixed(2)}</td>
+                      <td className="px-4 py-3 text-right">
+                        {Math.max(r.pl / r.gl, r.gl / r.pl) < 1.1
+                          ? "about the same"
+                          : r.gl < r.pl
+                            ? `${(r.pl / r.gl).toFixed(2)}x faster`
+                            : `${(r.gl / r.pl).toFixed(2)}x slower`}
+                      </td>
+                      <td className="bg-primary/5 px-4 py-3 text-right">{r.glOver.toFixed(2)} s</td>
+                      <td className="px-4 py-3 text-right">{r.plOver.toFixed(2)} s</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-4 max-w-3xl space-y-2 text-xs text-muted-foreground">
+              <p>
+                Method: Apple Silicon Mac with 10 CPU cores, Python 3.12, torch 2.15.0, Lightning
+                2.6.6. A three-layer MLP (width 256 or 2048), batch 64, SGD, one logged loss per
+                step. Lightning runs without logger, progress bar, model summary or checkpoints;
+                GpuLayer runs without checkpoints. Each case runs 100 and 600 steps, three times
+                each in fresh processes; ms per step is the median difference divided by 500
+                steps. Start-up is the import time plus the fixed time inside{" "}
+                <code className="font-mono">fit</code>.
+              </p>
+              <p>
+                Differences under about 10% are within run-to-run noise on this machine, so the
+                larger DDP case is a tie. GpuLayer runs DDP as a local GpuLayer job (packaged,
+                scheduled and started with torchrun), which is why its DDP start-up is about a
+                second longer. These are CPU and Apple GPU results on one machine; NVIDIA and
+                multi-machine results have not been measured yet.
+              </p>
+            </div>
           </div>
         </section>
 

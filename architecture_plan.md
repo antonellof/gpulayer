@@ -16,6 +16,8 @@ The platform should support independent jobs and distributed workloads, with a c
 
 ## 2. Goals
 
+- Run GPU work as fast as the hardware allows: minimal dispatch latency, high GPU utilisation,
+  parallel execution of independent work, and well-placed distributed groups (ADR-0016).
 - Provide a consistent SDK and CLI for job submission and management.
 - Support local CPU and GPU execution.
 - Support execution on existing remote workers.
@@ -763,6 +765,9 @@ Suggested initial ADRs:
 11. `ADR-0011-cost-accounting-and-retry-semantics.md`
 12. `ADR-0012-licensing-and-project-governance.md`
 13. `ADR-0013-website-and-documentation-stack.md`
+14. `ADR-0014-pytorch-integration.md`
+15. `ADR-0015-workload-agnostic-core.md`
+16. `ADR-0016-performance-parallelism-and-distribution.md`
 
 Create an ADR index. Use `Proposed` for decisions that still need validation; do not present an undecided option as established policy.
 

@@ -32,6 +32,7 @@ proposed. Each ADR says which part is which.
 | [0013](ADR-0013-website-and-documentation-stack.md) | Website and documentation stack | Proposed | Compares MkDocs-Material, Docusaurus and Astro Starlight. Undecided. |
 | [0014](ADR-0014-pytorch-integration.md) | PyTorch integration and a training API | Accepted (milestone 2, first slice) | The first framework integration: launcher, runtime helpers for devices/DDP/precision, and a small Module + Trainer API; code ships as source. |
 | [0015](ADR-0015-workload-agnostic-core.md) | A workload-agnostic GPU layer, with framework integrations on top | Accepted (milestone 2) | Any command or Python library is a workload; GPUs are usable when their driver is; frameworks are reported and required explicitly. |
+| [0016](ADR-0016-performance-parallelism-and-distribution.md) | Speed, parallelism and job distribution as primary goals | Accepted (milestone 2) | No fixed sleeps on hot paths (long-poll dispatch and job waits), no per-step device syncs, measured changes, and a roadmap for concurrent tasks per worker and topology-aware placement. |
 
 ## Template
 

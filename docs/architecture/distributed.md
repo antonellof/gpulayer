@@ -39,6 +39,16 @@ GpuLayer never retries a partially executed group automatically. Checkpointing i
 workload: write checkpoints to `GPULAYER_OUTPUT_DIR` (returned as artifacts) or to storage your
 workload controls, then resubmit with an input that points at them.
 
+## Processes, threads and logs
+
+- Each worker starts `procs_per_worker` processes through torchrun with `OMP_NUM_THREADS=1`
+  per process unless the job sets it. Sharing the cores between ranks was measured and was not
+  faster (ADR-0016).
+- All local ranks write to the same output stream today. A program that writes one line in
+  several calls (unbuffered `print` writes the text and the newline separately) can have lines
+  from two ranks interleave. Write each line in one call, or log from rank 0 only. Separate
+  per-rank streams are on the roadmap (ADR-0016).
+
 ## Validation status
 
 | Scenario | Status |

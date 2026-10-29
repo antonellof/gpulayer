@@ -28,7 +28,9 @@ Updated 2026-10-29 at the end of the first iteration.
 | `gpulayer up`, `gpulayer join`, `gl.connect`, certificate pinning | done, tested |
 | Examples: regression, CNN, char-level transformer, custom loop, DDP script, sweep | done, run on Apple Silicon |
 | Documentation site (Next.js, Mermaid diagrams) | done |
-| Callbacks, early stopping, gradient accumulation | planned |
+| Gradient accumulation (with DDP `no_sync`) | done, tested |
+| Event-driven dispatch: long-poll acquire and job waits, async log shipping (ADR-0016) | done, tested, benchmarked on one machine |
+| Callbacks, early stopping | planned |
 | Validation on NVIDIA hardware and across machines | planned |
 
 ## Milestone 1 steps (prompt.md §8)
@@ -86,6 +88,14 @@ uncommitted local changes, so it was deliberately left untouched.
 - Done: retention and garbage collection (`gpulayer gc`, admin endpoint `POST /v1/admin/gc`).
 - Done: CLI flag `--gpu-memory-kind`; runtime profiles (`profile="pytorch-cuda"`,
   `--profile mlx`) as a shorthand for accelerator and framework requirements.
+
+### Performance (ADR-0016), runs alongside the iterations
+
+- Done: long-poll dispatch and job waits, event-driven process exit, background log shipping,
+  no per-step device sync in the Trainer (1.6x faster steps on MPS), bundles skip
+  GpuLayer state. Idle-job latency 626 ms to 31 ms, burst throughput 27 to 87 jobs/s (one Mac).
+- Next: several tasks per worker (one per free GPU), per-rank log streams, topology-aware
+  group placement, faster distributed start-up. FSDP and `torch.compile` need CUDA hardware.
 
 ### Iteration 3: validate across machines
 

@@ -70,6 +70,7 @@ dicts of tensors, before calling your step.
 | `precision` | `"32-true"` | `"32-true"`, `"bf16-mixed"` (CUDA, CPU) or `"16-mixed"` (CUDA, with a gradient scaler) |
 | `target` | `None` | `None` runs here when possible; `"local"`, `"remote"` or `"cloud"` always submits a job |
 | `gradient_clip_val` | `None` | clip the gradient norm to this value |
+| `accumulate_grad_batches` | `1` | apply the optimizer every N batches; DDP exchanges gradients only on those steps |
 | `log_every_n_steps` | `50` | print logged values every N steps (`0` turns it off) |
 | `limit_train_batches`, `limit_val_batches` | `None` | stop an epoch after N batches |
 | `enable_checkpointing` | `True` | save `checkpoints/last.ckpt` after every epoch |

@@ -24,7 +24,7 @@ artifacts used by their current tasks.
 |---|---|---|
 | `POST /v1/jobs` | `JobSpec` | `JobStatus` |
 | `GET /v1/jobs?limit=&state=` | | list of `JobStatus` |
-| `GET /v1/jobs/{id}` | | `JobStatus` |
+| `GET /v1/jobs/{id}?wait=` | optional `wait` (seconds, max 30): hold the request until the job is terminal | `JobStatus` |
 | `POST /v1/jobs/{id}/cancel` | | `JobStatus` |
 | `GET /v1/jobs/{id}/result` | | `JobResult` |
 | `GET /v1/jobs/{id}/logs?after=` | | list of `LogLine` |
@@ -41,7 +41,7 @@ artifacts used by their current tasks.
 |---|---|---|
 | `POST /v1/workers/register` | join token (or single-use instance token) | returns worker id and session token |
 | `POST /v1/worker/heartbeat` | session | renews leases; returns tasks to cancel and revocation |
-| `POST /v1/worker/acquire` | session | next assignment or `null` |
+| `POST /v1/worker/acquire` | session | `{wait}` (seconds, max 30): long poll; returns the next assignment as soon as one exists, or `null` |
 | `POST /v1/worker/tasks/{id}/start` | session | mark running |
 | `POST /v1/worker/tasks/{id}/rendezvous` | session | node rank 0 publishes `{addr, port}` |
 | `POST /v1/worker/tasks/{id}/logs` | session | `{lines: [[stream, line], ...]}` |
