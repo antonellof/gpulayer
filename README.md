@@ -8,7 +8,7 @@
   <a href="#quickstart">Quickstart</a> ·
   <a href="#for-ai-and-coding-agents">AI agents</a> ·
   <a href="#where-gpulayer-sits">Where it sits</a> ·
-  <a href="docs/index.md">Docs</a> ·
+  <a href="https://www.gpulayer.dev/docs/">Docs</a> ·
   <a href="examples">Examples</a> ·
   <a href="CHANGELOG.md">Changelog</a>
 </p>
@@ -16,6 +16,7 @@
 GPUlayer sends a command, a Python function or a distributed job to machines that can run
 it (this one, remote servers, clusters, data centers, cloud VMs, or several at once), starts
 it there and brings back logs, outputs and results. PyTorch gets a deeper integration on top.
+Documentation: [gpulayer.dev/docs](https://www.gpulayer.dev/docs/).
 
 > **v0.1.0, the first release.** Tested on CPU and Apple Silicon (PyTorch MPS and MLX) and in
 > Linux CI. NVIDIA GPUs and multi-machine runs are implemented but not validated yet; cloud
