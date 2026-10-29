@@ -95,6 +95,7 @@ class Client:
         *,
         home: str | Path | None = None,
         ca_file: str | None = None,
+        fingerprint: str | None = None,
         local_worker: bool = True,
         worker_python: str | None = None,
     ) -> None:
@@ -111,7 +112,11 @@ class Client:
             token = token or os.environ.get("GPULAYER_TOKEN")
             if not token:
                 raise GpuLayerError("a client token is required for a remote control plane")
-            self._api: Any = HttpControlPlaneClient(HttpTransport(url, token, ca_file=ca_file))
+            fingerprint = fingerprint or os.environ.get("GPULAYER_FINGERPRINT")
+            self._api: Any = HttpControlPlaneClient(
+                HttpTransport(url, token, ca_file=ca_file, fingerprint=fingerprint)
+            )
+            self.url = url
             self.mode = "remote"
         else:
             self.home = gpulayer_home(home)

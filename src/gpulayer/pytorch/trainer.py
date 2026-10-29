@@ -27,7 +27,7 @@ from gpulayer.errors import ValidationFailed
 from gpulayer.pytorch.launch import LaunchResult, is_launcher_process, launch
 from gpulayer.pytorch.module import Module, _TrainingStep
 from gpulayer.pytorch.runtime import Runtime, resolve_accelerator
-from gpulayer.sdk.remote import RemoteError, explain_failure
+from gpulayer.sdk.remote import RemoteError, default_client, default_target, explain_failure
 
 CHECKPOINT = "checkpoints/last.ckpt"
 
@@ -87,22 +87,26 @@ class Trainer:
         return self.runtime.is_global_zero if self.runtime else True
 
     def _launch(self, model: Module) -> None:
+        options = dict(self.launch_options)
+        client = options.pop("client", None) or default_client()
+        target = self.target or default_target(client)
         accel = self.accelerator
         if accel == "auto":
-            if self.target not in (None, "local"):
+            if target != "local":
                 raise ValidationFailed(
-                    "accelerator='auto' cannot be resolved for a remote or cloud target; "
-                    "pass accelerator='cuda', 'mps' or 'cpu'"
+                    f"accelerator='auto' cannot be resolved for target '{target}' before the "
+                    "job is placed; pass accelerator='cuda', 'mps' or 'cpu'"
                 )
             accel = resolve_accelerator("auto")
         result = launch(
             nodes=self.num_nodes,
             devices=self.devices,
             accelerator=accel,
-            target=self.target or "local",
+            target=target,
+            client=client,
             output_dir=self.default_root_dir,
             exit=False,
-            **self.launch_options,
+            **options,
         )
         assert result is not None
         self.launch_result = result

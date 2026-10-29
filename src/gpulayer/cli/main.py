@@ -69,6 +69,7 @@ def _print(obj: Any, as_json: bool) -> None:
 
 def _client(args: argparse.Namespace, *, local_worker: bool = True) -> Client:
     return Client(
+        fingerprint=args.fingerprint,
         url=args.url,
         token=args.token,
         home=args.home,
@@ -127,6 +128,124 @@ def cmd_server_start(args: argparse.Namespace) -> int:
     return 0
 
 
+# ------------------------------------------------------------------------ up/join
+
+
+def _up_tokens(home: Path) -> tuple[str, str]:
+    """Client and join tokens for `gpulayer up`, kept in a 0600 file so restarts reuse them."""
+    import secrets
+
+    path = home / "up-tokens.json"
+    if path.exists():
+        data = json.loads(path.read_text())
+        return data["client_token"], data["join_token"]
+    client, join = "glc_" + secrets.token_urlsafe(32), "glj_" + secrets.token_urlsafe(32)
+    path.write_text(json.dumps({"client_token": client, "join_token": join}))
+    os.chmod(path, 0o600)
+    return client, join
+
+
+def cmd_up(args: argparse.Namespace) -> int:
+    """One command: control plane + (optionally) this machine as a worker."""
+    from gpulayer.api.auth import ServerCredentials, token_hash
+    from gpulayer.api.server import ControlPlaneServer, _is_loopback
+    from gpulayer.api.tls import certificate_fingerprint, ensure_self_signed
+    from gpulayer.control_plane.service import ControlPlaneConfig
+    from gpulayer.gpu.discovery import default_advertise_address, detect_capabilities
+    from gpulayer.sdk.client import _python_runner
+    from gpulayer.sdk.home import gpulayer_home, open_control_plane
+    from gpulayer.worker.agent import WorkerAgent
+    from gpulayer.worker.channel import EmbeddedChannel
+
+    home = gpulayer_home(args.home)
+    client_token, join_token = _up_tokens(home)
+    creds = ServerCredentials([token_hash(client_token)], [token_hash(join_token)])
+    loopback = _is_loopback(args.host)
+    cert, key, fingerprint = args.tls_cert, args.tls_key, None
+    if not cert and (args.tls or (not loopback and not args.insecure_http)):
+        cert_path, key_path = ensure_self_signed(home / "tls")
+        cert, key = str(cert_path), str(key_path)
+        fingerprint = certificate_fingerprint(cert_path)
+    advertise = args.advertise_address or ("127.0.0.1" if loopback else default_advertise_address())
+    cp = open_control_plane(home)
+    server = ControlPlaneServer(
+        cp,
+        creds,
+        host=args.host,
+        port=args.port,
+        tls_cert=cert,
+        tls_key=key,
+        allow_insecure_remote=args.insecure_http,
+    )
+    port = server.httpd.server_address[1]
+    url = f"{'https' if cert else 'http'}://{advertise}:{port}"
+    cp.config = ControlPlaneConfig(public_url=url)
+    server.start()
+
+    agent = None
+    worker_desc = "disabled (--no-worker)"
+    if not args.no_worker:
+        python = args.python or sys.executable
+        caps = detect_capabilities(
+            origin=WorkerOrigin.EXISTING,
+            advertise_address=advertise,
+            labels=_kv(args.label, "--label"),
+            runner=_python_runner(python),
+        )
+        channel = EmbeddedChannel.register(cp, args.name or caps.hostname, caps)
+        agent = WorkerAgent(channel, caps, home / "workers" / channel.worker_id, python=python)
+        threading.Thread(target=agent.run, daemon=True).start()
+        devices = ", ".join(d.accelerator.value for d in caps.accelerators) or "cpu"
+        worker_desc = f"{caps.hostname} ({devices}, {caps.cpu_cores} CPU cores)"
+
+    fp_flag = f" --fingerprint {fingerprint}" if fingerprint else ""
+    fp_arg = f', fingerprint="{fingerprint}"' if fingerprint else ""
+    fp_env = f" GPULAYER_FINGERPRINT={fingerprint}" if fingerprint else ""
+    tls_note = (
+        "TLS, self-signed certificate pinned by fingerprint"
+        if fingerprint
+        else ("TLS" if cert else "plain HTTP: use only on a trusted network")
+    )
+    print(
+        f"""
+GpuLayer is up at {url}  ({tls_note})
+Worker on this machine: {worker_desc}
+
+Add a machine (GPU server, workstation, cloud VM) by running on it:
+  gpulayer join {url} --token {join_token}{fp_flag}
+
+Use it from Python:
+  import gpulayer as gl
+  gl.connect("{url}", token="{client_token}"{fp_arg})
+
+Or from a shell:
+  export GPULAYER_URL={url} GPULAYER_TOKEN={client_token}{fp_env}
+
+Tokens are kept in {home / "up-tokens.json"}. Press Ctrl+C to stop.
+""",
+        flush=True,
+    )
+    stop = threading.Event()
+    signal.signal(signal.SIGTERM, lambda *_: stop.set())
+    try:
+        while not stop.wait(0.5):
+            pass
+    except KeyboardInterrupt:
+        pass
+    if agent is not None:
+        agent.stop.set()
+    server.shutdown()
+    print("stopped")
+    return 0
+
+
+def cmd_join(args: argparse.Namespace) -> int:
+    """Register this machine as a worker of a GpuLayer server (`gpulayer up`)."""
+    args.url = args.server_url
+    args.join_token = args.token
+    return cmd_worker_start(args)
+
+
 # ----------------------------------------------------------------------- worker
 
 
@@ -154,7 +273,12 @@ def cmd_worker_start(args: argparse.Namespace) -> int:
             runner=_python_runner(python),
         )
         channel: Any = HttpWorkerChannel.register(
-            args.url, join, args.name or caps.hostname, caps, ca_file=args.ca_file
+            args.url,
+            join,
+            args.name or caps.hostname,
+            caps,
+            ca_file=args.ca_file,
+            fingerprint=args.fingerprint,
         )
     else:
         from gpulayer.worker.channel import EmbeddedChannel
@@ -473,8 +597,55 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--token", default=None, help="client token (default $GPULAYER_TOKEN)")
     p.add_argument("--ca-file", default=None, help="CA bundle to verify a TLS control plane")
+    p.add_argument(
+        "--fingerprint",
+        default=os.environ.get("GPULAYER_FINGERPRINT"),
+        help="pinned server certificate, as printed by `gpulayer up` ($GPULAYER_FINGERPRINT)",
+    )
     p.add_argument("-v", "--log-level", default="WARNING")
     sub = p.add_subparsers(dest="group", required=True)
+
+    s = sub.add_parser("up", help="start a server (and use this machine as a worker)")
+    s.add_argument("--host", default="0.0.0.0", help="bind address (default: all interfaces)")
+    s.add_argument("--port", type=int, default=8470)
+    s.add_argument("--advertise-address", help="address other machines use to reach this one")
+    s.add_argument("--no-worker", action="store_true", help="do not run jobs on this machine")
+    s.add_argument("--name", help="worker name for this machine")
+    s.add_argument("--label", action="append", metavar="KEY=VALUE")
+    s.add_argument("--python", help="interpreter for jobs on this machine")
+    s.add_argument("--tls", action="store_true", help="use TLS even on a loopback address")
+    s.add_argument("--tls-cert", help="use this certificate instead of a self-signed one")
+    s.add_argument("--tls-key")
+    s.add_argument(
+        "--insecure-http",
+        action="store_true",
+        help="plain HTTP on a non-loopback address (trusted networks only)",
+    )
+    s.set_defaults(fn=cmd_up)
+
+    s = sub.add_parser("join", help="add this machine as a worker of a GpuLayer server")
+    s.add_argument("server_url", help="URL printed by `gpulayer up`")
+    s.add_argument(
+        "--token",
+        default=os.environ.get("GPULAYER_JOIN_TOKEN"),
+        help="join token printed by `gpulayer up`",
+    )
+    # Accept these after `join` too (as printed by `gpulayer up`). SUPPRESS keeps the
+    # global value when they are given before the subcommand instead.
+    s.add_argument(
+        "--fingerprint",
+        default=argparse.SUPPRESS,
+        help="server certificate fingerprint printed by `gpulayer up`",
+    )
+    s.add_argument("--ca-file", default=argparse.SUPPRESS)
+    s.add_argument("--name")
+    s.add_argument("--label", action="append", metavar="KEY=VALUE")
+    s.add_argument("--python", help="interpreter used for jobs (default: this one)")
+    s.add_argument("--advertise-address", help="address peers use for distributed rendezvous")
+    s.add_argument("--workdir")
+    s.add_argument("--max-tasks", type=int)
+    s.add_argument("--idle-exit", type=float, metavar="SECONDS")
+    s.set_defaults(fn=cmd_join)
 
     srv = sub.add_parser("server", help="self-hosted control plane").add_subparsers(
         dest="cmd", required=True

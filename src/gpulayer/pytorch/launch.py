@@ -62,7 +62,7 @@ def launch(
     nodes: int = 1,
     devices: int = 1,
     accelerator: str = "cpu",
-    target: str = "local",
+    target: str | None = None,
     client: Client | None = None,
     script: str | Path | None = None,
     argv: list[str] | None = None,
@@ -87,9 +87,10 @@ def launch(
     if not script_path.is_file():
         raise ValidationFailed(f"cannot find the script to launch: {script_path}")
     args = list(sys.argv[1:] if argv is None else argv)
-    from gpulayer.sdk.remote import default_client, explain_failure
+    from gpulayer.sdk.remote import default_client, default_target, explain_failure
 
     c = client or default_client()
+    target = target or default_target(c)
     source = c.package(script_path.parent)
     accel = Accelerator(accelerator)
     resources = ResourceRequest(

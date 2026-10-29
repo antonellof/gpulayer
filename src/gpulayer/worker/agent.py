@@ -285,6 +285,10 @@ class WorkerAgent:
             argv = [self.python, str(runner), str(call), str(result_file)]
         elif isinstance(w, DistributedJob):
             rdzv = self._rendezvous(a)
+            if _is_loopback(rdzv.master_addr):
+                # Every node is on this host: keep gloo on the loopback interface instead of
+                # letting it pick one from the hostname (which may resolve to a LAN address).
+                env.setdefault("GLOO_SOCKET_IFNAME", "lo0" if sys.platform == "darwin" else "lo")
             sink(
                 "system",
                 f"torchrun node {rdzv.node_rank}/{rdzv.num_nodes} rendezvous "
@@ -399,3 +403,12 @@ class WorkerAgent:
             name = prefix + p.relative_to(out_dir).as_posix()
             refs.append(self.channel.put_artifact(p.read_bytes(), name, ArtifactKind.OUTPUT))
         return refs
+
+
+def _is_loopback(addr: str) -> bool:
+    import ipaddress
+
+    try:
+        return addr == "localhost" or ipaddress.ip_address(addr).is_loopback
+    except ValueError:
+        return False

@@ -1,33 +1,61 @@
-# site/
+# GpuLayer website and docs
 
-This directory will hold GpuLayer's public website and documentation site.
+The public website and documentation for GpuLayer: a landing page at `/` and the docs at
+`/docs`. It is a Next.js 14 static site (App Router, TypeScript, Tailwind) that renders the
+Markdown in [`../docs`](../docs) at build time. There is no second copy of the content: edit
+the files in `docs/` and rebuild.
 
-The website stack is not chosen yet.
-[ADR-0013](../docs/decisions/ADR-0013-website-and-documentation-stack.md) (Proposed) compares
-MkDocs-Material, Docusaurus and Astro Starlight.
+## Develop
 
-The site will render the Markdown under [`docs/`](../docs/) and keep no second copy, so
-documentation is reviewed together with code changes.
+```bash
+cd site
+npm install
+npm run dev          # http://localhost:3000
+```
 
-The site may only present capabilities that the docs classify as implemented, tested or
-hardware-validated. Simulated and planned features must be labelled as such.
+## Build
 
-## Planned page map
+```bash
+npm run build        # static export to site/out/
+npm start            # serve site/out locally
+npm run lint
+```
 
-| Page | Source |
-|---|---|
-| Overview and architecture | `docs/architecture/overview.md` |
-| Quickstart | `docs/getting-started.md` |
-| Local execution (and execution modes) | `docs/architecture/execution-modes.md` |
-| Remote workers and private networking | `docs/architecture/remote-workers.md` |
-| Cloud execution and provider adapters | `docs/architecture/providers.md` |
-| Distributed execution | `docs/architecture/distributed.md` |
-| GPU compatibility and runtime profiles | `docs/architecture/gpu-compatibility.md` |
-| Apple Metal / MPS boundaries | `docs/architecture/gpu-compatibility.md` + [ADR-0006](../docs/decisions/ADR-0006-apple-metal-mps-boundaries.md) |
-| Security and trust model | `docs/architecture/security.md` |
-| Cost accounting and scheduling | `docs/architecture/scheduling-and-cost.md` |
-| Self-hosting and hosted control plane | `docs/architecture/remote-workers.md` + [ADR-0001](../docs/decisions/ADR-0001-control-plane-and-deployment-model.md) |
-| Contributing and release process | `docs/development/contributing.md` |
-| Architecture decisions | `docs/decisions/README.md` |
+`next.config.mjs` sets `output: "export"` and `trailingSlash: true`, so `site/out/` is a plain
+folder of HTML, CSS and JS. Host it on any static host (GitHub Pages, Netlify, Cloudflare
+Pages, S3) or deploy the `site/` directory to Vercel.
 
-Nothing here is built or deployed yet.
+## How content is wired
+
+- **Navigation** comes only from [`docs/nav.json`](../docs/nav.json): sections of pages with a
+  `slug` and `title`. Slug `index` is `/docs/`; `get-started/quickstart` is
+  `/docs/get-started/quickstart/` (file `docs/get-started/quickstart.md`); a slug ending in
+  `/README` maps to its directory (`decisions/README` is `/docs/decisions/`). Previous/next
+  links follow the order in `nav.json`.
+- **ADRs**: every `docs/decisions/ADR-*.md` is published at `/docs/decisions/<file-stem>/`
+  without a sidebar entry; the decisions index links to them.
+- **Missing pages**: a `nav.json` entry whose Markdown file does not exist yet renders a
+  "This page is being written" placeholder instead of failing the build.
+- **Links**: relative links between Markdown files (`../pytorch/trainer.md`,
+  `ADR-0006-apple-metal-mps-boundaries.md`, `./concepts.md#anchor`) become site routes. Links
+  to anything outside the generated docs (examples, source files, the README) point to the
+  file on GitHub.
+- **Diagrams**: fenced ` ```mermaid ` blocks render client-side with Mermaid and follow the
+  light/dark theme. GitHub renders the same blocks natively.
+- **Code**: other fenced blocks are highlighted with `prism-react-renderer` (plus a small
+  shell grammar) and get a copy button.
+- **Headings**: `h2`/`h3` feed the "On this page" list; ids match `rehype-slug`.
+
+Source layout:
+
+```text
+site/src/
+├── app/                    layout, landing page, docs routes, 404
+├── components/docs/        markdown renderer, code block, mermaid, sidebar, TOC
+├── components/landing/     architecture diagram (inline SVG)
+├── components/site/        header, footer, logo, theme toggle
+└── lib/docs.ts             nav.json loading, link resolution, heading extraction
+```
+
+The site has no analytics or telemetry. Fonts (Inter, JetBrains Mono) are fetched from
+Google Fonts at build time by `next/font` and self-hosted in the export.

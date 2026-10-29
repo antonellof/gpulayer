@@ -44,8 +44,25 @@ _default_client: Client | None = None
 _default_lock = threading.Lock()
 
 
+def connect(
+    url: str, token: str, *, fingerprint: str | None = None, ca_file: str | None = None
+) -> Client:
+    """Use a GpuLayer server for everything in this process (Trainer, launch, @gl.remote).
+
+    Copy the arguments from what ``gpulayer up`` prints.
+    """
+    global _default_client
+    client = Client(url=url, token=token, fingerprint=fingerprint, ca_file=ca_file)
+    client.workers()  # fail now, not on the first job, if the URL or credentials are wrong
+    with _default_lock:
+        if _default_client is not None:
+            _default_client.close()
+        _default_client = client
+    return client
+
+
 def default_client() -> Client:
-    """Process-wide client: $GPULAYER_URL if set, otherwise the embedded control plane."""
+    """Process-wide client: set by ``connect()``, else $GPULAYER_URL, else embedded."""
     global _default_client
     with _default_lock:
         if _default_client is None:
@@ -159,7 +176,7 @@ class RemoteFunction:
             )
         if placement is None:
             placement = PlacementPolicy(
-                target=opts.pop("target", "local"),
+                target=opts.pop("target", None) or default_target(self.client),
                 fallback_targets=opts.pop("fallback_targets", []),
                 worker_labels=opts.pop("worker_labels", {}),
                 on_unschedulable=opts.pop("on_unschedulable", "fail"),
@@ -229,6 +246,11 @@ class RemoteFunction:
             c.ensure_local_workers(parallelism or min(len(calls), 4))
         jobs = [self.submit(*a) for a in calls]
         return [_value_or_raise(j, wait=True) for j in jobs]
+
+
+def default_target(client: Client) -> str:
+    """Jobs go to the server's workers when connected to one, else to this machine."""
+    return "remote" if client.mode == "remote" else "local"
 
 
 def _value_or_raise(job: Job, *, wait: bool = False) -> Any:

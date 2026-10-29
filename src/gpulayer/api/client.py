@@ -1,13 +1,13 @@
-"""HTTP clients for the control-plane API (stdlib urllib; no extra dependencies)."""
+"""HTTP clients for the control-plane API (stdlib only; no extra dependencies)."""
 
 from __future__ import annotations
 
+import hashlib
+import http.client
 import json
 import ssl
-import urllib.error
-import urllib.request
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from gpulayer.contracts import (
     PROTOCOL_VERSION,
@@ -27,19 +27,65 @@ from gpulayer.contracts import (
     WorkerCapabilities,
     WorkerStatus,
 )
-from gpulayer.errors import ERRORS_BY_CODE, GpuLayerError
+from gpulayer.errors import ERRORS_BY_CODE, GpuLayerError, Unauthorized
 
 
 class HttpTransport:
+    """JSON-over-HTTP(S) with bearer auth.
+
+    TLS is verified against the system CAs (or ``ca_file``). Alternatively ``fingerprint``
+    ("sha256:<hex>") pins the server certificate, which is how ``gpulayer up`` works with a
+    self-signed certificate: the connection is refused before any token is sent if the
+    certificate does not match.
+    """
+
     def __init__(
-        self, url: str, token: str, *, ca_file: str | None = None, timeout: float = 60
+        self,
+        url: str,
+        token: str,
+        *,
+        ca_file: str | None = None,
+        fingerprint: str | None = None,
+        timeout: float = 60,
     ) -> None:
-        if not url.startswith(("http://", "https://")):
-            raise ValueError("control plane URL must start with http:// or https://")
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            raise ValueError("control plane URL must look like https://host:port")
+        if fingerprint and parsed.scheme != "https":
+            raise ValueError("a certificate fingerprint needs an https:// URL")
         self.url = url.rstrip("/")
+        self._parsed = parsed
         self._token = token
         self.timeout = timeout
-        self._ctx = ssl.create_default_context(cafile=ca_file) if url.startswith("https") else None
+        self.fingerprint = normalize_fingerprint(fingerprint) if fingerprint else None
+        self._ctx: ssl.SSLContext | None = None
+        if parsed.scheme == "https":
+            if self.fingerprint:
+                # Pinning replaces CA validation; the digest check below is mandatory.
+                self._ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                self._ctx.check_hostname = False
+                self._ctx.verify_mode = ssl.CERT_NONE
+                self._ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+            else:
+                self._ctx = ssl.create_default_context(cafile=ca_file)
+
+    def _connect(self) -> http.client.HTTPConnection:
+        host, port = self._parsed.hostname or "", self._parsed.port
+        if self._ctx is None:
+            conn = http.client.HTTPConnection(host, port, timeout=self.timeout)
+            conn.connect()
+            return conn
+        tls = http.client.HTTPSConnection(host, port, timeout=self.timeout, context=self._ctx)
+        tls.connect()
+        if self.fingerprint:
+            der = tls.sock.getpeercert(binary_form=True) if tls.sock else None
+            if not der or "sha256:" + hashlib.sha256(der).hexdigest() != self.fingerprint:
+                tls.close()
+                raise Unauthorized(
+                    "server certificate does not match the expected fingerprint; "
+                    "refusing to send credentials"
+                )
+        return tls
 
     def request(
         self,
@@ -60,19 +106,31 @@ class HttpTransport:
         if body is not None:
             data = json.dumps(body).encode()
             hdrs["Content-Type"] = "application/json"
-        req = urllib.request.Request(self.url + path, data=data, method=method, headers=hdrs)
+        conn = self._connect()
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout, context=self._ctx) as resp:
-                content = resp.read()
-                if resp.headers.get("Content-Type") == "application/octet-stream":
-                    return content
-                return json.loads(content) if content else None
-        except urllib.error.HTTPError as e:
+            conn.request(
+                method, (self._parsed.path.rstrip("/") or "") + path, body=data, headers=hdrs
+            )
+            resp = conn.getresponse()
+            content = resp.read()
+        finally:
+            conn.close()
+        if resp.status >= 400:
             try:
-                err = json.loads(e.read())["error"]
+                err = json.loads(content)["error"]
             except Exception:
-                raise GpuLayerError(f"HTTP {e.code} from control plane") from None
-            raise ERRORS_BY_CODE.get(err["code"], GpuLayerError)(err["message"]) from None
+                raise GpuLayerError(f"HTTP {resp.status} from control plane") from None
+            raise ERRORS_BY_CODE.get(err["code"], GpuLayerError)(err["message"])
+        if resp.getheader("Content-Type") == "application/octet-stream":
+            return content
+        return json.loads(content) if content else None
+
+
+def normalize_fingerprint(fp: str) -> str:
+    hexpart = fp.lower().removeprefix("sha256:").replace(":", "")
+    if len(hexpart) != 64 or any(c not in "0123456789abcdef" for c in hexpart):
+        raise ValueError("fingerprint must be 'sha256:' followed by 64 hex characters")
+    return "sha256:" + hexpart
 
 
 class HttpControlPlaneClient:
@@ -158,8 +216,9 @@ class HttpWorkerChannel:
         caps: WorkerCapabilities,
         *,
         ca_file: str | None = None,
+        fingerprint: str | None = None,
     ) -> HttpWorkerChannel:
-        t = HttpTransport(url, join_token, ca_file=ca_file)
+        t = HttpTransport(url, join_token, ca_file=ca_file, fingerprint=fingerprint)
         reg = Registration.model_validate(
             t.request(
                 "POST",
@@ -167,7 +226,9 @@ class HttpWorkerChannel:
                 {"name": name, "capabilities": caps.model_dump(mode="json")},
             )
         )
-        return cls(HttpTransport(url, reg.session_token, ca_file=ca_file), reg)
+        return cls(
+            HttpTransport(url, reg.session_token, ca_file=ca_file, fingerprint=fingerprint), reg
+        )
 
     def heartbeat(self, draining: bool = False) -> HeartbeatResponse:
         return HeartbeatResponse.model_validate(
