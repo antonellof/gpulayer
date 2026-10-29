@@ -49,14 +49,19 @@ class Job:
         return self.client._api.get_job(self.id)
 
     def wait(self, timeout: float | None = None, poll: float = 0.2) -> JobStatus:
+        """Block until the job is terminal. Long-polls the control plane, so it returns as
+        soon as the job finishes; ``poll`` is only the back-off for servers without it."""
         deadline = time.monotonic() + timeout if timeout else None
         while True:
-            st = self.status()
+            left = 10.0 if deadline is None else max(0.0, deadline - time.monotonic())
+            asked = time.monotonic()
+            st = self.client._api.wait_job(self.id, min(left, 10.0))
             if st.state.terminal:
                 return st
-            if deadline and time.monotonic() > deadline:
+            if deadline and time.monotonic() >= deadline:
                 raise TimeoutError(f"job {self.id} still {st.state.value} after {timeout}s")
-            time.sleep(poll)
+            if time.monotonic() - asked < poll / 2:
+                time.sleep(poll)
 
     def result(self) -> JobResult:
         return self.client._api.job_result(self.id)
@@ -81,7 +86,8 @@ class Job:
                 yield from self.logs(seq)
                 return
             else:
-                time.sleep(poll)
+                # Returns early when the job finishes, so the last lines are not delayed.
+                self.client._api.wait_job(self.id, poll)
 
     def events(self) -> list[ExecutionEvent]:
         return self.client._api.events(job_id=self.id)
@@ -222,6 +228,8 @@ class Client:
         with self._lock:
             for agent, _ in self._local:
                 agent.stop.set()
+            if self.cp is not None:
+                self.cp.signal()  # wake workers blocked in a long-poll acquire
             for _, thread in self._local:
                 thread.join(timeout=30)
             self._local = []

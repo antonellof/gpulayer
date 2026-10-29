@@ -18,7 +18,7 @@ class Module(nn.Module):
 
     def __init__(self) -> None:
         super().__init__()
-        self._gl_step_logs: dict[str, float] = {}
+        self._gl_step_logs: dict[str, Any] = {}
         self.trainer: Any = None
 
     def training_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
@@ -33,9 +33,12 @@ class Module(nn.Module):
         raise NotImplementedError("implement configure_optimizers()")
 
     def log(self, name: str, value: Any) -> None:
+        # Tensors stay on the device: reading them (.item()) would make the CPU wait for the
+        # GPU on every step. The Trainer reads them only when it prints or ends an epoch.
         if isinstance(value, torch.Tensor):
-            value = value.detach().float().mean().item()
-        self._gl_step_logs[name] = float(value)
+            self._gl_step_logs[name] = value.detach().float().mean()
+        else:
+            self._gl_step_logs[name] = float(value)
 
     @classmethod
     def load_from_checkpoint(

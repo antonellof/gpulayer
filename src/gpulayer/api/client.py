@@ -6,6 +6,7 @@ import hashlib
 import http.client
 import json
 import ssl
+import threading
 from typing import Any
 from urllib.parse import urlencode, urlparse
 
@@ -150,6 +151,11 @@ class HttpControlPlaneClient:
     def get_job(self, job_id: str) -> JobStatus:
         return JobStatus.model_validate(self.t.request("GET", f"/v1/jobs/{job_id}"))
 
+    def wait_job(self, job_id: str, timeout: float) -> JobStatus:
+        return JobStatus.model_validate(
+            self.t.request("GET", f"/v1/jobs/{job_id}?wait={min(timeout, 30.0):.3f}")
+        )
+
     def list_jobs(self, *, limit: int = 50, state: JobState | None = None) -> list[JobStatus]:
         q = {"limit": limit, **({"state": state.value} if state else {})}
         return [
@@ -260,8 +266,12 @@ class HttpWorkerChannel:
             self.t.request("POST", "/v1/worker/heartbeat", {"draining": draining})
         )
 
-    def acquire(self) -> TaskAssignment | None:
-        data = self.t.request("POST", "/v1/worker/acquire", {})
+    def acquire(
+        self, wait: float = 0.0, stop: threading.Event | None = None
+    ) -> TaskAssignment | None:
+        # Long poll: the server holds the request until a task is assigned or `wait` passes.
+        # Servers without long-poll support answer at once; the agent then backs off.
+        data = self.t.request("POST", "/v1/worker/acquire", {"wait": wait})
         return TaskAssignment.model_validate(data) if data else None
 
     def start(self, task_id: str) -> None:

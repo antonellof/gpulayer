@@ -9,6 +9,7 @@ local, remote and provider-provisioned workers.
 
 from __future__ import annotations
 
+import threading
 from typing import Protocol
 
 from gpulayer.contracts import (
@@ -28,7 +29,9 @@ class WorkerChannel(Protocol):
     heartbeat_interval: float
 
     def heartbeat(self, draining: bool = False) -> HeartbeatResponse: ...
-    def acquire(self) -> TaskAssignment | None: ...
+    def acquire(
+        self, wait: float = 0.0, stop: threading.Event | None = None
+    ) -> TaskAssignment | None: ...
     def start(self, task_id: str) -> None: ...
     def publish_rendezvous(self, task_id: str, addr: str, port: int) -> RendezvousInfo: ...
     def logs(self, task_id: str, lines: list[tuple[str, str]]) -> None: ...
@@ -59,8 +62,10 @@ class EmbeddedChannel:
     def heartbeat(self, draining: bool = False) -> HeartbeatResponse:
         return self.cp.heartbeat(self.worker_id, draining=draining)
 
-    def acquire(self) -> TaskAssignment | None:
-        return self.cp.acquire_task(self.worker_id)
+    def acquire(
+        self, wait: float = 0.0, stop: threading.Event | None = None
+    ) -> TaskAssignment | None:
+        return self.cp.acquire_task(self.worker_id, wait=wait, stop=stop)
 
     def start(self, task_id: str) -> None:
         self.cp.start_task(self.worker_id, task_id)

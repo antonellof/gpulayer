@@ -157,6 +157,16 @@ class Runtime:
             drop_last=loader.drop_last,
         )
 
+    def no_sync(
+        self, model: nn.Module, enabled: bool = True
+    ) -> contextlib.AbstractContextManager[Any]:
+        """Skip DDP's gradient all-reduce for this backward (gradient accumulation)."""
+        from torch.nn.parallel import DistributedDataParallel as DDP
+
+        if enabled and isinstance(model, DDP):
+            return model.no_sync()
+        return contextlib.nullcontext()
+
     def to_device(self, batch: Any) -> Any:
         if isinstance(batch, torch.Tensor):
             return batch.to(self.device, non_blocking=True)

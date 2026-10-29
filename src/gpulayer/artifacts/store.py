@@ -33,6 +33,7 @@ _EXCLUDE_DIRS = {
     ".ruff_cache",
     "node_modules",
     ".gpulayer",
+    "gpulayer_runs",  # Trainer/launch outputs: results, not source
 }
 
 
@@ -125,7 +126,13 @@ def build_source_bundle(directory: str | Path) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = sorted(d for d in dirnames if d not in _EXCLUDE_DIRS)
+            # Also skip any GpuLayer home (metadata.db + artifacts/): bundling the artifact
+            # store would make every launch upload all previous jobs' data.
+            dirnames[:] = sorted(
+                d
+                for d in dirnames
+                if d not in _EXCLUDE_DIRS and not (Path(dirpath) / d / "metadata.db").exists()
+            )
             for fn in sorted(filenames):
                 p = Path(dirpath) / fn
                 if p.is_symlink() or not p.is_file() or fn.endswith(".pyc"):

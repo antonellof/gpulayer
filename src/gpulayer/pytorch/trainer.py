@@ -43,6 +43,7 @@ class Trainer:
         precision: str = "32-true",
         target: str | None = None,
         gradient_clip_val: float | None = None,
+        accumulate_grad_batches: int = 1,
         log_every_n_steps: int = 50,
         limit_train_batches: int | None = None,
         limit_val_batches: int | None = None,
@@ -50,8 +51,10 @@ class Trainer:
         default_root_dir: str | Path = "gpulayer_runs",
         launch_options: dict[str, Any] | None = None,
     ) -> None:
-        if devices < 1 or num_nodes < 1 or max_epochs < 1:
-            raise ValidationFailed("devices, num_nodes and max_epochs must be >= 1")
+        if devices < 1 or num_nodes < 1 or max_epochs < 1 or accumulate_grad_batches < 1:
+            raise ValidationFailed(
+                "devices, num_nodes, max_epochs and accumulate_grad_batches must be >= 1"
+            )
         self.max_epochs = max_epochs
         self.accelerator = accelerator
         self.devices = devices
@@ -59,6 +62,7 @@ class Trainer:
         self.precision = precision
         self.target = target
         self.gradient_clip_val = gradient_clip_val
+        self.accumulate_grad_batches = accumulate_grad_batches
         self.log_every_n_steps = log_every_n_steps
         self.limit_train_batches = limit_train_batches
         self.limit_val_batches = limit_val_batches
@@ -201,34 +205,48 @@ class Trainer:
             if isinstance(train.sampler, DistributedSampler):
                 train.sampler.set_epoch(epoch)
             model.train()
-            sums: dict[str, float] = defaultdict(float)
+            # Running sums stay on the device; see Module.log.
+            sums: dict[str, Any] = defaultdict(float)
             count = 0
             t0 = time.perf_counter()
+            accumulate = self.accumulate_grad_batches
+            n_batches = len(train) if hasattr(train, "__len__") else None
+            if self.limit_train_batches is not None:
+                n_batches = min(n_batches or self.limit_train_batches, self.limit_train_batches)
             for batch_idx, batch in enumerate(train):
                 if self.limit_train_batches is not None and batch_idx >= self.limit_train_batches:
                     break
                 batch = rt.to_device(batch)
                 model._gl_step_logs = {}
-                with rt.autocast():
-                    loss = step_fn(batch, batch_idx)
-                if not isinstance(loss, torch.Tensor):
-                    raise ValidationFailed("training_step must return the loss tensor")
-                rt.backward(loss)
-                rt.step(optimizer, model.parameters(), self.gradient_clip_val)
-                optimizer.zero_grad(set_to_none=True)
-                if scheduler is not None and interval == "step":
-                    scheduler.step()
-                self.global_step += 1
-                logs = model._gl_step_logs or {"train_loss": loss.detach().float().item()}
+                # Apply the optimizer every `accumulate` batches (and on the last one). On the
+                # other batches DDP skips its gradient all-reduce.
+                apply = (batch_idx + 1) % accumulate == 0 or batch_idx + 1 == n_batches
+                with rt.no_sync(step_fn, enabled=not apply):
+                    with rt.autocast():
+                        loss = step_fn(batch, batch_idx)
+                    if not isinstance(loss, torch.Tensor):
+                        raise ValidationFailed("training_step must return the loss tensor")
+                    rt.backward(loss / accumulate if accumulate > 1 else loss)
+                if apply:
+                    rt.step(optimizer, model.parameters(), self.gradient_clip_val)
+                    optimizer.zero_grad(set_to_none=True)
+                    if scheduler is not None and interval == "step":
+                        scheduler.step()
+                    self.global_step += 1
+                logs = model._gl_step_logs or {"train_loss": loss.detach().float()}
                 for k, v in logs.items():
-                    sums[k] += v
+                    sums[k] = sums[k] + v
                 count += 1
-                if self.log_every_n_steps and self.global_step % self.log_every_n_steps == 0:
-                    shown = " ".join(f"{k}={v:.4f}" for k, v in logs.items())
+                if (
+                    apply
+                    and self.log_every_n_steps
+                    and self.global_step % self.log_every_n_steps == 0
+                ):
+                    shown = " ".join(f"{k}={float(v):.4f}" for k, v in logs.items())
                     self._say(f"epoch {epoch} step {self.global_step} {shown}")
             if scheduler is not None and interval == "epoch":
                 scheduler.step()
-            metrics = {k: rt.mean(v / max(count, 1)) for k, v in sums.items()}
+            metrics = {k: rt.mean(float(v) / max(count, 1)) for k, v in sums.items()}
             if val is not None:
                 metrics.update(self._evaluate(rt, model, val))
             metrics["epoch"] = epoch
@@ -245,7 +263,7 @@ class Trainer:
 
     def _evaluate(self, rt: Runtime, model: Module, loader: DataLoader) -> dict[str, float]:
         model.eval()
-        sums: dict[str, float] = defaultdict(float)
+        sums: dict[str, Any] = defaultdict(float)
         count = 0
         with torch.no_grad(), rt.autocast():
             for batch_idx, batch in enumerate(loader):
@@ -254,10 +272,10 @@ class Trainer:
                 model._gl_step_logs = {}
                 model.validation_step(rt.to_device(batch), batch_idx)
                 for k, v in model._gl_step_logs.items():
-                    sums[k] += v
+                    sums[k] = sums[k] + v
                 count += 1
         model.train()
-        return {k: rt.mean(v / max(count, 1)) for k, v in sums.items()}
+        return {k: rt.mean(float(v) / max(count, 1)) for k, v in sums.items()}
 
     def validate(self, model: Module, dataloaders: DataLoader) -> dict[str, float]:
         """Run ``validation_step`` over ``dataloaders`` in this process."""

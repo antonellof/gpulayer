@@ -187,7 +187,16 @@ class ControlPlaneServer:
                     state=JobState(q.query["state"]) if "state" in q.query else None,
                 ),
             ),
-            ("GET", r"/v1/jobs/(?P<id>[\w-]+)", "client", lambda q: cp.get_job(q.params["id"])),
+            (
+                "GET",
+                r"/v1/jobs/(?P<id>[\w-]+)",
+                "client",
+                lambda q: (
+                    cp.wait_job(q.params["id"], float(q.query["wait"]))
+                    if "wait" in q.query
+                    else cp.get_job(q.params["id"])
+                ),
+            ),
             (
                 "POST",
                 r"/v1/jobs/(?P<id>[\w-]+)/cancel",
@@ -243,7 +252,12 @@ class ControlPlaneServer:
                 "worker",
                 lambda q: cp.heartbeat(q.wid, draining=bool(q.json().get("draining"))),
             ),
-            ("POST", r"/v1/worker/acquire", "worker", lambda q: cp.acquire_task(q.wid)),
+            (
+                "POST",
+                r"/v1/worker/acquire",
+                "worker",
+                lambda q: cp.acquire_task(q.wid, wait=float(q.json().get("wait") or 0)),
+            ),
             (
                 "POST",
                 r"/v1/worker/tasks/(?P<tid>[\w-]+)/start",

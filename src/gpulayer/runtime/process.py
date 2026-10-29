@@ -17,6 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 LineSink = Callable[[str, str], None]  # (stream, line)
+CHECK_INTERVAL = 0.1  # seconds; bounds cancel/timeout latency, not exit latency
 
 
 @dataclass
@@ -83,15 +84,22 @@ def run_process(
     for t in pumps:
         t.start()
 
+    # A waiter thread reports the exit at once; the loop below only wakes every
+    # CHECK_INTERVAL to look at cancellation and the timeout.
+    exited = threading.Event()
+
+    def reap() -> None:
+        proc.wait()
+        exited.set()
+
+    threading.Thread(target=reap, daemon=True).start()
     deadline = time.monotonic() + timeout if timeout else None
     outcome: ProcessOutcome | None = None
-    while proc.poll() is None:
-        if cancel is not None and cancel.wait(0.1):
+    while not exited.wait(CHECK_INTERVAL):
+        if cancel is not None and cancel.is_set():
             _kill_group(proc, kill_grace)
             outcome = ProcessOutcome(exit_code=proc.returncode, cancelled=True)
             break
-        if cancel is None:
-            time.sleep(0.1)
         if deadline is not None and time.monotonic() > deadline:
             _kill_group(proc, kill_grace)
             outcome = ProcessOutcome(exit_code=proc.returncode, timed_out=True)

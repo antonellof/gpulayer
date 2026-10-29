@@ -46,35 +46,64 @@ MAX_OUTPUT_BYTES = 512 * 1024**2
 
 
 class _LogBuffer:
-    """Batches log lines to the control plane and redacts secret values."""
+    """Batches log lines to the control plane and redacts secret values.
+
+    Sending happens on a background thread, so a slow control plane never stalls the
+    threads reading the job's stdout/stderr (a full pipe would block the job itself).
+    """
+
+    INTERVAL = 0.25  # seconds between sends while output is flowing
+    BATCH = 500  # send early once this many lines are waiting
+    MAX_PENDING = 50_000  # beyond this, lines are dropped (and counted) rather than buffered
 
     def __init__(self, channel: WorkerChannel, task_id: str, secrets: list[str]) -> None:
         self.channel, self.task_id = channel, task_id
         self.secrets = sorted((s for s in secrets if s), key=len, reverse=True)
         self.lines: list[tuple[str, str]] = []
+        self.dropped = 0
         self.lock = threading.Lock()
-        self.last = time.monotonic()
+        self.send_lock = threading.Lock()  # keeps batches in order
+        self.wake = threading.Event()
+        self.closed = threading.Event()
+        self.thread = threading.Thread(target=self._loop, daemon=True, name="gpulayer-logs")
+        self.thread.start()
 
     def __call__(self, stream: str, line: str) -> None:
         for s in self.secrets:
             line = line.replace(s, "***")
         with self.lock:
+            if len(self.lines) >= self.MAX_PENDING:
+                self.dropped += 1
+                return
             self.lines.append((stream, line))
-            if len(self.lines) >= 200 or time.monotonic() - self.last > 0.5:
-                self._flush_locked()
+            if len(self.lines) >= self.BATCH:
+                self.wake.set()
 
-    def _flush_locked(self) -> None:
-        if self.lines:
-            batch, self.lines = self.lines, []
+    def _loop(self) -> None:
+        while not self.closed.is_set():
+            self.wake.wait(self.INTERVAL)
+            self.wake.clear()
+            self.flush()
+
+    def flush(self) -> None:
+        with self.send_lock:
+            with self.lock:
+                batch, self.lines = self.lines, []
+                if self.dropped:
+                    batch.append(("system", f"[gpulayer] dropped {self.dropped} log lines"))
+                    self.dropped = 0
+            if not batch:
+                return
             try:
                 self.channel.logs(self.task_id, batch)
             except GpuLayerError as e:  # logs are best-effort; never kill the task for them
                 log.warning("dropping %d log lines: %s", len(batch), e)
-        self.last = time.monotonic()
 
-    def flush(self) -> None:
-        with self.lock:
-            self._flush_locked()
+    def close(self) -> None:
+        self.closed.set()
+        self.wake.set()
+        self.thread.join(timeout=10)
+        self.flush()
 
 
 class WorkerAgent:
@@ -86,13 +115,15 @@ class WorkerAgent:
         *,
         python: str = sys.executable,
         poll_interval: float = 0.5,
+        long_poll: float = 10.0,
         keep_workspaces: bool = False,
     ) -> None:
         self.channel = channel
         self.caps = capabilities
         self.workdir = Path(workdir)
         self.python = python
-        self.poll_interval = poll_interval
+        self.poll_interval = poll_interval  # back-off when the server cannot long-poll
+        self.long_poll = long_poll
         self.keep_workspaces = keep_workspaces
         self.stop = threading.Event()
         self.revoked = False
@@ -149,18 +180,24 @@ class WorkerAgent:
         idle_since = time.monotonic()
         try:
             while not self.stop.is_set():
+                wait = self.long_poll
+                if idle_exit_seconds is not None:
+                    left = idle_exit_seconds - (time.monotonic() - idle_since)
+                    wait = max(0.0, min(wait, left))
+                asked = time.monotonic()
                 try:
-                    assignment = self.channel.acquire()
+                    assignment = self.channel.acquire(wait=wait, stop=self.stop)
                 except (GpuLayerError, OSError) as e:
                     log.warning("acquire failed: %s", e)
                     assignment = None
                 if assignment is None:
                     if (
                         idle_exit_seconds is not None
-                        and time.monotonic() - idle_since > idle_exit_seconds
+                        and time.monotonic() - idle_since >= idle_exit_seconds
                     ):
                         break
-                    self.stop.wait(self.poll_interval)
+                    if time.monotonic() - asked < min(wait, self.poll_interval) / 2:
+                        self.stop.wait(self.poll_interval)  # no long poll: do not spin
                     continue
                 self.execute(assignment)
                 done += 1
@@ -249,6 +286,8 @@ class WorkerAgent:
         if isinstance(spec.workload, DistributedJob):
             env["GPULAYER_COMM_BACKEND"] = spec.workload.comm_backend
             # torchrun defaults this to 1 per process and prints a banner when it is unset.
+            # Measured (ADR-0016): sharing the cores between ranks instead was slower for small
+            # models and no faster for larger ones on CPU, so keep 1; jobs can override it.
             env.setdefault("OMP_NUM_THREADS", "1")
         return env, secret_values
 
@@ -272,68 +311,74 @@ class WorkerAgent:
 
         env, secret_values = self._environment(a, ws)
         sink = _LogBuffer(self.channel, a.task_id, secret_values)
-        cwd = str(src if source is not None else ws)
-        result_file: Path | None = None
+        try:
+            cwd = str(src if source is not None else ws)
+            result_file: Path | None = None
 
-        if isinstance(w, CommandJob):
-            argv = list(w.command)
-            if argv[0] == "python":  # documented: 'python' means the worker's interpreter
-                argv[0] = self.python
-        elif isinstance(w, FunctionJob):
-            runner = ws / "function_runner.py"
-            shutil.copyfile(function_runner.__file__, runner)
-            call = ws / "call.json"
-            call.write_text(
-                json.dumps({"entrypoint": w.entrypoint, "args": w.args, "kwargs": w.kwargs})
-            )
-            result_file = ws / "result.json"
-            if source is not None:
-                env["PYTHONPATH"] = str(src)
-            argv = [self.python, str(runner), str(call), str(result_file)]
-        elif isinstance(w, DistributedJob):
-            rdzv = self._rendezvous(a)
-            if _is_loopback(rdzv.master_addr):
-                # Every node is on this host: keep gloo on the loopback interface instead of
-                # letting it pick one from the hostname (which may resolve to a LAN address).
-                env.setdefault("GLOO_SOCKET_IFNAME", "lo0" if sys.platform == "darwin" else "lo")
-            sink(
-                "system",
-                f"torchrun node {rdzv.node_rank}/{rdzv.num_nodes} rendezvous "
-                f"{rdzv.master_addr}:{rdzv.master_port} world_size {rdzv.world_size}",
-            )
-            if w.function is not None:
-                # Every rank calls module:function; rank 0 writes the JSON result.
-                entry = ws / "dist_function_runner.py"
-                shutil.copyfile(dist_function_runner.__file__, entry)
+            if isinstance(w, CommandJob):
+                argv = list(w.command)
+                if argv[0] == "python":  # documented: 'python' means the worker's interpreter
+                    argv[0] = self.python
+            elif isinstance(w, FunctionJob):
+                runner = ws / "function_runner.py"
+                shutil.copyfile(function_runner.__file__, runner)
                 call = ws / "call.json"
                 call.write_text(
-                    json.dumps(
-                        {
-                            "entrypoint": w.function,
-                            "args": w.function_args,
-                            "kwargs": w.function_kwargs,
-                        }
-                    )
+                    json.dumps({"entrypoint": w.entrypoint, "args": w.args, "kwargs": w.kwargs})
                 )
-                if a.node_rank == 0:
-                    result_file = ws / "result.json"
+                result_file = ws / "result.json"
                 if source is not None:
                     env["PYTHONPATH"] = str(src)
-                argv = torchrun_argv(self.python, w, rdzv, str(entry))
-                argv += [str(call), str(ws / "result.json")]
-            else:
-                assert w.entrypoint is not None
-                entry = (src / w.entrypoint).resolve()
-                if not entry.is_relative_to(src.resolve()) or not entry.is_file():
-                    raise GpuLayerError(f"entrypoint {w.entrypoint!r} not found in source bundle")
-                argv = torchrun_argv(self.python, w, rdzv, str(entry))
-        else:  # pragma: no cover - exhaustiveness
-            raise GpuLayerError(f"unsupported workload {type(w).__name__}")
+                argv = [self.python, str(runner), str(call), str(result_file)]
+            elif isinstance(w, DistributedJob):
+                rdzv = self._rendezvous(a)
+                if _is_loopback(rdzv.master_addr):
+                    # Every node is on this host: keep gloo on the loopback interface instead of
+                    # letting it pick one from the hostname (which may resolve to a LAN address).
+                    env.setdefault(
+                        "GLOO_SOCKET_IFNAME", "lo0" if sys.platform == "darwin" else "lo"
+                    )
+                sink(
+                    "system",
+                    f"torchrun node {rdzv.node_rank}/{rdzv.num_nodes} rendezvous "
+                    f"{rdzv.master_addr}:{rdzv.master_port} world_size {rdzv.world_size}",
+                )
+                if w.function is not None:
+                    # Every rank calls module:function; rank 0 writes the JSON result.
+                    entry = ws / "dist_function_runner.py"
+                    shutil.copyfile(dist_function_runner.__file__, entry)
+                    call = ws / "call.json"
+                    call.write_text(
+                        json.dumps(
+                            {
+                                "entrypoint": w.function,
+                                "args": w.function_args,
+                                "kwargs": w.function_kwargs,
+                            }
+                        )
+                    )
+                    if a.node_rank == 0:
+                        result_file = ws / "result.json"
+                    if source is not None:
+                        env["PYTHONPATH"] = str(src)
+                    argv = torchrun_argv(self.python, w, rdzv, str(entry))
+                    argv += [str(call), str(ws / "result.json")]
+                else:
+                    assert w.entrypoint is not None
+                    entry = (src / w.entrypoint).resolve()
+                    if not entry.is_relative_to(src.resolve()) or not entry.is_file():
+                        raise GpuLayerError(
+                            f"entrypoint {w.entrypoint!r} not found in source bundle"
+                        )
+                    argv = torchrun_argv(self.python, w, rdzv, str(entry))
+            else:  # pragma: no cover - exhaustiveness
+                raise GpuLayerError(f"unsupported workload {type(w).__name__}")
 
-        out = run_process(
-            argv, env=env, cwd=cwd, on_line=sink, timeout=spec.timeout_seconds, cancel=cancel
-        )
-        sink.flush()
+            out = run_process(
+                argv, env=env, cwd=cwd, on_line=sink, timeout=spec.timeout_seconds, cancel=cancel
+            )
+        finally:
+            sink.close()
         outputs = self._upload_outputs(ws / "outputs", a)
         if out.cancelled:
             return TaskOutcome(

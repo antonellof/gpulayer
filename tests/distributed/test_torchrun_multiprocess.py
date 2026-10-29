@@ -19,14 +19,17 @@ torch = pytest.importorskip("torch")
 pytestmark = pytest.mark.distributed
 
 TRAIN = """
-import os, torch, torch.distributed as dist
+import os, sys, torch, torch.distributed as dist
 dist.init_process_group(os.environ["GPULAYER_COMM_BACKEND"])
 rank, world = dist.get_rank(), dist.get_world_size()
 t = torch.tensor([float(rank + 1)])
 dist.all_reduce(t)
 expected = world * (world + 1) / 2
-print(f"rank={rank} world={world} sum={t.item()} node={os.environ['GPULAYER_NODE_RANK']}",
-      flush=True)
+# One write per line: ranks on a node share a pipe, and print() writes the text and the
+# newline separately when unbuffered, so lines from two ranks could interleave.
+sys.stdout.write(f"rank={rank} world={world} sum={t.item()} "
+                 f"node={os.environ['GPULAYER_NODE_RANK']}\\n")
+sys.stdout.flush()
 assert t.item() == expected, (t.item(), expected)
 if rank == 0:
     out = os.path.join(os.environ["GPULAYER_OUTPUT_DIR"], "result.txt")

@@ -14,6 +14,8 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
+import threading
+import time
 import uuid
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -65,6 +67,10 @@ class ControlPlaneConfig:
     provisioning_retry_seconds: float = 30.0  # back-off after a retryable capacity error
 
 
+MAX_LONG_POLL = 30.0  # seconds a long-polling request may be held open
+POLL_SLICE = 0.2  # re-check interval while waiting, for changes made by other processes
+
+
 def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
@@ -90,6 +96,11 @@ class ControlPlane:
         self.config = config or ControlPlaneConfig()
         self.now = clock
         self.provisioning = ProvisioningManager(self, {p.name: p for p in providers})
+        # Wakes long-polling workers and job waiters when work appears or a job changes
+        # state. Only covers this process; waiters also re-check the database periodically
+        # so changes made by another process (a CLI submit) are seen within POLL_SLICE.
+        self._changed = threading.Condition()
+        self._generation = 0
 
     # ================================================================== jobs
 
@@ -151,6 +162,7 @@ class ControlPlane:
     def _set_job_state(
         self, job_id: str, new: JobState, *, error: str | None = None, message: str | None = None
     ) -> None:
+        self.signal()  # waiters re-read after this transaction commits (they share its lock)
         with self.store.tx() as c:
             row = self._job_row(job_id)
             old = JobState(row["state"])
@@ -519,8 +531,47 @@ class ControlPlane:
             raise Forbidden("task is not assigned to this worker")
         return row
 
-    def acquire_task(self, worker_id: str) -> TaskAssignment | None:
-        """Return an assignment for this worker, if any. Safe to call repeatedly."""
+    # ============================================================ change signal
+
+    def signal(self) -> None:
+        with self._changed:
+            self._generation += 1
+            self._changed.notify_all()
+
+    def _wait_for_change(self, generation: int, timeout: float) -> None:
+        with self._changed:
+            if self._generation == generation and timeout > 0:
+                self._changed.wait(timeout)
+
+    def acquire_task(
+        self, worker_id: str, *, wait: float = 0.0, stop: threading.Event | None = None
+    ) -> TaskAssignment | None:
+        """Return an assignment for this worker, if any. Safe to call repeatedly.
+
+        With ``wait`` > 0 this is a long poll: it returns as soon as a task is assigned to
+        the worker, or None after ``wait`` seconds (capped at MAX_LONG_POLL).
+        """
+        deadline = time.monotonic() + min(max(wait, 0.0), MAX_LONG_POLL)
+        while True:
+            generation = self._generation
+            assignment = self._acquire_once(worker_id)
+            remaining = deadline - time.monotonic()
+            if assignment is not None or remaining <= 0 or (stop is not None and stop.is_set()):
+                return assignment
+            self._wait_for_change(generation, min(remaining, POLL_SLICE))
+
+    def wait_job(self, job_id: str, timeout: float) -> JobStatus:
+        """Return the job once it is terminal, or its current status after ``timeout``."""
+        deadline = time.monotonic() + min(max(timeout, 0.0), MAX_LONG_POLL)
+        while True:
+            generation = self._generation
+            status = self.get_job(job_id)
+            remaining = deadline - time.monotonic()
+            if status.state.terminal or remaining <= 0:
+                return status
+            self._wait_for_change(generation, min(remaining, POLL_SLICE))
+
+    def _acquire_once(self, worker_id: str) -> TaskAssignment | None:
         if self._worker_row(worker_id)["revoked"]:
             raise Forbidden("worker has been revoked")
         self.reconcile()
@@ -574,6 +625,7 @@ class ControlPlane:
             c.execute(
                 "UPDATE jobs SET rendezvous=? WHERE id=?", (info.model_dump_json(), task["job_id"])
             )
+            self.signal()
             self.store.add_event(
                 "job.rendezvous",
                 f"rendezvous at {master_addr}:{master_port}",

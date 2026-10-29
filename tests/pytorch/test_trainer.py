@@ -148,3 +148,35 @@ def test_launch_rejects_impossible_placement(tmp_path):
         pytest.skip("this machine has CUDA")
     assert p.returncode != 0
     assert "needs 1 usable cuda device(s)" in p.stderr
+
+
+class _Linear(glt.Module):
+    def __init__(self):
+        super().__init__()
+        torch.manual_seed(0)
+        self.lin = torch.nn.Linear(4, 1)
+
+    def training_step(self, batch, batch_idx):
+        x, y = batch
+        loss = torch.nn.functional.mse_loss(self.lin(x), y)
+        self.log("train_loss", loss)
+        return loss
+
+    def configure_optimizers(self):
+        return torch.optim.SGD(self.parameters(), lr=0.1)
+
+
+def test_gradient_accumulation_matches_one_large_batch(tmp_path):
+
+    torch.manual_seed(1)
+    data = TensorDataset(torch.randn(8, 4), torch.randn(8, 1))
+    small, large = _Linear(), _Linear()
+    common = dict(accelerator="cpu", enable_checkpointing=False, default_root_dir=tmp_path)
+    t_small = glt.Trainer(max_epochs=1, accumulate_grad_batches=2, **common)
+    t_small.fit(small, DataLoader(data, batch_size=4))
+    t_large = glt.Trainer(max_epochs=1, **common)
+    t_large.fit(large, DataLoader(data, batch_size=8))
+    assert t_small.global_step == t_large.global_step == 1
+    for a, b in zip(small.parameters(), large.parameters(), strict=True):
+        assert torch.allclose(a, b, atol=1e-6)
+    assert isinstance(t_small.callback_metrics["train_loss"], float)
