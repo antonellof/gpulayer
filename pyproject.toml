@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "gpulayer"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "Open-source GPU execution and orchestration across local, remote, cloud and distributed compute."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -16,7 +16,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # Optional runtime used for MPS/CUDA probing and torchrun-based distributed jobs.
-# GpuLayer itself never imports torch in the worker process; it probes it in a subprocess.
+# GPUlayer itself never imports torch in the worker process; it probes it in a subprocess.
 torch = ["torch>=2.1"]
 # Everything the examples/ directory uses.
 examples = [

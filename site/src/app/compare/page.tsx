@@ -18,9 +18,9 @@ import { SiteHeader } from "@/components/site/header";
 import { LayerStack } from "@/components/landing/layer-stack";
 
 export const metadata: Metadata = {
-  title: "GpuLayer compared | PyTorch Lightning, Ray, SkyPilot, dstack, Modal and more",
+  title: "GPUlayer compared | PyTorch Lightning, Ray, SkyPilot, dstack, Modal and more",
   description:
-    "How GpuLayer relates to PyTorch Lightning, Hugging Face Accelerate, Ray, SkyPilot, dstack, Modal, Slurm and Kubernetes: what each one does, where they overlap, and when to use which.",
+    "How GPUlayer relates to PyTorch Lightning, Hugging Face Accelerate, Ray, SkyPilot, dstack, Modal, Slurm and Kubernetes: what each one does, where they overlap, and when to use which.",
 };
 
 type Row = {
@@ -35,7 +35,7 @@ type Row = {
 
 const ROWS: Row[] = [
   {
-    name: "GpuLayer",
+    name: "GPUlayer",
     what: "Places workloads on machines you can reach, starts them, returns logs and results",
     runsOn: "This machine, servers that join, cloud VMs that join",
     machines: "Picks a compatible machine per job (GPU, memory, frameworks); cloud provisioning is simulated today",
@@ -104,7 +104,7 @@ const ROWS: Row[] = [
 type Mark = "yes" | "partial" | "no" | "planned";
 
 const TOOLS = [
-  "GpuLayer",
+  "GPUlayer",
   "PyTorch Lightning",
   "Accelerate",
   "Ray",
@@ -129,12 +129,12 @@ const MATRIX: MatrixRow[] = [
   {
     feature: "PyTorch training helpers (devices, DDP, precision)",
     marks: ["partial", "yes", "yes", "yes", "no", "no", "no", "partial"],
-    note: "GpuLayer's Trainer is small; Kubernetes via training operators",
+    note: "GPUlayer's Trainer is small; Kubernetes via training operators",
   },
   {
     feature: "Multi-node jobs",
     marks: ["partial", "yes", "yes", "yes", "yes", "yes", "partial", "yes"],
-    note: "GpuLayer: torchrun groups, tested on one host only",
+    note: "GPUlayer: torchrun groups, tested on one host only",
   },
   {
     feature: "Chooses a machine that fits the job",
@@ -147,7 +147,7 @@ const MATRIX: MatrixRow[] = [
   {
     feature: "Provisions cloud capacity",
     marks: ["planned", "no", "no", "yes", "yes", "yes", "yes", "partial"],
-    note: "GpuLayer: provider interface exists, only a simulated adapter",
+    note: "GPUlayer: provider interface exists, only a simulated adapter",
   },
   {
     feature: "Long-running services",
@@ -217,34 +217,34 @@ const NOTES: Note[] = [
   {
     name: "PyTorch Lightning and Hugging Face Accelerate",
     summary:
-      "Both decide how a PyTorch model trains inside the machines they are started on: device placement, precision, DDP, FSDP or DeepSpeed, callbacks, logging. They do not choose those machines, copy code to them, or start the processes on each node. GpuLayer works one level below: it decides where a workload runs and starts it there. Its own PyTorch Trainer is deliberately small and has no FSDP, DeepSpeed or callbacks yet.",
+      "Both decide how a PyTorch model trains inside the machines they are started on: device placement, precision, DDP, FSDP or DeepSpeed, callbacks, logging. They do not choose those machines, copy code to them, or start the processes on each node. GPUlayer works one level below: it decides where a workload runs and starts it there. Its own PyTorch Trainer is deliberately small and has no FSDP, DeepSpeed or callbacks yet.",
     choose:
-      "Choose them for training features. Lightning has a far richer Trainer than GpuLayer's, and Accelerate makes an existing loop portable.",
+      "Choose them for training features. Lightning has a far richer Trainer than GPUlayer's, and Accelerate makes an existing loop portable.",
     together:
-      "Keep your training code and add `gpulayer.pytorch.launch(...)` at the top of the script. GpuLayer then places it on workers and starts torchrun with the standard environment that both libraries read. This combination follows from the torchrun environment but has not been tested in this repository yet.",
+      "Keep your training code and add `gpulayer.pytorch.launch(...)` at the top of the script. GPUlayer then places it on workers and starts torchrun with the standard environment that both libraries read. This combination follows from the torchrun environment but has not been tested in this repository yet.",
   },
   {
     name: "Ray",
     summary:
-      "Ray is a programming model as much as a scheduler: you write tasks and actors against its API, run a Ray cluster, and use its libraries for training, tuning and serving. Functions and arguments are serialized and shipped between processes. GpuLayer ships source code and calls functions by name with JSON arguments, has no distributed object store, and runs plain commands written in any language.",
+      "Ray is a programming model as much as a scheduler: you write tasks and actors against its API, run a Ray cluster, and use its libraries for training, tuning and serving. Functions and arguments are serialized and shipped between processes. GPUlayer ships source code and calls functions by name with JSON arguments, has no distributed object store, and runs plain commands written in any language.",
     choose:
       "Choose Ray for fine-grained distributed Python (many small tasks, actors, shared objects), Ray Tune sweeps, or Ray Serve.",
     together:
-      "A Ray program can be a GpuLayer job on one machine; a multi-node Ray cluster is better managed by Ray itself or KubeRay.",
+      "A Ray program can be a GPUlayer job on one machine; a multi-node Ray cluster is better managed by Ray itself or KubeRay.",
   },
   {
     name: "SkyPilot and dstack",
     summary:
-      "Both provision and manage cloud capacity: they choose instance types and regions, start VMs or pods, and run your commands there. dstack also runs services and dev environments and can use on-prem servers. GpuLayer's cloud provisioning exists only as a simulated adapter today. Its strengths are a lightweight join for any machine you already have, capability-aware placement with explanations, and the Python and PyTorch APIs.",
+      "Both provision and manage cloud capacity: they choose instance types and regions, start VMs or pods, and run your commands there. dstack also runs services and dev environments and can use on-prem servers. GPUlayer's cloud provisioning exists only as a simulated adapter today. Its strengths are a lightweight join for any machine you already have, capability-aware placement with explanations, and the Python and PyTorch APIs.",
     choose:
       "Choose SkyPilot or dstack when you mainly need cloud capacity across providers, spot recovery, or long-running services today.",
     together:
-      "VMs they start can run `gpulayer join` and become GpuLayer workers.",
+      "VMs they start can run `gpulayer join` and become GPUlayer workers.",
   },
   {
     name: "Modal",
     summary:
-      "Modal's developer experience (decorate a function, call `.remote()` or `.map()`) is close to GpuLayer's `@gl.remote`, but it runs on Modal's own infrastructure. GpuLayer runs on hardware you control: your laptop, office servers and VMs you rent, including Apple Silicon Macs.",
+      "Modal's developer experience (decorate a function, call `.remote()` or `.map()`) is close to GPUlayer's `@gl.remote`, but it runs on Modal's own infrastructure. GPUlayer runs on hardware you control: your laptop, office servers and VMs you rent, including Apple Silicon Macs.",
     choose:
       "Choose Modal if you want hosted, autoscaled GPUs with no machines to manage and are fine paying per use.",
     together: "They solve the same problem for different hardware, so teams usually pick one.",
@@ -252,10 +252,10 @@ const NOTES: Note[] = [
   {
     name: "Slurm and Kubernetes",
     summary:
-      "Cluster schedulers with queues, quotas, priorities and multi-tenant isolation, run by an operations team. GpuLayer is much lighter, with one command to start a server and one to join a machine, and it is meant for groups whose members trust each other. Shared multi-tenant clusters are a job for Slurm or Kubernetes.",
+      "Cluster schedulers with queues, quotas, priorities and multi-tenant isolation, run by an operations team. GPUlayer is much lighter, with one command to start a server and one to join a machine, and it is meant for groups whose members trust each other. Shared multi-tenant clusters are a job for Slurm or Kubernetes.",
     choose: "Choose them for shared, policy-heavy clusters with many users.",
     together:
-      "Integrations (submitting to Slurm or Kubernetes as a GpuLayer worker pool) are not built yet.",
+      "Integrations (submitting to Slurm or Kubernetes as a GPUlayer worker pool) are not built yet.",
   },
 ];
 
@@ -276,7 +276,7 @@ const BEHIND = [
   "A small PyTorch Trainer: no FSDP, DeepSpeed, callbacks or logger integrations, unlike PyTorch Lightning.",
   "Distributed jobs start about a second slower than PyTorch Lightning's DDP on one machine, because they go through job packaging and scheduling.",
   "Distributed jobs use torchrun only; no JAX multi-host or MPI launcher yet.",
-  "Pre-alpha: NVIDIA GPUs and multi-machine runs are implemented but not validated yet. Not a sandbox for untrusted users.",
+  "First release (v0.1.0): NVIDIA GPUs and multi-machine runs are implemented but not validated yet. Not a sandbox for untrusted users.",
 ];
 
 const FITS = [
@@ -313,11 +313,11 @@ export default function ComparePage() {
           <div className="mx-auto max-w-6xl px-6 pb-16 pt-20 lg:pt-24">
             <p className="eyebrow">Compare</p>
             <h1 className="mt-3 max-w-3xl text-4xl font-semibold tracking-[-0.04em] sm:text-5xl">
-              GpuLayer and the alternatives
+              GPUlayer and the alternatives
             </h1>
             <p className="lede mt-5 max-w-3xl">
               Training frameworks shape how a model trains on the machines they are started on,
-              and cloud orchestrators rent capacity. GpuLayer places any GPU workload on the
+              and cloud orchestrators rent capacity. GPUlayer places any GPU workload on the
               machines you can reach, starts it there and brings the results back. Several of these
               tools work well together.
             </p>
@@ -434,9 +434,9 @@ export default function ComparePage() {
 
         <section className="border-b border-border">
           <div className="mx-auto max-w-6xl px-6 py-16">
-            <h2 className="section-title">Training speed: GpuLayer and PyTorch Lightning</h2>
+            <h2 className="section-title">Training speed: GPUlayer and PyTorch Lightning</h2>
             <p className="mt-2 max-w-3xl text-muted-foreground">
-              The same model, data and optimizer, trained with GpuLayer&apos;s Trainer and with
+              The same model, data and optimizer, trained with GPUlayer&apos;s Trainer and with
               Lightning&apos;s Trainer on one Apple Silicon Mac. Lower is better.
             </p>
             <div className="mt-8 overflow-x-auto rounded-lg border border-border">
@@ -445,12 +445,12 @@ export default function ComparePage() {
                   <tr>
                     <th className="px-4 py-3 text-left font-semibold">Case</th>
                     <th className="bg-primary/10 px-4 py-3 text-right font-semibold text-primary">
-                      GpuLayer, ms per step
+                      GPUlayer, ms per step
                     </th>
                     <th className="px-4 py-3 text-right font-semibold">Lightning, ms per step</th>
                     <th className="px-4 py-3 text-right font-semibold">Step time ratio</th>
                     <th className="bg-primary/10 px-4 py-3 text-right font-semibold text-primary">
-                      GpuLayer start-up
+                      GPUlayer start-up
                     </th>
                     <th className="px-4 py-3 text-right font-semibold">Lightning start-up</th>
                   </tr>
@@ -480,14 +480,14 @@ export default function ComparePage() {
                 Method: Apple Silicon Mac with 10 CPU cores, Python 3.12, torch 2.15.0, Lightning
                 2.6.6. A three-layer MLP (width 256 or 2048), batch 64, SGD, one logged loss per
                 step. Lightning runs without logger, progress bar, model summary or checkpoints;
-                GpuLayer runs without checkpoints. Each case runs 100 and 600 steps, three times
+                GPUlayer runs without checkpoints. Each case runs 100 and 600 steps, three times
                 each in fresh processes; ms per step is the median difference divided by 500
                 steps. Start-up is the import time plus the fixed time inside{" "}
                 <code className="font-mono">fit</code>.
               </p>
               <p>
                 Differences under about 10% are within run-to-run noise on this machine, so the
-                larger DDP case is a tie. GpuLayer runs DDP as a local GpuLayer job (packaged,
+                larger DDP case is a tie. GPUlayer runs DDP as a local GPUlayer job (packaged,
                 scheduled and started with torchrun), which is why its DDP start-up is about a
                 second longer. These are CPU and Apple GPU results on one machine; NVIDIA and
                 multi-machine results have not been measured yet.
@@ -500,7 +500,7 @@ export default function ComparePage() {
           <div className="mx-auto max-w-6xl space-y-10 px-6 py-16">
             {NOTES.map((n) => (
               <div key={n.name}>
-                <h2 className="text-xl font-semibold tracking-[-0.02em]">GpuLayer and {n.name}</h2>
+                <h2 className="text-xl font-semibold tracking-[-0.02em]">GPUlayer and {n.name}</h2>
                 <p className="mt-3 max-w-3xl text-muted-foreground">
                   <Code text={n.summary} />
                 </p>
@@ -526,7 +526,7 @@ export default function ComparePage() {
         <section className="border-b border-border">
           <div className="mx-auto grid max-w-6xl gap-10 px-6 py-16 md:grid-cols-2">
             <div>
-              <h2 className="text-xl font-semibold tracking-[-0.02em]">GpuLayer fits when</h2>
+              <h2 className="text-xl font-semibold tracking-[-0.02em]">GPUlayer fits when</h2>
               <ul className="mt-4 list-disc space-y-2 pl-5 text-sm text-muted-foreground">
                 {FITS.map((f) => (
                   <li key={f}>
@@ -536,7 +536,7 @@ export default function ComparePage() {
               </ul>
             </div>
             <div>
-              <h2 className="text-xl font-semibold tracking-[-0.02em]">Where GpuLayer is behind today</h2>
+              <h2 className="text-xl font-semibold tracking-[-0.02em]">Where GPUlayer is behind today</h2>
               <ul className="mt-4 list-disc space-y-2 pl-5 text-sm text-muted-foreground">
                 {BEHIND.map((b) => (
                   <li key={b}>{b}</li>
@@ -558,7 +558,7 @@ export default function ComparePage() {
               href="/docs/get-started/why-gpulayer/"
               className="inline-flex items-center gap-1 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-secondary"
             >
-              Why GpuLayer
+              Why GPUlayer
             </Link>
           </div>
         </section>

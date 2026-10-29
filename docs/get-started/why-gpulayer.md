@@ -1,8 +1,8 @@
-# Why GpuLayer
+# Why GPUlayer
 
-Most GPU code assumes the GPU is on the machine where you run it. GpuLayer removes that
+Most GPU code assumes the GPU is on the machine where you run it. GPUlayer removes that
 assumption. You describe what a workload needs (an accelerator, memory, frameworks), and
-GpuLayer runs it on a machine that has it, wherever that machine is.
+GPUlayer runs it on a machine that has it, wherever that machine is.
 
 ## Where it sits
 
@@ -11,14 +11,14 @@ computation uses the hardware they are given. They work inside the machine, or t
 they were started on. Choosing that machine, shipping code and data to it, starting the work,
 watching it and collecting the results is left to you.
 
-GpuLayer is that missing layer. It does not replace your framework, and it is not limited to
+GPUlayer is that missing layer. It does not replace your framework, and it is not limited to
 training: rendering, inference batches, simulations, data processing and benchmarks are all
 workloads. PyTorch gets an extra integration (a Trainer, `launch()`, runtime helpers) because
 distributed training needs more coordination than most workloads.
 
 ## When it helps
 
-| Situation | Without GpuLayer | With GpuLayer |
+| Situation | Without GPUlayer | With GPUlayer |
 |---|---|---|
 | Code on a laptop, GPU somewhere else | ssh, copy code, rebuild the environment, run in tmux, copy results back | `gpulayer submit --target remote -- <cmd>`, or `python train.py --target remote` |
 | Several GPU machines (team, lab, rented VMs) | track free machines by hand; jobs crash on the wrong GPU, driver or library version | one queue; each job lands where its accelerator and frameworks are available, or is rejected with the reason |
@@ -47,13 +47,13 @@ Outputs land in your current directory (`gpulayer_runs/<job-id>/`, or `gpulayer 
 
 ## When not to use it
 
-- **One machine, one GPU, interactive work.** Running your code directly is simpler. GpuLayer
+- **One machine, one GPU, interactive work.** Running your code directly is simpler. GPUlayer
   adds a control plane, workers and tokens you do not need.
 - **Long-running services.** An inference server that must stay up and accept traffic is not
-  supported yet; GpuLayer runs jobs that finish.
+  supported yet; GPUlayer runs jobs that finish.
 - **Untrusted users.** Workloads run as normal processes on workers, not in a sandbox. Use
-  GpuLayer among people who trust each other.
-- **Validated scale today.** GpuLayer is pre-alpha. NVIDIA GPUs and multi-machine runs are
+  GPUlayer among people who trust each other.
+- **Validated scale today.** GPUlayer is at its first release (v0.1.0). NVIDIA GPUs and multi-machine runs are
   implemented but not validated yet, distributed jobs use torchrun only, and automatic cloud
   provisioning is simulated. Cloud VMs you start yourself can join with `gpulayer join`.
 

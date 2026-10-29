@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Github } from "lucide-react";
 import { Logo } from "@/components/site/logo";
+import { RELEASE_URL, VERSION } from "@/lib/version";
 import { ThemeToggle } from "@/components/site/theme-toggle";
 import { REPO } from "@/lib/docs";
 
@@ -19,9 +20,12 @@ export function SiteHeader() {
       <div className="mx-auto flex h-14 max-w-[90rem] items-center justify-between gap-4 px-4 md:px-6">
         <div className="flex items-center gap-3">
           <Logo />
-          <span className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-            pre-alpha
-          </span>
+          <a
+            href={RELEASE_URL}
+            className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors hover:text-foreground"
+          >
+            v{VERSION}
+          </a>
         </div>
         <nav className="flex items-center gap-1 sm:gap-4">
           {NAV.map((n) => (

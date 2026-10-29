@@ -9,11 +9,11 @@ const code = JetBrains_Mono({ subsets: ["latin"], variable: "--font-code", displ
 
 export const metadata: Metadata = {
   title: {
-    default: "GpuLayer | Run any GPU workload on any GPU you can reach",
-    template: "%s | GpuLayer",
+    default: "GPUlayer | Run any GPU workload on any GPU you can reach",
+    template: "%s | GPUlayer",
   },
   description:
-    "A workload-agnostic GPU layer. Run commands in any language, Python functions with any library, and distributed jobs on your laptop, workstations, servers or cloud VMs, with a deeper integration for PyTorch. Pre-alpha.",
+    "A workload-agnostic GPU layer. Run commands in any language, Python functions with any library, and distributed jobs on your laptop, workstations, servers or cloud VMs, with a deeper integration for PyTorch.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
