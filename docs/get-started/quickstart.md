@@ -10,7 +10,7 @@ on any machine.
 ```bash
 git clone https://github.com/antonellof/gpulayer.git && cd gpulayer
 uv venv && source .venv/bin/activate
-uv pip install -e '.[dev]' torch
+uv pip install -e '.[dev,examples]'
 gpulayer resources detect
 ```
 
@@ -47,7 +47,7 @@ python examples/numpy_batch/estimate.py
 pi ~= 3.14160 from 40,000,000 samples in 8 jobs
 ```
 
-On an Apple Silicon Mac with MLX installed (`uv pip install mlx`), the same pattern runs on the
+On an Apple Silicon Mac (the `examples` extra installs MLX there), the same pattern runs on the
 GPU:
 
 ```bash
@@ -107,7 +107,7 @@ epoch 0 done in 0.21s: train_loss=74.4570 val_loss=2.3970
 ...
 epoch 4 done in 0.057s: train_loss=0.1070 val_loss=0.0798
 final metrics: {'train_loss': 0.107, 'val_loss': 0.0798, 'epoch': 4, 'epoch_seconds': 0.057}
-checkpoint: gpulayer_runs/local/checkpoints/last.ckpt
+checkpoint: gpulayer_runs/trainer_regression-train/checkpoints/last.ckpt
 ```
 
 `accelerator="auto"` picked MPS on a Mac. It picks CUDA on an NVIDIA machine and CPU otherwise.
@@ -155,7 +155,8 @@ worker:
 
 ```text
 [gpulayer] job-e8061b7e6ccc failed: unschedulable: no eligible worker
-  (wkr-10c5089a6044: needs 1 usable cuda device(s), worker has 0; ...)
+  (wkr-f50e620bfaef: torch on this worker cannot use CUDA, needs 1 usable cuda device(s),
+   worker has 0)
 ```
 
 ## 9. A PyTorch sweep
@@ -185,6 +186,15 @@ gpulayer job logs <job-id>
 gpulayer job events <job-id>
 gpulayer worker status
 ```
+
+If a job is rejected with `framework 'numpy' not installed` (or `mlx`, `torch`), the Python
+that runs the job does not have that package. For local jobs that is the Python running your
+script, so install it there (`uv pip install -e '.[dev,examples]'` covers every example), then
+run the command again.
+
+`gpulayer worker status` lists workers that are online. Each script run starts in-process
+workers that go offline when it ends; `--all` shows those too, and `gpulayer gc --older-than 1d`
+removes old ones.
 
 ## 11. Optional: a server and a second machine
 

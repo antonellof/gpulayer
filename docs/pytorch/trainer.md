@@ -122,12 +122,14 @@ if glt.is_launcher_process():
 
 With checkpointing on, global rank 0 writes `checkpoints/last.ckpt` and `metrics.json` after
 every epoch. Inside a job they go to `$GPULAYER_OUTPUT_DIR` and come back as artifacts
-(`gpulayer_runs/<job-id>/...`); in-process they go to `gpulayer_runs/local/`.
+(`gpulayer_runs/<job-id>/...`); in-process they go to `gpulayer_runs/<directory>-<script>/`,
+for example `gpulayer_runs/my_project-train/` for `my_project/train.py`.
 
 ```python
-model = Classifier.load_from_checkpoint("gpulayer_runs/local/checkpoints/last.ckpt")
+model = Classifier.load_from_checkpoint("gpulayer_runs/my_project-train/checkpoints/last.ckpt")
 trainer = glt.Trainer(max_epochs=20)
-trainer.fit(model, train_loader, val_loader, ckpt_path="gpulayer_runs/local/checkpoints/last.ckpt")
+trainer.fit(model, train_loader, val_loader,
+            ckpt_path="gpulayer_runs/my_project-train/checkpoints/last.ckpt")
 ```
 
 A checkpoint holds `state_dict`, `optimizer`, `epoch`, `global_step` and `history`.

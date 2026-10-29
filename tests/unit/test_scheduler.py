@@ -187,3 +187,40 @@ def test_distributed_group_has_consistent_torch():
     ]
     assert schedule(dist(2), ws).worker_ids == ["b", "c"]
     assert not schedule(dist(3), ws).placed
+
+
+def test_offline_workers_are_not_listed_as_candidates():
+    gone = view("gone", state=WorkerState.OFFLINE)
+    d = schedule(spec(ResourceRequest(frameworks={"jax": ">=0"})), [gone, view("live")])
+    assert [c.worker_id for c in d.candidates] == ["live"]
+    assert schedule(spec(), [gone]).summary == "no workers online"
+
+
+def test_failure_explanations_give_actionable_hints():
+    from datetime import datetime, timezone
+
+    from gpulayer.contracts import JobState, JobStatus, WorkloadType
+    from gpulayer.sdk.remote import explain_failure
+
+    def status(resources):
+        s = spec(resources)
+        return JobStatus(
+            job_id="j",
+            name="j",
+            state=JobState.FAILED,
+            workload_type=WorkloadType.INDEPENDENT,
+            spec=s,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+            error="unschedulable: no eligible worker",
+            scheduling=schedule(s, [view("w")]),
+        )
+
+    numpy_msg = explain_failure(status(ResourceRequest(frameworks={"numpy": ">=1.20"})))
+    assert "framework 'numpy' not installed" in numpy_msg
+    assert "python -m pip install numpy" in numpy_msg
+    cuda_msg = explain_failure(
+        status(ResourceRequest(accelerator="cuda", frameworks={"torch.cuda": ">=0"}))
+    )
+    assert "torch on this worker cannot use CUDA" in cuda_msg
+    assert "pip install" not in cuda_msg  # no bogus "pip install torch.cuda"

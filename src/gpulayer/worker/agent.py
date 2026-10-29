@@ -248,6 +248,8 @@ class WorkerAgent:
             env["CUDA_VISIBLE_DEVICES"] = ""  # CPU jobs must not grab a GPU by accident
         if isinstance(spec.workload, DistributedJob):
             env["GPULAYER_COMM_BACKEND"] = spec.workload.comm_backend
+            # torchrun defaults this to 1 per process and prints a banner when it is unset.
+            env.setdefault("OMP_NUM_THREADS", "1")
         return env, secret_values
 
     def _run(self, a: TaskAssignment, ws: Path, cancel: threading.Event) -> TaskOutcome:

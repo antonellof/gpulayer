@@ -3,7 +3,7 @@
 ## Setup
 
 ```bash
-uv venv && uv pip install -e '.[dev]' && uv pip install torch
+uv venv && uv pip install -e '.[dev,examples]'
 ```
 
 ## Quality gates (run before every commit)

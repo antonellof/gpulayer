@@ -402,11 +402,15 @@ def cmd_worker_start(args: argparse.Namespace) -> int:
 def cmd_worker_status(args: argparse.Namespace) -> int:
     with _client(args, local_worker=False) as c:
         workers = c.workers()
+    hidden = 0
+    if not getattr(args, "all", False):
+        shown = [w for w in workers if w.state.value != "offline"]
+        hidden, workers = len(workers) - len(shown), shown
     if args.json:
         _print(workers, True)
         return 0
     if not workers:
-        print("no workers registered")
+        print("no workers online")
     for w in workers:
         caps = w.capabilities
         accel = ",".join(f"{d.accelerator.value}" for d in caps.accelerators) or "cpu"
@@ -414,6 +418,10 @@ def cmd_worker_status(args: argparse.Namespace) -> int:
         print(
             f"{w.worker_id:18} {w.name:22} {w.state.value:9} {caps.target.value:6} "
             f"{accel:10} tasks={len(w.running_task_ids)} heartbeat={hb}"
+        )
+    if hidden:
+        print(
+            f"({hidden} offline worker(s) hidden; --all shows them, `gpulayer gc` removes old ones)"
         )
     return 0
 
@@ -794,8 +802,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--idle-exit", type=float, metavar="SECONDS", help="exit after this long without work"
     )
     s.set_defaults(fn=cmd_worker_start)
-    s = wk.add_parser("status", help="list registered workers")
+    s = wk.add_parser("status", help="list workers (online ones unless --all)")
     s.add_argument("--json", action="store_true")
+    s.add_argument("--all", action="store_true", help="include offline workers")
     s.set_defaults(fn=cmd_worker_status)
     s = wk.add_parser("revoke", help="revoke a worker's credentials")
     s.add_argument("worker_id")
@@ -804,8 +813,9 @@ def build_parser() -> argparse.ArgumentParser:
     rs = sub.add_parser("resources", help="inspect compute resources").add_subparsers(
         dest="cmd", required=True
     )
-    s = rs.add_parser("list", help="registered workers and their capabilities")
+    s = rs.add_parser("list", help="workers and their capabilities (online unless --all)")
     s.add_argument("--json", action="store_true")
+    s.add_argument("--all", action="store_true", help="include offline workers")
     s.set_defaults(fn=cmd_worker_status)
     s = rs.add_parser("detect", help="detect this machine's capabilities")
     s.add_argument("--json", action="store_true")

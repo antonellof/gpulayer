@@ -14,6 +14,7 @@ Discovery reports uncertainty in ``WorkerCapabilities.notes`` instead of guessin
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import platform
@@ -48,6 +49,8 @@ try:
             pass
 except Exception:
     pass
+# Printed before torch is imported, so a crashing torch cannot hide the other frameworks.
+print("PACKAGES " + json.dumps(out["packages"]), flush=True)
 try:
     import torch
 except Exception as e:  # ImportError or a broken install
@@ -126,13 +129,20 @@ def probe_torch(
 ) -> TorchProbe:
     """Probe torch in an isolated interpreter. Never raises."""
     code, out = runner([python, "-c", _TORCH_PROBE], timeout)
-    if code != 0 or not out.strip():
-        return TorchProbe(error=f"torch probe exited with {code}")
+    lines = out.strip().splitlines()
+    packages: dict[str, str] = {}
+    for line in lines:
+        if line.startswith("PACKAGES "):
+            with contextlib.suppress(json.JSONDecodeError):
+                packages = {k: str(v) for k, v in json.loads(line[9:]).items()}
+    results = [line for line in lines if not line.startswith("PACKAGES ")]
+    if code != 0 or not results:
+        return TorchProbe(error=f"torch probe exited with {code}", packages=packages)
     try:
-        data = json.loads(out.strip().splitlines()[-1])
+        data = json.loads(results[-1])
     except json.JSONDecodeError:
-        return TorchProbe(error="torch probe returned unparseable output")
-    packages = {k: str(v) for k, v in (data.get("packages") or {}).items()}
+        return TorchProbe(error="torch probe returned unparseable output", packages=packages)
+    packages = packages or {k: str(v) for k, v in (data.get("packages") or {}).items()}
     if not data.get("torch"):
         return TorchProbe(error=data.get("error", "torch not installed"), packages=packages)
     return TorchProbe(

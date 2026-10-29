@@ -62,7 +62,7 @@ def test_submit_place_run_succeed(cp):
 
 def test_queued_until_compatible_worker_arrives(cp):
     job = cp.submit(cmd_spec())
-    assert job.state == JobState.QUEUED and job.scheduling.summary == "no workers registered"
+    assert job.state == JobState.QUEUED and job.scheduling.summary == "no workers online"
     reg(cp)
     assert cp.get_job(job.job_id).state == JobState.SCHEDULED
 

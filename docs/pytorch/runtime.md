@@ -47,7 +47,7 @@ with [`launch()`](launch.md) to choose where it runs.
 | `backward(loss)`, `step(optimizer, params, clip_val)` | backward and optimizer step, with gradient scaling for `16-mixed` |
 | `mean(value)` | average of a Python number across all processes |
 | `barrier()` | synchronise all processes |
-| `output_dir()` | `$GPULAYER_OUTPUT_DIR` inside a job, else `gpulayer_runs/local` |
+| `output_dir(default)` | `$GPULAYER_OUTPUT_DIR` inside a job, else `default` (`gpulayer_runs/local`) |
 | `device`, `accelerator`, `world_size`, `global_rank`, `local_rank`, `node_rank`, `is_global_zero` | topology |
 
 `glt.resolve_accelerator("auto")` and `glt.seed_everything(seed)` are available on their own.

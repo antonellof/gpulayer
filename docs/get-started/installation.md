@@ -11,9 +11,17 @@ GpuLayer is not on PyPI yet.
 git clone https://github.com/antonellof/gpulayer.git
 cd gpulayer
 uv venv && source .venv/bin/activate          # or: python -m venv .venv && source .venv/bin/activate
-uv pip install -e '.[dev]'                    # or: pip install -e '.[dev]'
-uv pip install torch                          # CPU, CUDA or MPS build for your platform
+uv pip install -e '.[dev,examples]'          # or: pip install -e '.[dev,examples]'
 ```
+
+The `examples` extra installs what the examples need: PyTorch, NumPy, and MLX on Apple
+Silicon. For the core alone, `uv pip install -e .` is enough; add the GPU frameworks your own
+jobs use.
+
+Jobs run in the Python of the worker that executes them. A framework a job asks for (for
+example `frameworks={"numpy": ">=1.20"}`) must be installed there, or the job is rejected
+with `framework 'numpy' not installed`. For local jobs, that Python is the one running your
+script.
 
 ## Check the installation
 

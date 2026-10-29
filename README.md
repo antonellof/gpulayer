@@ -37,8 +37,8 @@ trainer.fit(model, train_loader, val_loader)                              # 8 GP
 ```bash
 git clone https://github.com/antonellof/gpulayer.git && cd gpulayer
 uv venv && source .venv/bin/activate
-uv pip install -e '.[dev]' torch
-gpulayer resources detect          # what this machine can run
+uv pip install -e '.[dev,examples]'   # GpuLayer plus what the examples use (torch, numpy, mlx on Apple Silicon)
+gpulayer resources detect             # what this machine can run
 ```
 
 ## Quickstart

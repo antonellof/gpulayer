@@ -18,6 +18,12 @@ dependencies = [
 # Optional runtime used for MPS/CUDA probing and torchrun-based distributed jobs.
 # GpuLayer itself never imports torch in the worker process; it probes it in a subprocess.
 torch = ["torch>=2.1"]
+# Everything the examples/ directory uses.
+examples = [
+  "torch>=2.1",
+  "numpy>=1.20",
+  "mlx>=0.10; sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
 dev = ["pytest>=7.4", "ruff>=0.4", "mypy>=1.8"]
 
 [project.scripts]

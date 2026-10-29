@@ -20,6 +20,7 @@ from __future__ import annotations
 import atexit
 import functools
 import inspect
+import re
 import sys
 import threading
 from collections.abc import Callable, Iterable
@@ -273,6 +274,20 @@ def explain_failure(status: JobStatus) -> str:
             if c.reasons
         )
         detail += f" ({reasons})" if reasons else ""
+        missing = sorted(
+            {
+                m.group(1)
+                for c in status.scheduling.candidates
+                for r in c.reasons
+                if (m := re.match(r"framework '([^']+)' not installed", r))
+            }
+        )
+        if missing:
+            detail += (
+                f". Install {', '.join(missing)} in the Python that runs jobs on a worker "
+                f"(for local jobs, the Python running this script: "
+                f"`python -m pip install {' '.join(missing)}`), then start the worker again."
+            )
     return detail
 
 

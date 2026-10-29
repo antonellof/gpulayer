@@ -64,6 +64,10 @@ def _cc_tuple(cc: str) -> tuple[int, int]:
 RESERVED_LABEL = "gpulayer.dev/reserved-for"
 
 
+# Pseudo-frameworks reported by discovery: "this worker's torch can drive that GPU".
+_TORCH_GPU = {"torch.cuda": "CUDA", "torch.mps": "MPS"}
+
+
 def compatibility_reasons(
     spec: JobSpec,
     caps: WorkerCapabilities,
@@ -113,7 +117,10 @@ def compatibility_reasons(
     for fw, wanted in r.frameworks.items():
         have = caps.frameworks.get(fw)
         if have is None:
-            reasons.append(f"framework '{fw}' not installed")
+            if fw in _TORCH_GPU:
+                reasons.append(f"torch on this worker cannot use {_TORCH_GPU[fw]}")
+            else:
+                reasons.append(f"framework '{fw}' not installed")
         elif not _spec_ok(wanted, have):
             reasons.append(f"{fw} {have} does not satisfy {wanted}")
 
@@ -186,6 +193,8 @@ def schedule(
         eligible: list[WorkerView] = []
         any_compatible = False
         for w in sorted(workers, key=lambda w: w.worker_id):
+            if w.state == WorkerState.OFFLINE:
+                continue  # gone; listing it would only clutter the explanation
             reasons = []
             if pinned and w.worker_id not in pinned:
                 reasons.append("not in placement.worker_ids")
@@ -219,8 +228,8 @@ def schedule(
             continue  # try explicit fallback targets before giving up
 
     n_ok = sum(1 for c in candidates if c.eligible)
-    if not workers:
-        summary = "no workers registered"
+    if not any(w.state != WorkerState.OFFLINE for w in workers):
+        summary = "no workers online"
     elif needed > 1:
         summary = f"distributed job needs {needed} eligible workers, {n_ok} available"
     else:

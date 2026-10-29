@@ -19,7 +19,7 @@ const TRACKS: Track[] = [
         title: "Install",
         body: "Python 3.10 or newer. PyTorch is optional for the core.",
         command:
-          "git clone https://github.com/antonellof/gpulayer && cd gpulayer\nuv venv && source .venv/bin/activate && uv pip install -e '.[dev]' torch",
+          "git clone https://github.com/antonellof/gpulayer && cd gpulayer\nuv venv && source .venv/bin/activate && uv pip install -e '.[dev,examples]'",
       },
       {
         title: "See what this machine offers",
