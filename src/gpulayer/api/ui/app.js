@@ -414,7 +414,8 @@ function drawer() {
     : `${w.function || w.entrypoint} on ${w.num_workers} node(s) × ${w.procs_per_worker}`;
   const term = h("div", { class: "term", id: "logterm" }, S.logs.length ? S.logs.map((l) => h("div", {
     class: l.stream === "stderr" ? "err" : l.stream === "system" ? "sys" : "",
-  }, w.kind === "distributed" ? h("span", { class: "node" }, `[node${l.node_rank}] `) : null, l.line))
+  }, w.kind === "distributed"
+    ? h("span", { class: "node" }, l.rank != null ? `[rank ${l.rank}] ` : `[node${l.node_rank}] `) : null, l.line))
     : h("span", { class: "sys" }, ACTIVE.has(j.state) ? "Waiting for output…" : "No output."));
   return h("aside", { class: "drawer" },
     h("div", { class: "row" },

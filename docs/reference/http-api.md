@@ -45,7 +45,7 @@ artifacts used by their current tasks.
 | `POST /v1/worker/acquire` | session | `{wait}` (seconds, max 30): long poll; returns the next assignment as soon as one exists, or `null` |
 | `POST /v1/worker/tasks/{id}/start` | session | mark running |
 | `POST /v1/worker/tasks/{id}/rendezvous` | session | node rank 0 publishes `{addr, port}` |
-| `POST /v1/worker/tasks/{id}/logs` | session | `{lines: [[stream, line], ...]}` |
+| `POST /v1/worker/tasks/{id}/logs` | session | `{lines: [[stream, line], ...]}`; an entry may add a third element, the global rank |
 | `POST /v1/worker/tasks/{id}/finish` | session | `TaskOutcome` |
 | `POST /v1/worker/deregister` | session | graceful exit |
 

@@ -25,11 +25,11 @@ rank, world = dist.get_rank(), dist.get_world_size()
 t = torch.tensor([float(rank + 1)])
 dist.all_reduce(t)
 expected = world * (world + 1) / 2
-# One write per line: ranks on a node share a pipe, and print() writes the text and the
-# newline separately when unbuffered, so lines from two ranks could interleave.
-sys.stdout.write(f"rank={rank} world={world} sum={t.item()} "
-                 f"node={os.environ['GPULAYER_NODE_RANK']}\\n")
-sys.stdout.flush()
+# Text and newline in separate writes, the case that used to interleave between ranks
+# before each rank's output was captured separately (torchrun --tee).
+print(f"rank={rank} world={world} sum={t.item()} node={os.environ['GPULAYER_NODE_RANK']}",
+      end="", flush=True)
+print("", flush=True)
 assert t.item() == expected, (t.item(), expected)
 if rank == 0:
     out = os.path.join(os.environ["GPULAYER_OUTPUT_DIR"], "result.txt")
@@ -93,6 +93,12 @@ def test_two_node_allreduce(group, tmp_path):
     assert st.state == JobState.SUCCEEDED, (st.error, logs[-20:])
     sums = [line for line in logs if line.startswith("rank=")]
     assert len(sums) == 4 and all("world=4 sum=10.0" in s for s in sums)
+    # Every line from the training script is tagged with the global rank that wrote it.
+    tagged = {
+        line.rank: line.line for line in cp.job_logs(st.job_id) if line.line.startswith("rank=")
+    }
+    assert sorted(tagged) == [0, 1, 2, 3]
+    assert all(text.startswith(f"rank={r} ") for r, text in tagged.items())
     assert {t.node_rank for t in st.tasks} == {0, 1}
     assert len({t.worker_id for t in st.tasks}) == 2
     res = cp.job_result(st.job_id)

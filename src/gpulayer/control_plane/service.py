@@ -17,7 +17,7 @@ import secrets
 import threading
 import time
 import uuid
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, cast
@@ -62,6 +62,7 @@ from gpulayer.storage.sqlite import SqliteStore, parse_ts, ts
 
 ACTIVE_TASK_STATES = (TaskState.ASSIGNED.value, TaskState.RUNNING.value)
 MAX_LOG_LINE = 8192
+LogEntry = tuple[str, str] | tuple[str, str, int | None]  # (stream, line[, global rank])
 
 
 @dataclass
@@ -268,6 +269,7 @@ class ControlPlane:
                 stream=r["stream"],
                 line=r["line"],
                 timestamp=parse_ts(r["ts"]),
+                rank=r["rank"],
             )
             for r in rows
         ]
@@ -788,23 +790,25 @@ class ControlPlane:
                     )
                 self._set_job_state(task["job_id"], JobState.RUNNING)
 
-    def append_logs(self, worker_id: str, task_id: str, lines: list[tuple[str, str]]) -> None:
+    def append_logs(self, worker_id: str, task_id: str, lines: Sequence[LogEntry]) -> None:
+        """``lines`` are ``(stream, line)`` or ``(stream, line, global_rank)``."""
         task = self._owned_task(worker_id, task_id)
         now = ts(self.now())
         with self.store.tx() as c:
             c.executemany(
-                "INSERT INTO logs (job_id, task_id, node_rank, stream, line, ts) "
-                "VALUES (?,?,?,?,?,?)",
+                "INSERT INTO logs (job_id, task_id, node_rank, stream, line, ts, rank) "
+                "VALUES (?,?,?,?,?,?,?)",
                 [
                     (
                         task["job_id"],
                         task_id,
                         task["node_rank"],
-                        stream if stream in ("stdout", "stderr", "system") else "system",
-                        line[:MAX_LOG_LINE],
+                        e[0] if e[0] in ("stdout", "stderr", "system") else "system",
+                        e[1][:MAX_LOG_LINE],
                         now,
+                        e[2] if len(e) > 2 else None,
                     )
-                    for stream, line in lines
+                    for e in lines
                 ],
             )
 

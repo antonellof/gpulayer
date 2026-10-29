@@ -7,6 +7,7 @@ import http.client
 import json
 import ssl
 import threading
+from collections.abc import Sequence
 from typing import Any
 from urllib.parse import urlencode, urlparse
 
@@ -29,6 +30,7 @@ from gpulayer.contracts import (
     WorkerMetrics,
     WorkerStatus,
 )
+from gpulayer.control_plane.service import LogEntry
 from gpulayer.errors import ERRORS_BY_CODE, GpuLayerError, Unauthorized
 
 
@@ -294,7 +296,7 @@ class HttpWorkerChannel:
             )
         )
 
-    def logs(self, task_id: str, lines: list[tuple[str, str]]) -> None:
+    def logs(self, task_id: str, lines: Sequence[LogEntry]) -> None:
         self.t.request(
             "POST", f"/v1/worker/tasks/{task_id}/logs", {"lines": [list(x) for x in lines]}
         )

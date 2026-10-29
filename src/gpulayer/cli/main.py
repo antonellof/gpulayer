@@ -610,9 +610,7 @@ def cmd_submit(args: argparse.Namespace) -> int:
         try:
             for line in job.follow_logs():
                 stream = sys.stderr if line.stream != "stdout" else sys.stdout
-                prefix = (
-                    f"[node{line.node_rank}] " if spec.workload_type.value == "distributed" else ""
-                )
+                prefix = f"[{line.origin}] " if spec.workload_type.value == "distributed" else ""
                 print(prefix + line.line, file=stream, flush=True)
         except KeyboardInterrupt:
             print(f"\ninterrupted; cancelling {job.id}", file=sys.stderr)
@@ -685,9 +683,7 @@ def cmd_job_logs(args: argparse.Namespace) -> int:
         for line in lines:
             if line.stream == "system" and not args.system:
                 continue
-            print(
-                f"[node{line.node_rank} {line.stream}] {line.line}" if args.verbose else line.line
-            )
+            print(f"[{line.origin} {line.stream}] {line.line}" if args.verbose else line.line)
     return 0
 
 

@@ -110,8 +110,9 @@ can hold at most one server thread per open request; the failed-login limiter st
    once (default one per discrete GPU), and the control plane reserves specific GPUs per task
    (`TaskAssignment.devices`). Tested with simulated 4-GPU workers and with real concurrent
    processes on CPU; not yet run on a multi-GPU NVIDIA machine.
-2. **Per-rank log streams.** All local ranks share one pipe today, so output from two ranks can
-   interleave mid-line when a program writes a line in more than one call.
+2. **Per-rank log streams.** Done: torchrun `--tee` captures each rank separately, the worker
+   tags every line with its global rank (`LogLine.rank`), and output from different ranks no
+   longer interleaves.
 3. **Topology-aware group placement.** Prefer GPUs on one host, then hosts on one fast network,
    using reported interconnect data (NVLink, InfiniBand) when it exists.
 4. **Faster start-up of distributed jobs.** Measure and reduce bundle, extract and torchrun

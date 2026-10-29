@@ -646,6 +646,13 @@ class LogLine(_Model):
     stream: Literal["stdout", "stderr", "system"]
     line: str
     timestamp: datetime
+    # Global rank of the process that wrote the line (distributed jobs); None otherwise.
+    rank: int | None = None
+
+    @property
+    def origin(self) -> str:
+        """Short label for multi-process output: ``rank3`` when known, else ``node1``."""
+        return f"rank{self.rank}" if self.rank is not None else f"node{self.node_rank}"
 
 
 # ------------------------------------------------------------ worker protocol

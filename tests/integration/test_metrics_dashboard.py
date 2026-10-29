@@ -153,3 +153,20 @@ def test_worker_metrics_travel_over_http(server):
     h = client.metrics_history(10)
     assert h["workers"][0]["samples"][0]["processes"] == 4
     assert 'gpulayer_worker_processes{worker="w"' in scrape(srv.url, t["metrics"])[1]
+
+
+def test_log_lines_keep_their_rank_over_http(server):
+    from gpulayer.errors import ValidationFailed
+
+    srv, t = server
+    admin = HttpControlPlaneClient(HttpTransport(srv.url, t["admin"]))
+    ch = HttpWorkerChannel.register(srv.url, t["join"], "w2", CAPS)
+    j2 = admin.submit(gl.command(["true"], placement=gl.PlacementPolicy(target="remote")))
+    a = ch.acquire()
+    ch.start(a.task_id)
+    ch.logs(a.task_id, [("stdout", "from rank 3", 3), ("stdout", "plain")])
+    lines = admin.job_logs(j2.job_id)
+    assert [(x.line, x.rank) for x in lines] == [("from rank 3", 3), ("plain", None)]
+    assert lines[0].origin == "rank3" and lines[1].origin == "node0"
+    with pytest.raises(ValidationFailed):
+        ch.logs(a.task_id, [("stdout", "bad", -1)])

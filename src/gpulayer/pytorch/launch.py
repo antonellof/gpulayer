@@ -137,7 +137,7 @@ def launch(
     for line in job.follow_logs():
         if quiet or line.stream == "system":
             continue
-        prefix = f"[node{line.node_rank}] " if nodes > 1 else ""
+        prefix = f"[{line.origin}] " if nodes * devices > 1 else ""
         print(
             prefix + line.line,
             file=sys.stderr if line.stream == "stderr" else sys.stdout,

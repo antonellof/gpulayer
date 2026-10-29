@@ -10,6 +10,7 @@ local, remote and provider-provisioned workers.
 from __future__ import annotations
 
 import threading
+from collections.abc import Sequence
 from typing import Protocol
 
 from gpulayer.contracts import (
@@ -22,7 +23,7 @@ from gpulayer.contracts import (
     WorkerCapabilities,
     WorkerMetrics,
 )
-from gpulayer.control_plane.service import ControlPlane
+from gpulayer.control_plane.service import ControlPlane, LogEntry
 
 
 class WorkerChannel(Protocol):
@@ -37,7 +38,7 @@ class WorkerChannel(Protocol):
     ) -> TaskAssignment | None: ...
     def start(self, task_id: str) -> None: ...
     def publish_rendezvous(self, task_id: str, addr: str, port: int) -> RendezvousInfo: ...
-    def logs(self, task_id: str, lines: list[tuple[str, str]]) -> None: ...
+    def logs(self, task_id: str, lines: Sequence[LogEntry]) -> None: ...
     def finish(self, task_id: str, outcome: TaskOutcome) -> None: ...
     def put_artifact(self, data: bytes, name: str, kind: ArtifactKind) -> ArtifactReference: ...
     def get_artifact(self, sha256: str) -> bytes: ...
@@ -78,7 +79,7 @@ class EmbeddedChannel:
     def publish_rendezvous(self, task_id: str, addr: str, port: int) -> RendezvousInfo:
         return self.cp.publish_rendezvous(self.worker_id, task_id, addr, port)
 
-    def logs(self, task_id: str, lines: list[tuple[str, str]]) -> None:
+    def logs(self, task_id: str, lines: Sequence[LogEntry]) -> None:
         self.cp.append_logs(self.worker_id, task_id, lines)
 
     def finish(self, task_id: str, outcome: TaskOutcome) -> None:

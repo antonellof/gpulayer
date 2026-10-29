@@ -65,6 +65,10 @@ def torchrun_argv(
         f"--master-addr={rdzv.master_addr}",
         f"--master-port={rdzv.master_port}",
         "--max-restarts=0",  # fail_fast: no elastic restarts inside the group
+        # Each rank's output is captured separately and re-emitted line by line with a
+        # "[default<local rank>]:" prefix, so ranks never interleave mid-line and the worker
+        # can tag every line with its global rank.
+        "--tee=3",
         entrypoint_path,
         *job.args,
     ]

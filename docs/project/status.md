@@ -98,7 +98,8 @@ uncommitted local changes, so it was deliberately left untouched.
   GpuLayer state. Idle-job latency 626 ms to 31 ms, burst throughput 27 to 87 jobs/s (one Mac).
 - Done: several tasks per worker, each with its own reserved GPUs (tested with simulated
   multi-GPU workers and real concurrent CPU processes).
-- Next: per-rank log streams, topology-aware
+- Done: per-rank log streams (every distributed log line carries its global rank).
+- Next: topology-aware
   group placement, faster distributed start-up. FSDP and `torch.compile` need CUDA hardware.
 
 ### Distribution (ADR-0017)

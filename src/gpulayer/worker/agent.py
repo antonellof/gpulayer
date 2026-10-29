@@ -9,10 +9,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import sys
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from gpulayer.artifacts.store import extract_bundle
@@ -45,6 +47,9 @@ MAX_OUTPUT_FILES = 1000
 MAX_OUTPUT_BYTES = 512 * 1024**2
 
 
+_RANK_PREFIX = re.compile(r"^\[default(\d+)\]:(.*)$", re.S)
+
+
 class _LogBuffer:
     """Batches log lines to the control plane and redacts secret values.
 
@@ -59,7 +64,7 @@ class _LogBuffer:
     def __init__(self, channel: WorkerChannel, task_id: str, secrets: list[str]) -> None:
         self.channel, self.task_id = channel, task_id
         self.secrets = sorted((s for s in secrets if s), key=len, reverse=True)
-        self.lines: list[tuple[str, str]] = []
+        self.lines: list[tuple[str, str, int | None]] = []
         self.dropped = 0
         self.lock = threading.Lock()
         self.send_lock = threading.Lock()  # keeps batches in order
@@ -68,14 +73,14 @@ class _LogBuffer:
         self.thread = threading.Thread(target=self._loop, daemon=True, name="gpulayer-logs")
         self.thread.start()
 
-    def __call__(self, stream: str, line: str) -> None:
+    def __call__(self, stream: str, line: str, rank: int | None = None) -> None:
         for s in self.secrets:
             line = line.replace(s, "***")
         with self.lock:
             if len(self.lines) >= self.MAX_PENDING:
                 self.dropped += 1
                 return
-            self.lines.append((stream, line))
+            self.lines.append((stream, line, rank))
             if len(self.lines) >= self.BATCH:
                 self.wake.set()
 
@@ -90,7 +95,7 @@ class _LogBuffer:
             with self.lock:
                 batch, self.lines = self.lines, []
                 if self.dropped:
-                    batch.append(("system", f"[gpulayer] dropped {self.dropped} log lines"))
+                    batch.append(("system", f"[gpulayer] dropped {self.dropped} log lines", None))
                     self.dropped = 0
             if not batch:
                 return
@@ -377,6 +382,7 @@ class WorkerAgent:
 
         env, secret_values = self._environment(a, ws)
         sink = _LogBuffer(self.channel, a.task_id, secret_values)
+        line_sink: Callable[[str, str], None] = sink
         try:
             cwd = str(src if source is not None else ws)
             result_file: Path | None = None
@@ -398,6 +404,17 @@ class WorkerAgent:
                 argv = [self.python, str(runner), str(call), str(result_file)]
             elif isinstance(w, DistributedJob):
                 rdzv = self._rendezvous(a)
+                base_rank = rdzv.node_rank * rdzv.procs_per_node
+
+                def per_rank(stream: str, line: str) -> None:
+                    # torchrun --tee prefixes each rank's lines with "[default<local rank>]:".
+                    m = _RANK_PREFIX.match(line)
+                    if m:
+                        sink(stream, m.group(2), base_rank + int(m.group(1)))
+                    else:
+                        sink(stream, line)
+
+                line_sink = per_rank
                 if _is_loopback(rdzv.master_addr):
                     # Every node is on this host: keep gloo on the loopback interface instead of
                     # letting it pick one from the hostname (which may resolve to a LAN address).
@@ -449,7 +466,7 @@ class WorkerAgent:
                     argv,
                     env=env,
                     cwd=cwd,
-                    on_line=sink,
+                    on_line=line_sink,
                     timeout=spec.timeout_seconds,
                     cancel=cancel,
                     on_start=started,

@@ -28,7 +28,7 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Install (CPU-only torch for the distributed tests)
         run: |
-          uv venv
+          # setup-uv with python-version already created and activated .venv
           uv pip install torch --index-url https://download.pytorch.org/whl/cpu
           uv pip install -e '.[dev]' numpy
       - name: Lint

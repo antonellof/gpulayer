@@ -26,7 +26,9 @@ LOGS="$(docker logs "gl-server-$$" 2>&1)"
 JOIN="$(printf '%s\n' "$LOGS" | grep -o 'glj_[A-Za-z0-9_-]*' | head -n 1)"
 CLIENT="$(printf '%s\n' "$LOGS" | grep -o 'GPULAYER_TOKEN=glc_[A-Za-z0-9_-]*' | head -n 1 | cut -d= -f2)"
 FP="$(printf '%s\n' "$LOGS" | grep -o 'GPULAYER_FINGERPRINT=[^ ]*' | head -n 1 | cut -d= -f2)"
-[ -n "$JOIN" ] && [ -n "$CLIENT" ] && [ -n "$FP" ] || fail "could not read tokens from the banner"
+if [ -z "$JOIN" ] || [ -z "$CLIENT" ] || [ -z "$FP" ]; then
+  fail "could not read tokens from the banner"
+fi
 
 docker run -d --name "gl-worker-$$" --network "$NET" --network-alias gl-worker "$IMAGE" \
   join https://gl-server:8470 --token "$JOIN" --fingerprint "$FP" \

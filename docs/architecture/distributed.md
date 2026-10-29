@@ -44,10 +44,10 @@ workload controls, then resubmit with an input that points at them.
 - Each worker starts `procs_per_worker` processes through torchrun with `OMP_NUM_THREADS=1`
   per process unless the job sets it. Sharing the cores between ranks was measured and was not
   faster (ADR-0016).
-- All local ranks write to the same output stream today. A program that writes one line in
-  several calls (unbuffered `print` writes the text and the newline separately) can have lines
-  from two ranks interleave. Write each line in one call, or log from rank 0 only. Separate
-  per-rank streams are on the roadmap (ADR-0016).
+- Each rank's output is captured separately (torchrun `--tee`) and stored line by line with
+  the global rank that wrote it, so lines from different ranks never mix. The CLI and
+  `launch()` print them as `[rank3] ...`, the dashboard as `[rank 3] ...`, and
+  `LogLine.rank` carries the number.
 
 ## Validation status
 

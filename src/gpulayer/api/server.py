@@ -323,9 +323,15 @@ class ControlPlaneServer:
         lines = q.json().get("lines", [])
         if not isinstance(lines, list) or len(lines) > 5000:
             raise ValidationFailed("lines must be a list of at most 5000 [stream, line] pairs")
-        return self.cp.append_logs(
-            q.wid, q.params["tid"], [(str(s), str(text)) for s, text in lines]
-        )
+        entries: list[tuple[str, str, int | None]] = []
+        for e in lines:
+            if not isinstance(e, list) or len(e) not in (2, 3):
+                raise ValidationFailed("each log entry is [stream, line] or [stream, line, rank]")
+            rank = e[2] if len(e) == 3 else None
+            if rank is not None and (not isinstance(rank, int) or not 0 <= rank < 1_000_000):
+                raise ValidationFailed("log rank must be a non-negative integer")
+            entries.append((str(e[0]), str(e[1]), rank))
+        return self.cp.append_logs(q.wid, q.params["tid"], entries)
 
     def _cancel(self, q: _Req) -> Any:
         job_id = q.params["id"]

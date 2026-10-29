@@ -229,7 +229,7 @@ class RemoteFunction:
         if stream_logs:
             for line in job.follow_logs():
                 if line.stream != "system":
-                    prefix = f"[node{line.node_rank}] " if self.distributed else ""
+                    prefix = f"[{line.origin}] " if self.distributed else ""
                     print(
                         prefix + line.line,
                         file=sys.stderr if line.stream == "stderr" else sys.stdout,

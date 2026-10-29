@@ -56,7 +56,8 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS events_job ON events(job_id, seq);
 CREATE TABLE IF NOT EXISTS logs (
   seq INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT NOT NULL, task_id TEXT NOT NULL,
-  node_rank INTEGER NOT NULL, stream TEXT NOT NULL, line TEXT NOT NULL, ts TEXT NOT NULL
+  node_rank INTEGER NOT NULL, stream TEXT NOT NULL, line TEXT NOT NULL, ts TEXT NOT NULL,
+  rank INTEGER
 );
 CREATE INDEX IF NOT EXISTS logs_job ON logs(job_id, seq);
 CREATE TABLE IF NOT EXISTS instances (
@@ -100,6 +101,9 @@ class SqliteStore:
             cols = {r[1] for r in self._conn.execute("PRAGMA table_info(tasks)")}
             if "devices" not in cols:
                 self._conn.execute("ALTER TABLE tasks ADD COLUMN devices TEXT")
+            log_cols = {r[1] for r in self._conn.execute("PRAGMA table_info(logs)")}
+            if "rank" not in log_cols:
+                self._conn.execute("ALTER TABLE logs ADD COLUMN rank INTEGER")
             row = self._conn.execute("SELECT value FROM meta WHERE key='schema'").fetchone()
             if row is None:
                 self._conn.execute("INSERT INTO meta VALUES ('schema', ?)", (str(SCHEMA_VERSION),))
