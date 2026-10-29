@@ -209,6 +209,16 @@ class Runtime:
 
     # ------------------------------------------------------------- reductions
 
+    def any(self, flag: bool) -> bool:
+        """True on every rank if ``flag`` is true on any rank."""
+        if not (self.distributed and dist.is_initialized()):
+            return bool(flag)
+        t = torch.tensor(
+            [1.0 if flag else 0.0], device=self.device if self.accelerator == "cuda" else "cpu"
+        )
+        dist.all_reduce(t, op=dist.ReduceOp.MAX)
+        return bool(t.item() > 0)
+
     def mean(self, value: float) -> float:
         if not (self.distributed and dist.is_initialized()):
             return float(value)

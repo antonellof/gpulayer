@@ -71,6 +71,7 @@ dicts of tensors, before calling your step.
 | `target` | `None` | `None` runs here when possible; `"local"`, `"remote"` or `"cloud"` always submits a job |
 | `gradient_clip_val` | `None` | clip the gradient norm to this value |
 | `accumulate_grad_batches` | `1` | apply the optimizer every N batches; DDP exchanges gradients only on those steps |
+| `callbacks` | `[]` | `Callback` objects, see [Callbacks](#callbacks) |
 | `log_every_n_steps` | `50` | print logged values every N steps (`0` turns it off) |
 | `limit_train_batches`, `limit_val_batches` | `None` | stop an epoch after N batches |
 | `enable_checkpointing` | `True` | save `checkpoints/last.ckpt` after every epoch |
@@ -81,6 +82,39 @@ Unsupported combinations fail with an error instead of quietly doing something e
 `precision="16-mixed"` on MPS, `accelerator="cuda"` on a machine without CUDA, `devices=2` with
 MPS, or `accelerator="auto"` with `target="remote"` (the remote device is unknown until the
 job is placed, so name it).
+
+
+## Callbacks
+
+Callbacks hook into the training loop. Two are built in:
+
+```python
+from gpulayer.pytorch import EarlyStopping, ModelCheckpoint, Trainer
+
+best = ModelCheckpoint(monitor="val_loss")                 # saves checkpoints/best.ckpt
+trainer = Trainer(max_epochs=50, callbacks=[EarlyStopping(monitor="val_loss", patience=3), best])
+trainer.fit(model, train_loader, val_loader)
+model = MyModel.load_from_checkpoint(best.best_model_path)
+```
+
+- `EarlyStopping(monitor, mode="min", patience=3, min_delta=0.0)` stops when the metric has
+  not improved for `patience` epochs.
+- `ModelCheckpoint(monitor, mode="min", filename="best.ckpt")` saves a checkpoint each time
+  the metric improves. `best_model_path` points at it, also when training ran on workers (the
+  file comes back with the job's outputs).
+- The monitored name must be logged with `self.log(...)`; otherwise the error lists the
+  names that were logged.
+
+Write your own by subclassing `Callback` and overriding any of `on_fit_start`,
+`on_train_epoch_start`, `on_train_batch_end(trainer, model, loss, batch_idx)`,
+`on_train_epoch_end` (after validation; `trainer.callback_metrics` holds the epoch's values)
+and `on_fit_end`. Set `trainer.should_stop = True` to end training after the current epoch;
+`trainer.save_checkpoint("name.ckpt")` writes a checkpoint.
+
+In distributed runs callbacks run on every rank. Epoch metrics are averaged across ranks
+first, and if any rank sets `should_stop`, every rank stops after the same epoch. When
+`fit` launches training on workers, the callbacks run there; in the launching process only
+`on_fit_end` runs.
 
 ## Where `fit` runs
 
@@ -146,6 +180,6 @@ metrics = trainer.validate(model, val_loader)   # {"val_loss": ..., "val_acc": .
 
 ## What the Trainer does not do yet
 
-Callbacks, early stopping, gradient accumulation, logger integrations and strategies other than
-DDP are not implemented. If you need them, keep your existing training code and run it with
+Logger integrations, learning-rate monitoring and strategies other than DDP (such as FSDP) are
+not implemented. If you need them, keep your existing training code and run it with
 [`launch()`](launch.md).

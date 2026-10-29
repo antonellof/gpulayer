@@ -217,7 +217,7 @@ const NOTES: Note[] = [
   {
     name: "PyTorch Lightning and Hugging Face Accelerate",
     summary:
-      "Both decide how a PyTorch model trains inside the machines they are started on: device placement, precision, DDP, FSDP or DeepSpeed, callbacks, logging. They do not choose those machines, copy code to them, or start the processes on each node. GPUlayer works one level below: it decides where a workload runs and starts it there. Its own PyTorch Trainer is deliberately small and has no FSDP, DeepSpeed or callbacks yet.",
+      "Both decide how a PyTorch model trains inside the machines they are started on: device placement, precision, DDP, FSDP or DeepSpeed, callbacks, logging. They do not choose those machines, copy code to them, or start the processes on each node. GPUlayer works one level below: it decides where a workload runs and starts it there. Its own PyTorch Trainer is deliberately small: it has callbacks, early stopping and gradient accumulation, but no FSDP, DeepSpeed or logger integrations yet.",
     choose:
       "Choose them for training features. Lightning has a far richer Trainer than GPUlayer's, and Accelerate makes an existing loop portable.",
     together:
@@ -273,7 +273,7 @@ const PERF_ROWS: { case: string; gl: number; pl: number; glOver: number; plOver:
 const BEHIND = [
   "No real cloud provisioning or autoscaling yet (simulated adapter only); SkyPilot, dstack and Ray already do this.",
   "No long-running services yet; dstack, Ray Serve, Modal and Kubernetes handle them.",
-  "A small PyTorch Trainer: no FSDP, DeepSpeed, callbacks or logger integrations, unlike PyTorch Lightning.",
+  "A small PyTorch Trainer: no FSDP, DeepSpeed or logger integrations, unlike PyTorch Lightning.",
   "Distributed jobs start about a second slower than PyTorch Lightning's DDP on one machine, because they go through job packaging and scheduling.",
   "Distributed jobs use torchrun only; no JAX multi-host or MPI launcher yet.",
   "First release (v0.1.0): NVIDIA GPUs and multi-machine runs are implemented but not validated yet. Not a sandbox for untrusted users.",

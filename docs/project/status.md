@@ -32,7 +32,7 @@ Updated 2026-10-29 at the end of the first iteration.
 | Event-driven dispatch: long-poll acquire and job waits, async log shipping (ADR-0016) | done, tested, benchmarked on one machine |
 | Web dashboard (jobs, logs, workers, activity charts), Prometheus `/metrics`, Grafana dashboard | done, tested; charts checked in a browser |
 | Worker telemetry: load, memory, task processes, NVIDIA GPU utilisation | done, tested (NVIDIA path not hardware-validated) |
-| Callbacks, early stopping | planned |
+| Callbacks, `EarlyStopping`, `ModelCheckpoint` (consistent stop across DDP ranks) | done, tested |
 | Validation on NVIDIA hardware and across machines | planned |
 
 ## Milestone 1 steps (prompt.md §8)

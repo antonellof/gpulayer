@@ -10,6 +10,9 @@ before 1.0, minor versions may change public APIs, with migration notes here.
   and download outputs; `--read-only` for monitoring. Tested with the official MCP Python SDK.
 - Agent Skill for the CLI in `integrations/skills/gpulayer`.
 - Guide: AI and coding agents.
+- Trainer callbacks: `Callback` hooks, `EarlyStopping` and `ModelCheckpoint` (best checkpoint,
+  also returned from remote runs); when one DDP rank asks to stop, every rank stops after the
+  same epoch.
 
 ## 0.1.0 (2026-10-29)
 

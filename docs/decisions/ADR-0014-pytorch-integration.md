@@ -82,6 +82,7 @@ any `CommandJob` does (ADR-0009).
 ## Follow-up
 
 - Interop tests with third-party training frameworks, skipped when they are not installed.
-- Callbacks, early stopping, gradient accumulation and learning-rate monitoring.
+- Learning-rate monitoring and logger integrations (callbacks, early stopping, best
+  checkpoints and gradient accumulation are done).
 - FSDP and other strategies after DDP is hardware-validated on CUDA.
 - Resuming from a checkpoint artifact after worker loss, with explicit user opt-in.

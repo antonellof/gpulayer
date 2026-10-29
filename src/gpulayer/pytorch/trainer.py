@@ -24,6 +24,7 @@ import torch
 from torch.utils.data import DataLoader, DistributedSampler
 
 from gpulayer.errors import ValidationFailed
+from gpulayer.pytorch.callbacks import Callback, _call
 from gpulayer.pytorch.launch import LaunchResult, is_launcher_process, launch
 from gpulayer.pytorch.module import Module, _TrainingStep
 from gpulayer.pytorch.runtime import Runtime, resolve_accelerator
@@ -50,6 +51,7 @@ class Trainer:
         enable_checkpointing: bool = True,
         default_root_dir: str | Path = "gpulayer_runs",
         launch_options: dict[str, Any] | None = None,
+        callbacks: list[Callback] | None = None,
     ) -> None:
         if devices < 1 or num_nodes < 1 or max_epochs < 1 or accumulate_grad_batches < 1:
             raise ValidationFailed(
@@ -76,6 +78,11 @@ class Trainer:
         self.launch_result: LaunchResult | None = None
         self.runtime: Runtime | None = None
         self.checkpoint_path: Path | None = None
+        self.callbacks: list[Callback] = list(callbacks or [])
+        self.should_stop = False  # set by a callback (e.g. EarlyStopping) to end training
+        self._out_dir: Path | None = None
+        self._model: Module | None = None
+        self._optimizer: torch.optim.Optimizer | None = None
 
     # --------------------------------------------------------------- placement
 
@@ -141,7 +148,10 @@ class Trainer:
         if not isinstance(model, Module):
             raise ValidationFailed("Trainer.fit expects a gpulayer.pytorch.Module")
         if self.will_launch:
+            # Training runs on workers (the callbacks run there); here only on_fit_end runs,
+            # so callbacks can pick up what came back (e.g. ModelCheckpoint's best file).
             self._launch(model)
+            _call(self.callbacks, "on_fit_end", self, model)
             return
         rt = Runtime(self.accelerator, self.precision).setup()
         self.runtime = rt
@@ -181,6 +191,7 @@ class Trainer:
         model.trainer = self
         model.to(rt.device)
         optimizer, scheduler, interval = self._optimizers(model)
+        self._model, self._optimizer, self.should_stop = model, optimizer, False
         start_epoch = 0
         if ckpt_path:
             state = torch.load(ckpt_path, map_location=rt.device, weights_only=False)
@@ -193,6 +204,7 @@ class Trainer:
         train = rt.dataloader(train)
         val = rt.dataloader(val, shuffle=False) if val is not None else None
         out_dir = rt.output_dir(self.default_root_dir / _run_name())
+        self._out_dir = out_dir
         where = f"{rt.accelerator}" + (
             f", rank {rt.global_rank}/{rt.world_size}" if rt.distributed else ""
         )
@@ -200,8 +212,10 @@ class Trainer:
             f"[gpulayer] training on {where}, precision {rt.precision}, {self.max_epochs} epoch(s)"
         )
 
+        _call(self.callbacks, "on_fit_start", self, model)
         for epoch in range(start_epoch, self.max_epochs):
             self.current_epoch = epoch
+            _call(self.callbacks, "on_train_epoch_start", self, model)
             if isinstance(train.sampler, DistributedSampler):
                 train.sampler.set_epoch(epoch)
             model.train()
@@ -237,6 +251,10 @@ class Trainer:
                 for k, v in logs.items():
                     sums[k] = sums[k] + v
                 count += 1
+                if self.callbacks:
+                    _call(
+                        self.callbacks, "on_train_batch_end", self, model, loss.detach(), batch_idx
+                    )
                 if (
                     apply
                     and self.log_every_n_steps
@@ -257,9 +275,15 @@ class Trainer:
                 f"{k}={v:.4f}" for k, v in metrics.items() if k not in ("epoch", "epoch_seconds")
             )
             self._say(f"epoch {epoch} done in {metrics['epoch_seconds']}s: {shown}")
+            _call(self.callbacks, "on_train_epoch_end", self, model)
             if self.enable_checkpointing and rt.is_global_zero:
                 self._save(out_dir, model, optimizer, epoch)
+            # Every rank must leave the loop together, or the next collective would hang.
+            self.should_stop = rt.any(self.should_stop)
             rt.barrier()
+            if self.should_stop:
+                break
+        _call(self.callbacks, "on_fit_end", self, model)
 
     def _evaluate(self, rt: Runtime, model: Module, loader: DataLoader) -> dict[str, float]:
         model.eval()
@@ -287,23 +311,33 @@ class Trainer:
         finally:
             rt.teardown()
 
-    def _save(
-        self, out_dir: Path, model: Module, optimizer: torch.optim.Optimizer, epoch: int
-    ) -> None:
-        path = out_dir / CHECKPOINT
+    def save_checkpoint(self, filename: str) -> Path | None:
+        """Write ``checkpoints/<filename>`` for the current epoch from rank 0 (other ranks
+        return None). Usable from callbacks during ``fit``."""
+        if self._out_dir is None or self._model is None or self._optimizer is None:
+            raise ValidationFailed("save_checkpoint can only be called during fit")
+        if self.runtime is not None and not self.runtime.is_global_zero:
+            return None
+        path = self._out_dir / "checkpoints" / filename
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".tmp")
         torch.save(
             {
-                "state_dict": model.state_dict(),
-                "optimizer": optimizer.state_dict(),
-                "epoch": epoch,
+                "state_dict": self._model.state_dict(),
+                "optimizer": self._optimizer.state_dict(),
+                "epoch": self.current_epoch,
                 "global_step": self.global_step,
                 "history": self.history,
             },
             tmp,
         )
         tmp.replace(path)
+        return path
+
+    def _save(
+        self, out_dir: Path, model: Module, optimizer: torch.optim.Optimizer, epoch: int
+    ) -> None:
+        path = self.save_checkpoint(Path(CHECKPOINT).name)
         (out_dir / "metrics.json").write_text(json.dumps(self.history, indent=2))
         self.checkpoint_path = path
 
