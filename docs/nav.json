@@ -75,6 +75,10 @@
           "title": "Run a server (gpulayer up)"
         },
         {
+          "slug": "guides/monitoring",
+          "title": "Dashboard and monitoring"
+        },
+        {
           "slug": "guides/apple-silicon",
           "title": "Apple Silicon (Metal)"
         },

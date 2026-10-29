@@ -1,0 +1,22 @@
+# Prometheus + Grafana for a GpuLayer server, with the GpuLayer dashboard provisioned.
+#   1. edit prometheus.yml: target address, and put the token and cert files next to it
+#   2. docker compose up -d
+#   3. open http://localhost:3001 (admin / admin on first login)
+services:
+  prometheus:
+    image: prom/prometheus:v2.53.2
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./gpulayer-token:/etc/prometheus/gpulayer-token:ro
+      - ./gpulayer-cert.pem:/etc/prometheus/gpulayer-cert.pem:ro
+    ports: ["9090:9090"]
+  grafana:
+    image: grafana/grafana:11.2.0
+    depends_on: [prometheus]
+    environment:
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/gpulayer-dashboard.json:/var/lib/grafana/dashboards/gpulayer.json:ro
+    ports: ["3001:3000"]

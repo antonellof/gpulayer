@@ -10,6 +10,14 @@ Client endpoints accept `admin` and `submitter` tokens. Cancelling a job needs a
 the token that submitted it; revoking a worker needs an admin token. Workers can download only
 artifacts used by their current tasks.
 
+## Dashboard and metrics
+
+| Method and path | Token | Returns |
+|---|---|---|
+| `GET /ui/`, `GET /` | none (the page asks for a token) | the web dashboard |
+| `GET /metrics` | `metrics`, `submitter` or `admin`; no protocol header needed | Prometheus text format |
+| `GET /v1/whoami` | client | `{principal, role}` |
+
 ## Client endpoints (client token)
 
 | Method and path | Body / query | Returns |

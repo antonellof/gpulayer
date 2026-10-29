@@ -1,0 +1,19 @@
+# Scrape a GpuLayer server. Create a read-only token on the server machine first:
+#   gpulayer token create prometheus --role metrics > prometheus-token
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: gpulayer
+    scheme: https
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/gpulayer-token
+    tls_config:
+      # `gpulayer up` uses a self-signed certificate. Point ca_file at the server's
+      # $GPULAYER_HOME/tls/cert.pem, or use insecure_skip_verify on a trusted network.
+      ca_file: /etc/prometheus/gpulayer-cert.pem
+      insecure_skip_verify: false
+    static_configs:
+      - targets: ["gpulayer.internal:8470"]

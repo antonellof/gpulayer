@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: gpulayer
+    folder: GpuLayer
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards

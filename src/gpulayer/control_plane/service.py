@@ -49,6 +49,7 @@ from gpulayer.contracts import (
 from gpulayer.contracts.models import JOB_TRANSITIONS
 from gpulayer.control_plane.scheduler import WorkerView, ever_schedulable, schedule
 from gpulayer.errors import Conflict, Forbidden, NotFound, Unauthorized, ValidationFailed
+from gpulayer.observability.metrics import observe
 from gpulayer.storage.sqlite import SqliteStore, parse_ts, ts
 
 ACTIVE_TASK_STATES = (TaskState.ASSIGNED.value, TaskState.RUNNING.value)
@@ -125,6 +126,10 @@ class ControlPlane:
                 f"{spec.workload_type.value} job '{spec.name}' submitted, target "
                 f"{spec.placement.target.value}",
                 job_id=job_id,
+            )
+            self.store.inc(
+                "gpulayer_jobs_submitted_total",
+                {"workload_type": spec.workload_type.value, "target": spec.placement.target.value},
             )
         self.schedule_pending()
         return self.get_job(job_id)
@@ -607,7 +612,17 @@ class ControlPlane:
                 task_id=task_id,
                 worker_id=worker_id,
             )
-            if JobState(self._job_row(task["job_id"])["state"]) == JobState.SCHEDULED:
+            job = self._job_row(task["job_id"])
+            if JobState(job["state"]) == JobState.SCHEDULED:
+                if job["attempts"] == 1:
+                    created = parse_ts(job["created_at"]) or now
+                    wait = (now - created).total_seconds()
+                    observe(
+                        self.store,
+                        "gpulayer_job_queue_wait_seconds",
+                        max(wait, 0.0),
+                        {"target": spec.placement.target.value},
+                    )
                 self._set_job_state(task["job_id"], JobState.RUNNING)
 
     def append_logs(self, worker_id: str, task_id: str, lines: list[tuple[str, str]]) -> None:
@@ -759,6 +774,11 @@ class ControlPlane:
         """Persist the JobResult once the job is terminal and release provisioned capacity."""
         row = self._job_row(job_id)
         tasks = self._tasks(job_id, row["attempts"]) if row["attempts"] else []
+        self.store.inc("gpulayer_jobs_finished_total", {"state": row["state"]})
+        started = [t.started_at for t in tasks if t.started_at]
+        if started:
+            run = (self.now() - min(started)).total_seconds()
+            observe(self.store, "gpulayer_job_run_seconds", max(run, 0.0), {"state": row["state"]})
         outcomes = {
             r["id"]: TaskOutcome.model_validate_json(r["outcome"])
             for r in self.store.query(
@@ -846,6 +866,8 @@ class ControlPlane:
             task_id=task_id,
             worker_id=row["worker_id"],
         )
+        if state == TaskState.LOST:
+            self.store.inc("gpulayer_tasks_lost_total")
 
     def _lose_tasks_of(self, worker_id: str, reason: str) -> None:
         with self.store.tx() as c:
@@ -864,6 +886,17 @@ class ControlPlane:
         self, data: bytes, name: str = "", kind: ArtifactKind = ArtifactKind.INPUT
     ) -> ArtifactReference:
         return self.artifacts.put(data, name, kind)
+
+    # ============================================================ observability
+
+    def metrics_text(self) -> str:
+        """Prometheus text exposition of the current state and counters."""
+        from gpulayer.observability.metrics import render
+
+        return render(self)
+
+    def whoami(self) -> dict[str, str]:
+        return {"principal": "local", "role": "admin"}  # embedded mode: the local OS user
 
     # ============================================================ retention
 

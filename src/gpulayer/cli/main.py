@@ -232,6 +232,9 @@ Worker on this machine: {worker_desc}
 Add a machine (GPU server, workstation, cloud VM) by running on it:
   gpulayer join {url} --token {join_token}{fp_flag}
 
+Dashboard: {url}/ui/  (sign in with the client token below)
+Prometheus metrics: {url}/metrics
+
 Use it from Python:
   import gpulayer as gl
   gl.connect("{url}", token="{client_token}"{fp_arg})
@@ -280,6 +283,45 @@ def cmd_gc(args: argparse.Namespace) -> int:
         f"{report['jobs']} jobs, {report['workers']} workers, "
         f"{report['artifacts']} artifacts ({mib:.1f} MiB)"
     )
+    return 0
+
+
+def cmd_dashboard(args: argparse.Namespace) -> int:
+    """Serve the dashboard for the local (embedded) control plane on this machine."""
+    import webbrowser
+
+    from gpulayer.api.auth import ServerCredentials
+    from gpulayer.api.server import ControlPlaneServer
+    from gpulayer.sdk.home import open_control_plane
+
+    if args.url:
+        print(f"open {args.url.rstrip('/')}/ui/ and sign in with a client token", file=sys.stderr)
+        return 0
+    creds = ServerCredentials()  # in memory only: a one-time admin token for this session
+    token = creds.create("dashboard", "admin")
+    server = ControlPlaneServer(
+        open_control_plane(args.home), creds, host="127.0.0.1", port=args.port
+    )
+    port = server.httpd.server_address[1]
+    url = f"http://127.0.0.1:{port}/ui/#token={token}"
+    server.start()
+    print(f"GpuLayer dashboard: {url}\nPress Ctrl+C to stop.", flush=True)
+    if not args.no_open:
+        webbrowser.open(url)
+    stop = threading.Event()
+    signal.signal(signal.SIGTERM, lambda *_: stop.set())
+    try:
+        while not stop.wait(0.5):
+            pass
+    except KeyboardInterrupt:
+        pass
+    server.shutdown()
+    return 0
+
+
+def cmd_metrics(args: argparse.Namespace) -> int:
+    with _client(args, local_worker=False) as c:
+        sys.stdout.write(c._api.metrics_text())
     return 0
 
 
@@ -760,11 +802,19 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--dry-run", action="store_true", help="report without deleting")
     s.set_defaults(fn=cmd_gc)
 
+    s = sub.add_parser("dashboard", help="open the web dashboard for local jobs")
+    s.add_argument("--port", type=int, default=8471)
+    s.add_argument("--no-open", action="store_true", help="print the URL without opening it")
+    s.set_defaults(fn=cmd_dashboard)
+
+    s = sub.add_parser("metrics", help="print Prometheus metrics (embedded or server)")
+    s.set_defaults(fn=cmd_metrics)
+
     tk = sub.add_parser("token", help="manage server tokens (on the server machine)")
     tks = tk.add_subparsers(dest="cmd", required=True)
     s = tks.add_parser("create", help="create a named token (printed once)")
     s.add_argument("name")
-    s.add_argument("--role", choices=["admin", "submitter", "join"], default="submitter")
+    s.add_argument("--role", choices=["admin", "submitter", "join", "metrics"], default="submitter")
     s.add_argument("--ttl", help="expire after e.g. 90m, 12h or 7d")
     s.set_defaults(fn=cmd_token_create)
     s = tks.add_parser("list", help="list tokens (never their values)")

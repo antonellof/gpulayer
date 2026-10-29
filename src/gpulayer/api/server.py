@@ -16,12 +16,13 @@ import threading
 import time
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from pydantic import BaseModel, ValidationError
 
-from gpulayer.api.auth import CLIENT_ROLES, ServerCredentials
+from gpulayer.api.auth import CLIENT_ROLES, METRICS_ROLES, ServerCredentials
 from gpulayer.contracts import (
     API_VERSION,
     PROTOCOL_VERSION,
@@ -41,6 +42,7 @@ from gpulayer.errors import (
     Unauthorized,
     ValidationFailed,
 )
+from gpulayer.observability import metrics
 
 log = logging.getLogger("gpulayer.api")
 
@@ -151,6 +153,15 @@ class ControlPlaneServer:
     def _build_routes(self) -> list[tuple[str, re.Pattern[str], str, Handler]]:
         cp = self.cp
         r: list[tuple[str, str, str, Handler]] = [
+            ("GET", r"/", "none", lambda q: _ui("index.html")),
+            ("GET", r"/ui/?(?P<file>[a-z.]*)", "none", lambda q: _ui(q.params["file"])),
+            (
+                "GET",
+                r"/metrics",
+                "metrics",
+                lambda q: _Raw(metrics.render(cp).encode(), metrics.CONTENT_TYPE),
+            ),
+            ("GET", r"/v1/whoami", "client", lambda q: {"principal": q.principal, "role": q.role}),
             (
                 "GET",
                 r"/v1/health",
@@ -302,7 +313,8 @@ class ControlPlaneServer:
     def authorize(self, q: _Req, access: str) -> None:
         if access == "none":
             return
-        if q.h.headers.get("X-GpuLayer-Protocol") != PROTOCOL_VERSION:
+        # Prometheus cannot send our protocol header; /metrics is a plain read-only text format.
+        if access != "metrics" and q.h.headers.get("X-GpuLayer-Protocol") != PROTOCOL_VERSION:
             raise ProtocolMismatch(f"this control plane speaks protocol {PROTOCOL_VERSION}")
         client_ip = q.h.client_address[0]
         self.limiter.check(client_ip)
@@ -316,6 +328,12 @@ class ControlPlaneServer:
         token = q.h._bearer()
         if access == "join":
             return  # checked in _register (join token or instance token)
+        if access == "metrics":
+            entry = self.creds.authenticate(token, METRICS_ROLES)
+            if entry is None:
+                raise Unauthorized("a metrics, submitter or admin token is required")
+            q.principal, q.role = f"client:{entry.name}", entry.role
+            return
         if access in ("client", "admin", "client_or_worker"):
             entry = self.creds.authenticate(token, CLIENT_ROLES)
             if entry is not None:
@@ -355,8 +373,39 @@ class FailureLimiter:
 
 
 class _Raw:
-    def __init__(self, data: bytes) -> None:
+    def __init__(
+        self,
+        data: bytes,
+        content_type: str = "application/octet-stream",
+        headers: dict[str, str] | None = None,
+    ) -> None:
         self.data = data
+        self.content_type = content_type
+        self.headers = headers or {}
+
+
+UI_DIR = Path(__file__).parent / "ui"
+UI_FILES = {
+    "index.html": "text/html; charset=utf-8",
+    "app.js": "text/javascript; charset=utf-8",
+    "app.css": "text/css; charset=utf-8",
+}
+UI_HEADERS = {
+    "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; "
+    "connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; "
+    "form-action 'none'",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Cache-Control": "no-cache",
+}
+
+
+def _ui(name: str) -> _Raw:
+    name = name or "index.html"
+    if name not in UI_FILES:  # fixed allow-list: no path traversal possible
+        raise NotFound(f"no such dashboard file: {name}")
+    return _Raw((UI_DIR / name).read_bytes(), UI_FILES[name], UI_HEADERS)
 
 
 def _is_loopback(host: str) -> bool:
@@ -393,6 +442,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
         app: ControlPlaneServer = self.server.app  # type: ignore[attr-defined]
         path = urlparse(self.path).path
         status, payload, raw = 200, None, None
+        raw_type = "application/octet-stream"
+        raw_headers: dict[str, str] = {}
         q: _Req | None = None
         try:
             for m, pattern, access, fn in app.routes:
@@ -402,7 +453,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
                     app.authorize(q, access)
                     result = fn(q)
                     if isinstance(result, _Raw):
-                        raw = result.data
+                        raw, raw_type = result.data, result.content_type
+                        raw_headers = result.headers
                     else:
                         payload = _encode(result)
                     break
@@ -426,9 +478,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 self.close_connection = True
         body = raw if raw is not None else json.dumps(payload).encode()
         self.send_response(status)
-        self.send_header(
-            "Content-Type", "application/octet-stream" if raw is not None else "application/json"
-        )
+        self.send_header("Content-Type", raw_type if raw is not None else "application/json")
+        for k, v in raw_headers.items():
+            self.send_header(k, v)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)

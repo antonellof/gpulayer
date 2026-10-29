@@ -5,7 +5,8 @@ Named tokens, stored only as SHA-256 hashes, each with one role:
 * ``admin``     -- everything a client can do, plus revoking workers, managing tokens and
                    maintenance (garbage collection);
 * ``submitter`` -- submit jobs, read all jobs and workers, cancel only its own jobs;
-* ``join``      -- may only call ``POST /v1/workers/register``.
+* ``join``      -- may only call ``POST /v1/workers/register``;
+* ``metrics``   -- may only read ``GET /metrics`` (for Prometheus).
 
 Tokens can expire and can be revoked. Registered workers then get a per-worker session
 token (checked by the control plane), and provider-provisioned workers use a single-use
@@ -25,9 +26,10 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-ROLES = ("admin", "submitter", "join")
+ROLES = ("admin", "submitter", "join", "metrics")
+METRICS_ROLES = ("admin", "submitter", "metrics")
 CLIENT_ROLES = ("admin", "submitter")
-_PREFIX = {"admin": "glc_", "submitter": "glc_", "join": "glj_"}
+_PREFIX = {"admin": "glc_", "submitter": "glc_", "join": "glj_", "metrics": "glm_"}
 
 
 def token_hash(token: str) -> str:

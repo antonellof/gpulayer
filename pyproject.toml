@@ -24,7 +24,7 @@ examples = [
   "numpy>=1.20",
   "mlx>=0.10; sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
-dev = ["pytest>=7.4", "ruff>=0.4", "mypy>=1.8"]
+dev = ["pytest>=7.4", "ruff>=0.4", "mypy>=1.8", "prometheus-client>=0.20"]
 
 [project.scripts]
 gpulayer = "gpulayer.cli.main:main"

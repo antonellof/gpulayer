@@ -46,6 +46,7 @@ its active tasks.
 | `admin` | everything a client can do, plus revoke workers, cancel any job and run maintenance |
 | `submitter` | submit jobs, read all jobs and workers, cancel its own jobs |
 | `join` | register workers, nothing else |
+| `metrics` | read `GET /metrics`, nothing else (for Prometheus) |
 
 Tokens are named, can expire, and can be revoked:
 

@@ -1,0 +1,363 @@
+// GpuLayer dashboard. Plain JS, no dependencies. Every value is inserted with textContent,
+// so job names, logs and errors can never inject markup.
+"use strict";
+
+const PROTOCOL = "1";
+const POLL_MS = 3000;
+const S = {
+  token: null, role: null, principal: null,
+  tab: "jobs", filter: "all", query: "", showOffline: false,
+  jobs: [], workers: [], selected: null, logSeq: 0, logs: [], events: [],
+  lastOk: null, error: null,
+};
+
+// ------------------------------------------------------------------ helpers
+
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === null || v === undefined || v === false) continue;
+    if (k === "class") el.className = v;
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const kid of kids.flat(Infinity)) {
+    if (kid === null || kid === undefined || kid === false) continue;
+    el.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+  }
+  return el;
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    method: opts.method || "GET",
+    headers: {
+      Authorization: `Bearer ${S.token}`,
+      "X-GpuLayer-Protocol": PROTOCOL,
+      ...(opts.body ? { "Content-Type": "application/json" } : {}),
+    },
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!res.ok) {
+    const err = new Error((data && data.error && data.error.message) || `HTTP ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
+function ago(iso) {
+  if (!iso) return "–";
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return `${Math.round(s)}s ago`;
+  if (s < 3600) return `${Math.round(s / 60)}m ago`;
+  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
+  return `${Math.round(s / 86400)}d ago`;
+}
+
+function duration(job) {
+  const starts = (job.tasks || []).map((t) => t.started_at).filter(Boolean);
+  if (!starts.length) return "–";
+  const start = Math.min(...starts.map((t) => new Date(t).getTime()));
+  const terminal = ["succeeded", "failed", "cancelled", "timed_out"].includes(job.state);
+  const end = terminal ? new Date(job.updated_at).getTime() : Date.now();
+  const s = Math.max(0, (end - start) / 1000);
+  if (s < 60) return `${s.toFixed(1)}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
+  return `${Math.floor(s / 3600)}h ${Math.round((s % 3600) / 60)}m`;
+}
+
+function state(name) {
+  return h("span", { class: `state s-${name}` }, h("span", { class: "dot" }), name.replace("_", " "));
+}
+
+const logo = () => {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  for (const [y, x, w, h2, o] of [[14, 2, 20, 6, 0.35], [9, 4, 16, 5, 0.6], [4, 6, 12, 5, 1]]) {
+    const r = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    Object.entries({ x, y, width: w, height: h2, rx: 1.5, fill: "currentColor", opacity: o })
+      .forEach(([k, v]) => r.setAttribute(k, v));
+    svg.append(r);
+  }
+  return svg;
+};
+
+const ACTIVE = new Set(["queued", "provisioning", "scheduled", "running"]);
+
+// ------------------------------------------------------------------ data
+
+async function refresh() {
+  try {
+    const [jobs, workers] = await Promise.all([api("/v1/jobs?limit=500"), api("/v1/workers")]);
+    S.jobs = jobs;
+    S.workers = workers;
+    S.lastOk = Date.now();
+    S.error = null;
+    if (S.selected) await refreshDetail();
+  } catch (e) {
+    if (e.status === 401) return signOut("Your token was rejected. Sign in again.");
+    S.error = e.message;
+  }
+  render();
+}
+
+async function refreshDetail() {
+  const id = S.selected;
+  const [logs, events] = await Promise.all([
+    api(`/v1/jobs/${id}/logs?after=${S.logSeq}`),
+    api(`/v1/jobs/${id}/events`),
+  ]);
+  if (id !== S.selected) return;
+  S.logs.push(...logs);
+  if (logs.length) S.logSeq = logs[logs.length - 1].seq;
+  S.events = events;
+}
+
+function select(id) {
+  S.selected = id;
+  S.logSeq = 0;
+  S.logs = [];
+  S.events = [];
+  refresh();
+}
+
+// ------------------------------------------------------------------ views
+
+function kpis() {
+  const count = (st) => S.jobs.filter((j) => j.state === st).length;
+  const online = S.workers.filter((w) => w.state !== "offline");
+  const gpus = {};
+  for (const w of online)
+    for (const d of w.capabilities.accelerators)
+      if (d.execution_supported) gpus[d.accelerator] = (gpus[d.accelerator] || 0) + 1;
+  const gpuText = Object.entries(gpus).map(([k, v]) => `${v} ${k}`).join(" · ") || "none";
+  const finished = count("succeeded") + count("failed") + count("timed_out");
+  const rate = finished ? Math.round((100 * count("succeeded")) / finished) : null;
+  const cell = (label, value, hint) =>
+    h("div", { class: "kpi" }, h("div", { class: "label" }, label), h("div", { class: "value" }, value),
+      h("div", { class: "hint" }, hint));
+  return h("section", { class: "kpis" },
+    cell("Running", count("running") + count("scheduled"), "jobs on workers now"),
+    cell("Waiting", count("queued") + count("provisioning"), "queued or provisioning"),
+    cell("Succeeded", count("succeeded"), rate === null ? "no finished jobs" : `${rate}% success rate`),
+    cell("Failed", count("failed") + count("timed_out"), "including timeouts"),
+    cell("Workers online", online.length, `${S.workers.length - online.length} offline`),
+    cell("GPUs online", Object.values(gpus).reduce((a, b) => a + b, 0), gpuText));
+}
+
+function jobsView() {
+  const filters = [["all", "All"], ["active", "Active"], ["succeeded", "Succeeded"],
+    ["failed", "Failed"], ["cancelled", "Cancelled"]];
+  const q = S.query.toLowerCase();
+  const rows = S.jobs.filter((j) => {
+    if (S.filter === "active" && !ACTIVE.has(j.state)) return false;
+    if (S.filter === "failed" && !["failed", "timed_out"].includes(j.state)) return false;
+    if (!["all", "active", "failed"].includes(S.filter) && j.state !== S.filter) return false;
+    return !q || j.job_id.includes(q) || j.name.toLowerCase().includes(q);
+  });
+  const toolbar = h("div", { class: "toolbar" },
+    filters.map(([k, label]) => h("button", {
+      class: `chip ${S.filter === k ? "on" : ""}`, onclick: () => { S.filter = k; render(); },
+    }, label)),
+    h("span", { class: "spacer" }),
+    h("input", {
+      class: "search", placeholder: "Filter by job id or name", value: S.query,
+      oninput: (e) => { S.query = e.target.value; render(true); },
+    }));
+  if (!rows.length) return [toolbar, h("div", { class: "empty" }, S.jobs.length ? "No jobs match." :
+    "No jobs yet. Submit one with gpulayer submit, @gl.remote or the Trainer.")];
+  const table = h("table", { class: "table" },
+    h("thead", {}, h("tr", {}, ["Job", "State", "Workload", "Target", "Accelerator", "Submitted",
+      "Duration", "By"].map((c) => h("th", {}, c)))),
+    h("tbody", {}, rows.map((j) => h("tr", {
+      class: `click ${S.selected === j.job_id ? "sel" : ""}`, onclick: () => select(j.job_id),
+    },
+    h("td", {}, h("div", {}, j.name), h("div", { class: "mono muted" }, j.job_id)),
+    h("td", {}, state(j.state)),
+    h("td", {}, j.workload_type, j.spec.workload.kind === "distributed"
+      ? h("span", { class: "muted" }, ` · ${j.spec.workload.num_workers}×${j.spec.workload.procs_per_worker}`) : null),
+    h("td", {}, j.spec.placement.target),
+    h("td", {}, j.spec.resources.accelerator),
+    h("td", { class: "muted" }, ago(j.created_at)),
+    h("td", { class: "mono" }, duration(j)),
+    h("td", { class: "muted" }, (j.submitted_by || "local").replace("client:", ""))))));
+  return [toolbar, table];
+}
+
+function workersView() {
+  const offline = S.workers.filter((w) => w.state === "offline").length;
+  const rows = S.workers.filter((w) => S.showOffline || w.state !== "offline");
+  const toolbar = h("div", { class: "toolbar" },
+    h("button", {
+      class: `chip ${S.showOffline ? "on" : ""}`,
+      onclick: () => { S.showOffline = !S.showOffline; render(); },
+    }, S.showOffline ? `Hide offline (${offline})` : `Show offline (${offline})`));
+  if (!rows.length) return [toolbar, h("div", { class: "empty" },
+    "No workers online. Start one with gpulayer join, gpulayer worker start, or by running a local job.")];
+  return [toolbar, h("table", { class: "table" },
+    h("thead", {}, h("tr", {}, ["Worker", "State", "Target", "Accelerators", "Frameworks", "CPU / RAM",
+      "Tasks", "Heartbeat", ""].map((c) => h("th", {}, c)))),
+    h("tbody", {}, rows.map((w) => {
+      const c = w.capabilities;
+      return h("tr", {},
+        h("td", {}, h("div", {}, w.name), h("div", { class: "mono muted" }, w.worker_id)),
+        h("td", {}, state(w.state)),
+        h("td", {}, c.origin === "existing" ? "remote" : c.origin === "provider" ? "cloud" : "local"),
+        h("td", {}, c.accelerators.length ? c.accelerators.map((d) => h("span", { class: "tag" },
+          `${d.accelerator} · ${d.name}${d.memory_gb ? ` · ${d.memory_gb} GB` : ""}`)) : h("span", { class: "muted" }, "CPU only")),
+        h("td", {}, Object.entries(c.frameworks).map(([k, v]) => h("span", { class: "tag" }, `${k} ${v}`))),
+        h("td", { class: "muted" }, `${c.cpu_cores} cores · ${c.memory_gb ?? "?"} GB`),
+        h("td", {}, w.running_task_ids.length),
+        h("td", { class: "muted" }, ago(w.last_heartbeat_at)),
+        h("td", {}, S.role === "admin" && w.state !== "offline" ? h("button", {
+          class: "btn danger", onclick: async (e) => {
+            e.stopPropagation();
+            if (!window.confirm(`Revoke ${w.name}? Its running tasks will be marked lost.`)) return;
+            await api(`/v1/workers/${w.worker_id}/revoke`, { method: "POST", body: {} }).catch((x) => alert(x.message));
+            refresh();
+          },
+        }, "Revoke") : null));
+    })))];
+}
+
+function drawer() {
+  const j = S.jobs.find((x) => x.job_id === S.selected);
+  if (!j) return null;
+  const canCancel = ACTIVE.has(j.state) &&
+    (S.role === "admin" || j.submitted_by === S.principal);
+  const w = j.spec.workload;
+  const what = w.kind === "command" ? w.command.join(" ") : w.kind === "function" ? w.entrypoint
+    : `${w.function || w.entrypoint} on ${w.num_workers} node(s) × ${w.procs_per_worker}`;
+  const term = h("div", { class: "term", id: "logterm" }, S.logs.length ? S.logs.map((l) => h("div", {
+    class: l.stream === "stderr" ? "err" : l.stream === "system" ? "sys" : "",
+  }, w.kind === "distributed" ? h("span", { class: "node" }, `[node${l.node_rank}] `) : null, l.line))
+    : h("span", { class: "sys" }, ACTIVE.has(j.state) ? "Waiting for output…" : "No output."));
+  return h("aside", { class: "drawer" },
+    h("div", { class: "row" },
+      h("h2", {}, j.name), state(j.state), h("span", { class: "spacer" }),
+      canCancel ? h("button", {
+        class: "btn danger", onclick: async () => {
+          await api(`/v1/jobs/${j.job_id}/cancel`, { method: "POST", body: {} }).catch((x) => alert(x.message));
+          refresh();
+        },
+      }, "Cancel job") : null,
+      h("button", { class: "btn", onclick: () => { S.selected = null; render(); } }, "Close")),
+    h("div", { class: "mono muted" }, j.job_id),
+    j.error ? h("div", { class: "term gap" }, h("span", { class: "err" }, j.error)) : null,
+    h("h3", {}, "Details"),
+    h("div", { class: "grid2" },
+      h("div", { class: "muted" }, "Runs"), h("div", { class: "mono" }, what),
+      h("div", { class: "muted" }, "Resources"), h("div", {},
+        `${j.spec.resources.accelerator}${j.spec.resources.gpu_count ? ` × ${j.spec.resources.gpu_count}` : ""}`,
+        Object.entries(j.spec.resources.frameworks).map(([k, v]) => h("span", { class: "tag ml" }, `${k}${v}`))),
+      h("div", { class: "muted" }, "Target"), h("div", {}, j.spec.placement.target),
+      h("div", { class: "muted" }, "Submitted"), h("div", {}, `${new Date(j.created_at).toLocaleString()} by ${(j.submitted_by || "local").replace("client:", "")}`),
+      h("div", { class: "muted" }, "Attempts"), h("div", {}, j.attempts)),
+    j.scheduling ? [h("h3", {}, "Placement"), h("div", {}, j.scheduling.summary),
+      j.scheduling.candidates.map((c) => h("div", { class: "cand" },
+        h("span", { class: c.eligible ? "ok" : "no" }, c.eligible ? "✓ " : "✕ "),
+        h("span", { class: "mono" }, c.worker_id), c.reasons.length ? h("span", { class: "muted" }, `  ${c.reasons.join("; ")}`) : null))] : null,
+    j.tasks.length ? [h("h3", {}, "Tasks"), h("table", { class: "table" },
+      h("thead", {}, h("tr", {}, ["Node", "Worker", "State", "Exit", "Attempt"].map((c) => h("th", {}, c)))),
+      h("tbody", {}, j.tasks.map((t) => h("tr", {},
+        h("td", {}, t.node_rank), h("td", { class: "mono" }, t.worker_id || "–"), h("td", {}, state(t.state)),
+        h("td", { class: "mono" }, t.exit_code ?? "–"), h("td", {}, t.attempt)))))] : null,
+    h("h3", {}, "Logs"), term,
+    h("h3", {}, "Events"),
+    h("ul", { class: "events" }, S.events.map((e) => h("li", {},
+      h("span", { class: "mono muted" }, new Date(e.timestamp).toLocaleTimeString()),
+      h("span", { class: "mono" }, e.type), h("span", {}, e.message)))),
+    h("h3", {}, "Spec"),
+    h("details", {}, h("summary", {}, "JobSpec JSON"), h("pre", { class: "spec mono" }, JSON.stringify(j.spec, null, 2))));
+}
+
+function topbar() {
+  const live = S.lastOk && Date.now() - S.lastOk < POLL_MS * 3;
+  return h("header", { class: "top" },
+    h("div", { class: "brand" }, logo(), "GpuLayer", h("small", {}, "Dashboard")),
+    h("span", { class: "spacer" }),
+    S.error ? h("span", { class: "pill bad" }, S.error) : null,
+    h("span", { class: "pill" }, h("span", { class: `dot ${live ? "live" : ""}` }), live ? "Live" : "Connecting"),
+    S.role ? h("span", { class: "pill" }, `${(S.principal || "").replace("client:", "")} · ${S.role}`) : null,
+    h("button", { class: "btn", onclick: () => signOut() }, "Sign out"));
+}
+
+function render(keepFocus = false) {
+  const app = document.getElementById("app");
+  if (!S.token) return renderLogin();
+  const focused = keepFocus && document.activeElement && document.activeElement.className;
+  const scroll = document.getElementById("logterm");
+  const atBottom = scroll ? scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - 8 : true;
+  app.replaceChildren(
+    topbar(),
+    h("main", {},
+      h("h1", {}, "Overview"),
+      h("p", { class: "sub" }, "Jobs and workers on this control plane. Refreshes every 3 seconds."),
+      kpis(),
+      h("nav", { class: "tabs" },
+        [["jobs", `Jobs (${S.jobs.length})`], ["workers", `Workers (${S.workers.length})`]].map(([k, label]) =>
+          h("button", { class: `tab ${S.tab === k ? "on" : ""}`, onclick: () => { S.tab = k; render(); } }, label))),
+      S.tab === "jobs" ? jobsView() : workersView()),
+    drawer());
+  if (focused === "search") {
+    const el = app.querySelector(".search");
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }
+  const term = document.getElementById("logterm");
+  if (term && atBottom) term.scrollTop = term.scrollHeight;
+}
+
+function renderLogin(message) {
+  const input = h("input", { type: "password", placeholder: "glc_… token", autocomplete: "off" });
+  const err = h("div", { class: "error" }, message || "");
+  const go = async () => {
+    S.token = input.value.trim();
+    try {
+      const who = await api("/v1/whoami");
+      S.role = who.role; S.principal = who.principal;
+      sessionStorage.setItem("gpulayer.token", S.token);
+      refresh();
+    } catch (e) {
+      S.token = null;
+      err.textContent = e.status === 401 ? "That token was not accepted." : e.message;
+    }
+  };
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+  document.getElementById("app").replaceChildren(h("div", { class: "login" },
+    h("div", { class: "brand" }, logo(), "GpuLayer"),
+    h("h1", {}, "Sign in to the dashboard"),
+    h("p", { class: "muted" }, "Use a client token (admin or submitter). `gpulayer up` prints one; `gpulayer token create` makes more."),
+    input, err, h("button", { class: "btn primary", onclick: go }, "Sign in")));
+  input.focus();
+}
+
+function signOut(message) {
+  sessionStorage.removeItem("gpulayer.token");
+  S.token = null; S.role = null; S.principal = null; S.selected = null;
+  renderLogin(message);
+}
+
+// ------------------------------------------------------------------ start
+
+(async function start() {
+  // `gpulayer dashboard` passes a one-time token in the URL fragment; keep it out of history.
+  const frag = new URLSearchParams(location.hash.slice(1));
+  if (frag.get("token")) {
+    sessionStorage.setItem("gpulayer.token", frag.get("token"));
+    history.replaceState(null, "", location.pathname);
+  }
+  S.token = sessionStorage.getItem("gpulayer.token");
+  if (!S.token) return renderLogin();
+  try {
+    const who = await api("/v1/whoami");
+    S.role = who.role; S.principal = who.principal;
+  } catch (e) {
+    return signOut(e.status === 401 ? "Your session has expired. Sign in again." : e.message);
+  }
+  await refresh();
+  setInterval(refresh, POLL_MS);
+})();

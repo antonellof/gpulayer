@@ -121,8 +121,11 @@ class HttpTransport:
             except Exception:
                 raise GpuLayerError(f"HTTP {resp.status} from control plane") from None
             raise ERRORS_BY_CODE.get(err["code"], GpuLayerError)(err["message"])
-        if resp.getheader("Content-Type") == "application/octet-stream":
+        ctype = resp.getheader("Content-Type") or ""
+        if ctype == "application/octet-stream":
             return content
+        if ctype.startswith("text/plain"):
+            return content.decode()
         return json.loads(content) if content else None
 
 
@@ -173,6 +176,14 @@ class HttpControlPlaneClient:
 
     def list_workers(self) -> list[WorkerStatus]:
         return [WorkerStatus.model_validate(w) for w in self.t.request("GET", "/v1/workers")]
+
+    def metrics_text(self) -> str:
+        text: str = self.t.request("GET", "/metrics")
+        return text
+
+    def whoami(self) -> dict[str, str]:
+        who: dict[str, str] = self.t.request("GET", "/v1/whoami")
+        return who
 
     def gc(
         self, older_than_seconds: float, *, delete_jobs: bool = False, dry_run: bool = False

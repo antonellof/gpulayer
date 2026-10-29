@@ -98,13 +98,16 @@ gpulayer resources detect             # what this machine can run
    `export GPULAYER_URL=... GPULAYER_TOKEN=... GPULAYER_FINGERPRINT=...` line for your laptop.
    After that, the same commands as above run on the server's workers.
 
-9. **See what ran.**
+9. **See what ran**, in the terminal or the web dashboard.
 
    ```bash
    gpulayer job list
    gpulayer job status <job-id>
-   gpulayer worker status
+   gpulayer dashboard          # web UI: jobs, live logs, placement reasons, workers, GPUs
    ```
+
+   Servers also expose Prometheus metrics at `/metrics`, with a ready-made Grafana dashboard
+   in [`deploy/monitoring`](deploy/monitoring) ([guide](docs/guides/monitoring.md)).
 
 The [full quickstart](docs/get-started/quickstart.md) shows the output of each step.
 

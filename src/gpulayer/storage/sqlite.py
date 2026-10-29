@@ -59,6 +59,9 @@ CREATE TABLE IF NOT EXISTS instances (
   id TEXT PRIMARY KEY, provider TEXT NOT NULL, job_id TEXT, offer TEXT NOT NULL,
   state TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, release TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS metric_counters (
+  name TEXT NOT NULL, labels TEXT NOT NULL, value REAL NOT NULL, PRIMARY KEY (name, labels)
+);
 CREATE TABLE IF NOT EXISTS costs (
   id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT NOT NULL, record TEXT NOT NULL
 );
@@ -137,6 +140,22 @@ class SqliteStore:
         return rows[0] if rows else None
 
     # ------------------------------------------------------------------ helpers
+
+    def inc(self, name: str, labels: dict[str, str] | None = None, value: float = 1.0) -> None:
+        """Add to a persisted, monotonic counter (survives restarts and garbage collection)."""
+        key = json.dumps(labels or {}, sort_keys=True)
+        with self.tx() as c:
+            c.execute(
+                "INSERT INTO metric_counters (name, labels, value) VALUES (?,?,?) "
+                "ON CONFLICT(name, labels) DO UPDATE SET value = value + excluded.value",
+                (name, key, value),
+            )
+
+    def counters(self) -> list[tuple[str, dict[str, str], float]]:
+        return [
+            (r["name"], json.loads(r["labels"]), float(r["value"]))
+            for r in self.query("SELECT * FROM metric_counters ORDER BY name, labels")
+        ]
 
     def add_event(
         self,
