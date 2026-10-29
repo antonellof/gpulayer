@@ -10,6 +10,12 @@ Flow for a job with ``placement.provisioning`` that no registered worker can tak
 5. the scheduler places the job only after the worker *reports* compatible capabilities
    (provisioning success is not proof of GPU readiness);
 6. on a terminal job state the instances are terminated (``release=terminate_on_completion``).
+
+Provider API calls never run inside a metadata transaction. Inside transactions the control
+plane only records intent (job waiting for capacity, instance requested, instance to release);
+``pump()`` then calls the provider with no lock held and records each outcome in a short
+transaction. ``pump()`` also retries retryable capacity errors until the provisioning
+deadline, retries failed terminations, and sweeps instances whose job has already finished.
 """
 
 from __future__ import annotations
@@ -17,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
+import threading
 import uuid
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
@@ -54,10 +61,16 @@ def _h(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+# An intent older than this with no provider id means the control plane stopped between
+# recording the intent and hearing back from the provider: the instance may exist.
+STALE_INTENT_SECONDS = 600
+
+
 class ProvisioningManager:
     def __init__(self, cp: ControlPlane, providers: dict[str, ProviderAdapter]) -> None:
         self.cp = cp
         self.providers = providers
+        self._pump_lock = threading.Lock()
 
     def has(self, name: str) -> bool:
         return name in self.providers
@@ -95,30 +108,52 @@ class ProvisioningManager:
 
     # ------------------------------------------------------------ provisioning
 
-    def request(self, job_id: str, spec: JobSpec, decision: SchedulingDecision) -> None:
+    def mark(self, job_id: str, spec: JobSpec, decision: SchedulingDecision) -> None:
+        """Database only (safe inside a transaction): the job now waits for capacity."""
         policy = spec.placement.provisioning
         assert policy is not None
-        adapter = self.providers[policy.provider]
-        offer, rejected = self.select_offer(spec, adapter)
-        if offer is None:
-            self.cp._set_job_state(
-                job_id,
-                JobState.FAILED,
-                error=f"no compatible offer from provider '{adapter.name}': "
-                + (" | ".join(rejected) or "provider returned no offers"),
-            )
-            return
         deadline = self.cp.now() + timedelta(seconds=policy.provisioning_timeout_seconds)
+        simulated = " (SIMULATED provider)" if self.providers[policy.provider].simulated else ""
         with self.cp.store.tx() as c:
             c.execute("UPDATE jobs SET provisioning_deadline=? WHERE id=?", (ts(deadline), job_id))
             self.cp._set_job_state(
                 job_id,
                 JobState.PROVISIONING,
-                message=f"{decision.summary}; provisioning {spec.num_nodes} x "
-                f"{offer.instance_type} from {adapter.name}"
-                + (" (SIMULATED provider)" if adapter.simulated else ""),
+                message=f"{decision.summary}; requesting {spec.num_nodes} instance(s) from "
+                f"{policy.provider}{simulated}",
             )
-        if offer.price is not None:
+
+    def _provision_missing(self, job_id: str, spec: JobSpec) -> None:
+        """Provider calls happen here, outside any transaction."""
+        policy = spec.placement.provisioning
+        assert policy is not None
+        adapter = self.providers[policy.provider]
+        now = self.cp.now()
+        rows = self.cp.store.query("SELECT state, offer FROM instances WHERE job_id=?", (job_id,))
+        live = [r for r in rows if r["state"] in _LIVE]
+        missing = spec.num_nodes - len(live)
+        if missing <= 0:
+            return
+        waits = [
+            parse_ts(json.loads(r["offer"]).get("retry_after"))
+            for r in rows
+            if r["state"] == InstanceState.FAILED.value
+        ]
+        if any(w and w > now for w in waits):
+            return  # backing off after a retryable capacity error
+        try:
+            offer, rejected = self.select_offer(spec, adapter)
+        except ProviderError as e:
+            self._capacity_error(job_id, e, adapter)
+            return
+        if offer is None:
+            self._fail_if_waiting(
+                job_id,
+                f"no compatible offer from provider '{adapter.name}': "
+                + (" | ".join(rejected) or "provider returned no offers"),
+            )
+            return
+        if not rows and offer.price is not None:
             self.cp.add_cost(
                 job_id,
                 CostRecord(
@@ -130,7 +165,7 @@ class ProvisioningManager:
                     note=f"{spec.num_nodes} x {offer.instance_type}; estimate, not a charge",
                 ),
             )
-        for _ in range(spec.num_nodes):
+        for _ in range(missing):
             if not self._provision_one(job_id, adapter, offer, policy.release):
                 return
 
@@ -147,7 +182,7 @@ class ProvisioningManager:
             "provider_instance_id": None,
             "error": None,
         }
-        with self.cp.store.tx() as c:
+        with self.cp.store.tx() as c:  # 1. record the intent
             c.execute(
                 "INSERT INTO instances (id, provider, job_id, offer, state, created_at, "
                 "updated_at, release) VALUES (?,?,?,?,?,?,?,?)",
@@ -168,13 +203,16 @@ class ProvisioningManager:
             join_token=token,
             labels={RESERVED_LABEL: job_id},
         )
-        try:
+        try:  # 2. call the provider, no lock held
             inst = adapter.provision(offer.offer_id, bootstrap)
-        except ProviderError as e:
-            self._update(ref, InstanceState.FAILED, error=str(e))
-            self.cp._set_job_state(
-                job_id, JobState.FAILED, error=f"provisioning failed ({type(e).__name__}): {e}"
-            )
+        except ProviderError as e:  # 3. record the outcome
+            retry_after = None
+            if e.retryable:
+                retry_after = ts(
+                    self.cp.now() + timedelta(seconds=self.cp.config.provisioning_retry_seconds)
+                )
+            self._update(ref, InstanceState.FAILED, error=str(e), retry_after=retry_after)
+            self._capacity_error(job_id, e, adapter)
             return False
         self._update(ref, inst.state, provider_instance_id=inst.provider_instance_id)
         self.cp.store.add_event(
@@ -183,6 +221,17 @@ class ProvisioningManager:
             job_id=job_id,
         )
         return True
+
+    def _capacity_error(self, job_id: str, e: ProviderError, adapter: ProviderAdapter) -> None:
+        if e.retryable:
+            self.cp.store.add_event(
+                "instance.retry",
+                f"{adapter.name}: {type(e).__name__}: {e}; retrying until the provisioning "
+                "deadline",
+                job_id=job_id,
+            )
+        else:
+            self._fail_if_waiting(job_id, f"provisioning failed ({type(e).__name__}): {e}")
 
     def _update(self, ref: str, state: InstanceState, **fields: Any) -> None:
         with self.cp.store.tx() as c:
@@ -226,7 +275,84 @@ class ProvisioningManager:
     # ------------------------------------------------------------- lifecycle
 
     def reconcile(self) -> None:
+        """Database only: fail jobs whose provisioning deadline passed."""
         now = self.cp.now()
+        for job in self.cp.store.query(
+            "SELECT id, provisioning_deadline FROM jobs WHERE state=?",
+            (JobState.PROVISIONING.value,),
+        ):
+            deadline = parse_ts(job["provisioning_deadline"])
+            if deadline and deadline < now:
+                self._fail_if_waiting(
+                    job["id"], "provisioning timed out before a compatible worker registered"
+                )
+
+    def _fail_if_waiting(self, job_id: str, error: str) -> None:
+        state = JobState(self.cp._job_row(job_id)["state"])
+        if state == JobState.PROVISIONING:
+            self.cp._set_job_state(job_id, JobState.FAILED, error=error)
+
+    def release_for_job(self, job_id: str) -> None:
+        """Database only (called inside the job's final transaction): mark for release."""
+        with self.cp.store.tx() as c:
+            c.execute(
+                "UPDATE instances SET state=?, updated_at=? WHERE job_id=? AND "
+                "release='terminate_on_completion' AND state IN (?,?,?)",
+                (InstanceState.TERMINATING.value, ts(self.cp.now()), job_id, *_LIVE),
+            )
+
+    # ------------------------------------------------------------------ pump
+
+    def pump(self) -> None:
+        """Make all pending provider calls. Must not run inside a transaction."""
+        if not self.providers or self.cp.store.in_transaction:
+            return
+        if not self._pump_lock.acquire(blocking=False):
+            return  # another thread is already pumping
+        try:
+            self._sweep_orphans()
+            self._expire_stale_intents()
+            for job in self.cp.store.query(
+                "SELECT id, spec FROM jobs WHERE state=? ORDER BY created_at",
+                (JobState.PROVISIONING.value,),
+            ):
+                spec = JobSpec.model_validate_json(job["spec"])
+                if spec.placement.provisioning and self.has(spec.placement.provisioning.provider):
+                    self._provision_missing(job["id"], spec)
+            self._poll_states()
+            self._terminate_pending()
+        finally:
+            self._pump_lock.release()
+
+    def _sweep_orphans(self) -> None:
+        """Live instances whose job already finished (e.g. after a crash): release them."""
+        terminal = tuple(s.value for s in JobState if s.terminal)
+        with self.cp.store.tx() as c:
+            n = c.execute(
+                "UPDATE instances SET state=? WHERE release='terminate_on_completion' AND "
+                f"state IN (?,?,?) AND job_id IN (SELECT id FROM jobs WHERE state IN "
+                f"({','.join('?' * len(terminal))}))",
+                (InstanceState.TERMINATING.value, *_LIVE, *terminal),
+            ).rowcount
+            if n:
+                self.cp.store.add_event("instance.orphans", f"{n} orphaned instance(s) to release")
+
+    def _expire_stale_intents(self) -> None:
+        cutoff = ts(self.cp.now() - timedelta(seconds=STALE_INTENT_SECONDS))
+        for row in self.cp.store.query(
+            "SELECT id, job_id, offer FROM instances WHERE state=? AND updated_at < ?",
+            (InstanceState.REQUESTED.value, cutoff),
+        ):
+            if json.loads(row["offer"]).get("provider_instance_id") is None:
+                self._update(row["id"], InstanceState.FAILED, error="provisioning outcome unknown")
+                self.cp.store.add_event(
+                    "instance.unknown",
+                    f"instance {row['id']}: no answer recorded from the provider; check the "
+                    "provider console for an orphaned machine",
+                    job_id=row["job_id"],
+                )
+
+    def _poll_states(self) -> None:
         for row in self.cp.store.query(
             "SELECT * FROM instances WHERE state IN (?,?)",
             (InstanceState.REQUESTED.value, InstanceState.PROVISIONING.value),
@@ -246,50 +372,43 @@ class ProvisioningManager:
                 self._update(row["id"], inst_state, error=err)
             if inst_state == InstanceState.FAILED and row["job_id"]:
                 self._fail_if_waiting(row["job_id"], f"instance {pid} failed: {err}")
-        for job in self.cp.store.query(
-            "SELECT id, provisioning_deadline FROM jobs WHERE state=?",
-            (JobState.PROVISIONING.value,),
+
+    def _terminate_pending(self) -> None:
+        for row in self.cp.store.query(
+            "SELECT * FROM instances WHERE state=?", (InstanceState.TERMINATING.value,)
         ):
-            deadline = parse_ts(job["provisioning_deadline"])
-            if deadline and deadline < now:
-                self._fail_if_waiting(
-                    job["id"], "provisioning timed out before a compatible worker registered"
-                )
-
-    def _fail_if_waiting(self, job_id: str, error: str) -> None:
-        state = JobState(self.cp._job_row(job_id)["state"])
-        if state == JobState.PROVISIONING:
-            self.cp._set_job_state(job_id, JobState.FAILED, error=error)
-
-    def release_for_job(self, job_id: str) -> None:
-        rows = self.cp.store.query(
-            "SELECT * FROM instances WHERE job_id=? AND release='terminate_on_completion' "
-            "AND state NOT IN (?,?)",
-            (job_id, InstanceState.TERMINATED.value, InstanceState.FAILED.value),
-        )
-        for row in rows:
             adapter = self.providers.get(row["provider"])
-            pid = json.loads(row["offer"]).get("provider_instance_id")
-            if adapter and pid:
+            record = json.loads(row["offer"])
+            pid = record.get("provider_instance_id")
+            if adapter is not None and pid:
                 try:
                     adapter.terminate(pid)
                 except ProviderError as e:
+                    attempts = int(record.get("terminate_attempts", 0)) + 1
+                    self._update(
+                        row["id"],
+                        InstanceState.TERMINATING,
+                        terminate_attempts=attempts,
+                        error=str(e),
+                    )
                     self.cp.store.add_event(
                         "instance.terminate_failed",
-                        f"could not terminate {pid}: {e} -- may be orphaned",
-                        job_id=job_id,
+                        f"could not terminate {pid} (attempt {attempts}): {e}; will retry",
+                        job_id=row["job_id"],
                     )
                     continue
             self._update(row["id"], InstanceState.TERMINATED)
-            for w in self.cp.store.query("SELECT id, capabilities FROM workers WHERE revoked=0"):
-                if (
-                    WorkerCapabilities.model_validate_json(w["capabilities"]).instance_id
-                    == row["id"]
-                ):
-                    with self.cp.store.tx() as c:
+            with self.cp.store.tx() as c:
+                for w in c.execute(
+                    "SELECT id, capabilities FROM workers WHERE revoked=0"
+                ).fetchall():
+                    caps = WorkerCapabilities.model_validate_json(w["capabilities"])
+                    if caps.instance_id == row["id"]:
                         c.execute(
                             "UPDATE workers SET revoked=1, state='offline' WHERE id=?", (w["id"],)
                         )
             self.cp.store.add_event(
-                "instance.terminated", f"released instance {pid}", job_id=job_id
+                "instance.terminated",
+                f"released instance {pid or row['id']}",
+                job_id=row["job_id"],
             )

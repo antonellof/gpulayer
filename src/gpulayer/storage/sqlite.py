@@ -84,6 +84,7 @@ class SqliteStore:
         )
         self._conn.row_factory = sqlite3.Row
         self._depth = 0
+        self._owner: int | None = None
         with self._lock:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA busy_timeout=30000")
@@ -107,17 +108,25 @@ class SqliteStore:
             outer = self._depth == 0
             if outer:
                 self._conn.execute("BEGIN IMMEDIATE")
+                self._owner = threading.get_ident()
             self._depth += 1
             try:
                 yield self._conn
             except BaseException:
                 self._depth -= 1
                 if outer:
+                    self._owner = None
                     self._conn.execute("ROLLBACK")
                 raise
             self._depth -= 1
             if outer:
+                self._owner = None
                 self._conn.execute("COMMIT")
+
+    @property
+    def in_transaction(self) -> bool:
+        """True when the calling thread is inside ``tx()``."""
+        return self._depth > 0 and self._owner == threading.get_ident()
 
     def query(self, sql: str, args: tuple[Any, ...] = ()) -> list[sqlite3.Row]:
         with self._lock:

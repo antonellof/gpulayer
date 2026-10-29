@@ -61,6 +61,7 @@ class ControlPlaneConfig:
     lease_ttl_seconds: float = 20.0
     timeout_grace_seconds: float = 30.0
     public_url: str | None = None  # given to provisioned workers for bootstrap
+    provisioning_retry_seconds: float = 30.0  # back-off after a retryable capacity error
 
 
 def _hash_token(token: str) -> str:
@@ -335,7 +336,7 @@ class ControlPlane:
                             v.running_tasks += 1
                     continue
                 if spec.placement.provisioning and JobState(row["state"]) == JobState.QUEUED:
-                    self.provisioning.request(job_id, spec, decision)
+                    self.provisioning.mark(job_id, spec, decision)
                 elif (
                     spec.placement.on_unschedulable == "fail"
                     and not spec.placement.provisioning
@@ -346,6 +347,8 @@ class ControlPlane:
                         JobState.FAILED,
                         error=f"unschedulable: {decision.summary}",
                     )
+        # Provider calls (provision, terminate) happen after the transaction is closed.
+        self.provisioning.pump()
 
     def _place(
         self, c: Any, job_id: str, spec: JobSpec, attempt: int, decision: SchedulingDecision
@@ -827,6 +830,7 @@ class ControlPlane:
         for job_id in {t["job_id"] for t in [*expired, *overdue]}:
             self._update_job(job_id)
         self.provisioning.reconcile()
+        self.provisioning.pump()
 
     def _mark_task(self, c: Any, task_id: str, state: TaskState, error: str) -> None:
         row = c.execute("SELECT job_id, worker_id FROM tasks WHERE id=?", (task_id,)).fetchone()
