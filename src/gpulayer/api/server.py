@@ -1,0 +1,382 @@
+"""HTTP(S) API for a self-hosted control plane (stdlib only).
+
+Every route except ``GET /v1/health`` requires a bearer token and the
+``X-GpuLayer-Protocol`` header. Binding to a non-loopback address without TLS is
+refused unless explicitly overridden, because tokens would cross the network in clear.
+"""
+
+from __future__ import annotations
+
+import ipaddress
+import json
+import logging
+import re
+import ssl
+import threading
+from collections.abc import Callable
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any
+from urllib.parse import parse_qs, urlparse
+
+from pydantic import BaseModel, ValidationError
+
+from gpulayer.api.auth import ServerCredentials
+from gpulayer.contracts import (
+    API_VERSION,
+    PROTOCOL_VERSION,
+    ArtifactKind,
+    JobSpec,
+    JobState,
+    TaskOutcome,
+    WorkerCapabilities,
+)
+from gpulayer.control_plane.service import ControlPlane
+from gpulayer.errors import (
+    GpuLayerError,
+    NotFound,
+    ProtocolMismatch,
+    Unauthorized,
+    ValidationFailed,
+)
+
+log = logging.getLogger("gpulayer.api")
+
+MAX_JSON_BYTES = 16 * 1024**2
+MAX_ARTIFACT_BYTES = 2 * 1024**3
+
+Handler = Callable[["_Req"], Any]
+
+
+class _Req:
+    def __init__(self, h: _RequestHandler, params: dict[str, str]) -> None:
+        self.h = h
+        self.params = params
+        self.query = {k: v[-1] for k, v in parse_qs(urlparse(h.path).query).items()}
+        self.worker_id: str | None = None
+        self.principal = "anonymous"
+        self._body: bytes | None = None
+
+    def body(self, limit: int = MAX_JSON_BYTES) -> bytes:
+        if self._body is None:
+            n = int(self.h.headers.get("Content-Length") or 0)
+            if n > limit:
+                raise ValidationFailed("request body too large")
+            self._body = self.h.rfile.read(n) if n else b""
+        return self._body
+
+    @property
+    def wid(self) -> str:
+        """Authenticated worker id; only set on worker-scoped routes."""
+        if self.worker_id is None:
+            raise Unauthorized("worker credentials required")
+        return self.worker_id
+
+    def json(self) -> Any:
+        raw = self.body()
+        try:
+            return json.loads(raw or b"{}")
+        except json.JSONDecodeError as e:
+            raise ValidationFailed(f"invalid JSON: {e}") from None
+
+
+class ControlPlaneServer:
+    def __init__(
+        self,
+        cp: ControlPlane,
+        credentials: ServerCredentials,
+        *,
+        host: str = "127.0.0.1",
+        port: int = 8470,
+        tls_cert: str | None = None,
+        tls_key: str | None = None,
+        allow_insecure_remote: bool = False,
+        reconcile_interval: float = 1.0,
+    ) -> None:
+        self.cp = cp
+        self.creds = credentials
+        if not tls_cert and not _is_loopback(host) and not allow_insecure_remote:
+            raise ValueError(
+                f"refusing to serve plaintext HTTP on non-loopback address {host!r}; "
+                "configure --tls-cert/--tls-key or pass --allow-insecure-remote"
+            )
+        self.httpd = ThreadingHTTPServer((host, port), _RequestHandler)
+        self.httpd.daemon_threads = True
+        self.httpd.app = self  # type: ignore[attr-defined]
+        self.tls = bool(tls_cert)
+        if tls_cert:
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+            ctx.load_cert_chain(tls_cert, tls_key)
+            self.httpd.socket = ctx.wrap_socket(self.httpd.socket, server_side=True)
+        self._stop = threading.Event()
+        self._reconcile_interval = reconcile_interval
+        self._threads: list[threading.Thread] = []
+        self.routes = self._build_routes()
+
+    @property
+    def url(self) -> str:
+        host, port = self.httpd.server_address[:2]
+        return f"{'https' if self.tls else 'http'}://{host!s}:{port}"
+
+    def start(self) -> None:
+        for target in (self.httpd.serve_forever, self._reconcile_loop):
+            t = threading.Thread(target=target, daemon=True)
+            t.start()
+            self._threads.append(t)
+
+    def serve_forever(self) -> None:
+        threading.Thread(target=self._reconcile_loop, daemon=True).start()
+        self.httpd.serve_forever()
+
+    def shutdown(self) -> None:
+        self._stop.set()
+        self.httpd.shutdown()
+        self.httpd.server_close()
+
+    def _reconcile_loop(self) -> None:
+        while not self._stop.wait(self._reconcile_interval):
+            try:
+                self.cp.reconcile()
+                self.cp.schedule_pending()
+            except Exception:  # keep the loop alive; errors are logged
+                log.exception("reconcile failed")
+
+    # --------------------------------------------------------------- routes
+
+    def _build_routes(self) -> list[tuple[str, re.Pattern[str], str, Handler]]:
+        cp = self.cp
+        r: list[tuple[str, str, str, Handler]] = [
+            (
+                "GET",
+                r"/v1/health",
+                "none",
+                lambda q: {
+                    "status": "ok",
+                    "api_version": API_VERSION,
+                    "protocol": PROTOCOL_VERSION,
+                },
+            ),
+            (
+                "POST",
+                r"/v1/jobs",
+                "client",
+                lambda q: cp.submit(JobSpec.model_validate(q.json()), submitted_by=q.principal),
+            ),
+            (
+                "GET",
+                r"/v1/jobs",
+                "client",
+                lambda q: cp.list_jobs(
+                    limit=min(int(q.query.get("limit", 50)), 500),
+                    state=JobState(q.query["state"]) if "state" in q.query else None,
+                ),
+            ),
+            ("GET", r"/v1/jobs/(?P<id>[\w-]+)", "client", lambda q: cp.get_job(q.params["id"])),
+            (
+                "POST",
+                r"/v1/jobs/(?P<id>[\w-]+)/cancel",
+                "client",
+                lambda q: cp.cancel_job(q.params["id"]),
+            ),
+            (
+                "GET",
+                r"/v1/jobs/(?P<id>[\w-]+)/result",
+                "client",
+                lambda q: cp.job_result(q.params["id"]),
+            ),
+            (
+                "GET",
+                r"/v1/jobs/(?P<id>[\w-]+)/logs",
+                "client",
+                lambda q: cp.job_logs(q.params["id"], after_seq=int(q.query.get("after", 0))),
+            ),
+            (
+                "GET",
+                r"/v1/jobs/(?P<id>[\w-]+)/events",
+                "client",
+                lambda q: cp.events(job_id=q.params["id"], after_seq=int(q.query.get("after", 0))),
+            ),
+            ("GET", r"/v1/workers", "client", lambda q: cp.list_workers()),
+            (
+                "POST",
+                r"/v1/workers/(?P<id>[\w-]+)/revoke",
+                "client",
+                lambda q: cp.revoke_worker(q.params["id"]),
+            ),
+            ("PUT", r"/v1/artifacts", "client_or_worker", self._put_artifact),
+            (
+                "GET",
+                r"/v1/artifacts/(?P<sha>[0-9a-f]{64})",
+                "client_or_worker",
+                lambda q: _Raw(cp.get_artifact(q.params["sha"])),
+            ),
+            ("POST", r"/v1/workers/register", "join", self._register),
+            (
+                "POST",
+                r"/v1/worker/heartbeat",
+                "worker",
+                lambda q: cp.heartbeat(q.wid, draining=bool(q.json().get("draining"))),
+            ),
+            ("POST", r"/v1/worker/acquire", "worker", lambda q: cp.acquire_task(q.wid)),
+            (
+                "POST",
+                r"/v1/worker/tasks/(?P<tid>[\w-]+)/start",
+                "worker",
+                lambda q: cp.start_task(q.wid, q.params["tid"]),
+            ),
+            (
+                "POST",
+                r"/v1/worker/tasks/(?P<tid>[\w-]+)/rendezvous",
+                "worker",
+                lambda q: cp.publish_rendezvous(
+                    q.wid, q.params["tid"], str(q.json()["addr"]), int(q.json()["port"])
+                ),
+            ),
+            ("POST", r"/v1/worker/tasks/(?P<tid>[\w-]+)/logs", "worker", self._logs),
+            (
+                "POST",
+                r"/v1/worker/tasks/(?P<tid>[\w-]+)/finish",
+                "worker",
+                lambda q: cp.finish_task(
+                    q.wid, q.params["tid"], TaskOutcome.model_validate(q.json())
+                ),
+            ),
+            ("POST", r"/v1/worker/deregister", "worker", lambda q: cp.deregister_worker(q.wid)),
+        ]
+        return [(m, re.compile(p + r"/?$"), a, f) for m, p, a, f in r]
+
+    def _put_artifact(self, q: _Req) -> Any:
+        name = q.h.headers.get("X-Artifact-Name", "")[:255]
+        kind = ArtifactKind(q.h.headers.get("X-Artifact-Kind", "input"))
+        return self.cp.put_artifact(q.body(MAX_ARTIFACT_BYTES), name, kind)
+
+    def _register(self, q: _Req) -> Any:
+        body = q.json()
+        caps = WorkerCapabilities.model_validate(body["capabilities"])
+        token = q.h._bearer()
+        if caps.origin.value == "provider":
+            # Provider workers authenticate with their single-use instance token only.
+            return self.cp.register_worker(
+                str(body.get("name", "worker"))[:64], caps, instance_token=token
+            )
+        if not self.creds.is_join(token):
+            raise Unauthorized("a valid join token is required to register a worker")
+        return self.cp.register_worker(str(body.get("name", "worker"))[:64], caps)
+
+    def _logs(self, q: _Req) -> Any:
+        lines = q.json().get("lines", [])
+        if not isinstance(lines, list) or len(lines) > 5000:
+            raise ValidationFailed("lines must be a list of at most 5000 [stream, line] pairs")
+        return self.cp.append_logs(
+            q.wid, q.params["tid"], [(str(s), str(text)) for s, text in lines]
+        )
+
+    def authorize(self, q: _Req, access: str) -> None:
+        if access == "none":
+            return
+        if q.h.headers.get("X-GpuLayer-Protocol") != PROTOCOL_VERSION:
+            raise ProtocolMismatch(f"this control plane speaks protocol {PROTOCOL_VERSION}")
+        token = q.h._bearer()
+        if access == "join":
+            return  # checked in _register (join token or instance token)
+        if access in ("client", "client_or_worker") and self.creds.is_client(token):
+            q.principal = "client"
+            return
+        if access in ("worker", "client_or_worker"):
+            q.worker_id = self.cp.authenticate_worker(token)
+            q.principal = f"worker:{q.worker_id}"
+            return
+        raise Unauthorized("invalid credentials for this endpoint")
+
+
+class _Raw:
+    def __init__(self, data: bytes) -> None:
+        self.data = data
+
+
+def _is_loopback(host: str) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _encode(value: Any) -> Any:
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json")
+    if isinstance(value, list):
+        return [_encode(v) for v in value]
+    return value
+
+
+class _RequestHandler(BaseHTTPRequestHandler):
+    server_version = "GpuLayer"
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
+        log.debug("%s %s", self.address_string(), format % args)  # never logs headers/tokens
+
+    def _bearer(self) -> str:
+        auth = self.headers.get("Authorization", "")
+        if not auth.startswith("Bearer ") or len(auth) < 8:
+            raise Unauthorized("missing bearer token")
+        return auth[7:].strip()
+
+    def _dispatch(self, method: str) -> None:
+        app: ControlPlaneServer = self.server.app  # type: ignore[attr-defined]
+        path = urlparse(self.path).path
+        status, payload, raw = 200, None, None
+        q: _Req | None = None
+        try:
+            for m, pattern, access, fn in app.routes:
+                match = pattern.match(path)
+                if match and m == method:
+                    q = _Req(self, match.groupdict())
+                    app.authorize(q, access)
+                    result = fn(q)
+                    if isinstance(result, _Raw):
+                        raw = result.data
+                    else:
+                        payload = _encode(result)
+                    break
+            else:
+                raise NotFound(f"no route for {method} {path}")
+        except ValidationError as e:
+            status, payload = 400, _err("invalid_request", str(e))
+        except GpuLayerError as e:
+            status, payload = e.http_status, _err(e.code, str(e))
+        except (ValueError, KeyError, TypeError) as e:
+            status, payload = 400, _err("invalid_request", f"{type(e).__name__}: {e}")
+        except Exception:
+            log.exception("unhandled error")
+            status, payload = 500, _err("error", "internal error")
+        # Drain an unread body so keep-alive connections stay in sync.
+        if q is None or q._body is None:
+            n = int(self.headers.get("Content-Length") or 0)
+            if 0 < n <= MAX_JSON_BYTES:
+                self.rfile.read(n)
+            elif n:
+                self.close_connection = True
+        body = raw if raw is not None else json.dumps(payload).encode()
+        self.send_response(status)
+        self.send_header(
+            "Content-Type", "application/octet-stream" if raw is not None else "application/json"
+        )
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self) -> None:  # noqa: N802
+        self._dispatch("GET")
+
+    def do_POST(self) -> None:  # noqa: N802
+        self._dispatch("POST")
+
+    def do_PUT(self) -> None:  # noqa: N802
+        self._dispatch("PUT")
+
+
+def _err(code: str, message: str) -> dict[str, Any]:
+    return {"error": {"code": code, "message": message}}
