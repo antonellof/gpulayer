@@ -90,6 +90,7 @@ const ACTIVE = new Set(["queued", "provisioning", "scheduled", "running"]);
 // ------------------------------------------------------------------ data
 
 async function refresh() {
+  if (!S.token) return; // signed out: keep the sign-in form as the user left it
   try {
     const [jobs, workers] = await Promise.all([api("/v1/jobs?limit=500"), api("/v1/workers")]);
     S.jobs = jobs;
@@ -343,8 +344,12 @@ function signOut(message) {
 
 // ------------------------------------------------------------------ start
 
-(async function start() {
-  // `gpulayer dashboard` passes a one-time token in the URL fragment; keep it out of history.
+let polling = null;
+
+// `gpulayer dashboard` passes a one-time token in the URL fragment. Read it on load and also
+// when only the fragment changes (pasting a new link into an open tab does not reload it),
+// then remove it from the address bar and history.
+async function start() {
   const frag = new URLSearchParams(location.hash.slice(1));
   if (frag.get("token")) {
     sessionStorage.setItem("gpulayer.token", frag.get("token"));
@@ -359,5 +364,10 @@ function signOut(message) {
     return signOut(e.status === 401 ? "Your session has expired. Sign in again." : e.message);
   }
   await refresh();
-  setInterval(refresh, POLL_MS);
-})();
+  if (polling === null) polling = setInterval(refresh, POLL_MS);
+}
+
+window.addEventListener("hashchange", () => {
+  if (new URLSearchParams(location.hash.slice(1)).get("token")) start();
+});
+start();

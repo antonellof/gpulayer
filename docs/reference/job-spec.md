@@ -89,7 +89,7 @@ gpulayer submit --profile mlx -- python bench.py
 | `fallback_targets` | `[]` | tried in order after `target` |
 | `worker_ids`, `worker_labels` | `[]`, `{}` | pin to specific workers |
 | `providers`, `regions` | `[]` | restrict provider-backed workers |
-| `strategy` | `first_fit` | or `most_free_memory` |
+| `strategy` | `spread` | `spread`: least-loaded worker first; `first_fit`: lowest worker id with a free slot (packs work); `most_free_memory` |
 | `on_unschedulable` | `queue` | `fail` rejects jobs no registered worker could ever run |
 | `max_hourly_cost`, `currency` | none, `USD` | offers without a price are rejected when set |
 | `provisioning` | none | `{provider, release, provisioning_timeout_seconds}` |

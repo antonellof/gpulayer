@@ -224,3 +224,28 @@ def test_failure_explanations_give_actionable_hints():
     )
     assert "torch on this worker cannot use CUDA" in cuda_msg
     assert "pip install" not in cuda_msg  # no bogus "pip install torch.cuda"
+
+
+def test_spread_prefers_the_least_loaded_worker():
+    ws = [
+        view("w-a", running=2, max_concurrent_tasks=3),
+        view("w-b", running=1, max_concurrent_tasks=3),
+        view("w-c", running=1, max_concurrent_tasks=2),
+    ]
+    assert schedule(spec(), ws).worker_ids == ["w-b"]  # 1/3 loaded beats 1/2 and 2/3
+    packed = schedule(spec(placement=PlacementPolicy(strategy="first_fit")), ws)
+    assert packed.worker_ids == ["w-a"]
+
+
+def test_spread_keeps_room_for_a_distributed_group(cp):
+    caps = make_caps(max_concurrent_tasks=2, **TORCH_CAPS)
+    a = cp.register_worker("a", caps).worker_id
+    b = cp.register_worker("b", caps).worker_id
+    for _ in range(2):
+        cp.submit(JobSpec(workload=CommandJob(command=["x"])))
+    busy = {t.worker_id for j in cp.list_jobs() for t in j.tasks}
+    assert busy == {a, b}  # one each, not both on the same worker
+    ddp = cp.submit(
+        JobSpec(workload=DistributedJob(entrypoint="t.py", num_workers=2, procs_per_worker=1))
+    )
+    assert cp.get_job(ddp.job_id).state.value == "scheduled"

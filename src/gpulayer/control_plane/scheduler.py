@@ -212,6 +212,10 @@ def _rank_key(spec: JobSpec, w: WorkerView) -> tuple:
     # Deterministic: strategy key first, worker_id as the final tiebreak.
     if spec.placement.strategy == "most_free_memory":
         return (-(w.capabilities.memory_gb or 0.0), w.worker_id)
+    if spec.placement.strategy == "spread":
+        # Fraction of slots in use, so a 1-slot worker running one task counts as full.
+        load = w.running_tasks / max(1, w.capabilities.max_concurrent_tasks)
+        return (load, w.running_tasks, w.worker_id)
     return (w.worker_id,)
 
 

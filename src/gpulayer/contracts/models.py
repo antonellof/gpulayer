@@ -256,7 +256,9 @@ class PlacementPolicy(_Model):
     worker_labels: dict[str, str] = Field(default_factory=dict)
     providers: list[str] = Field(default_factory=list)
     regions: list[str] = Field(default_factory=list)
-    strategy: Literal["first_fit", "most_free_memory"] = "first_fit"
+    # spread: least-loaded worker first (keeps machines evenly busy and leaves room for
+    # distributed groups); first_fit: lowest worker id with a free slot (packs work).
+    strategy: Literal["spread", "first_fit", "most_free_memory"] = "spread"
     on_unschedulable: Literal["queue", "fail"] = "queue"
     max_hourly_cost: float | None = Field(
         None, gt=0, description="Reject offers whose estimated hourly cost exceeds this."
