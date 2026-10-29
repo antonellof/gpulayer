@@ -10,6 +10,7 @@ const NAV = [
   { href: "/docs/workloads/commands/", label: "Workloads" },
   { href: "/docs/pytorch/trainer/", label: "PyTorch" },
   { href: "/docs/reference/python-api/", label: "API" },
+  { href: "/compare/", label: "Compare" },
 ];
 
 export function SiteHeader() {

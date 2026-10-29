@@ -362,6 +362,13 @@ export default function Home() {
             >
               Why GpuLayer <ArrowRight className="h-3.5 w-3.5" />
             </Link>
+            <Link
+              href="/compare/"
+              className="ml-6 mt-4 inline-flex items-center gap-1 text-sm text-primary hover:underline"
+            >
+              Compared with PyTorch Lightning, Ray, SkyPilot, dstack, Modal and others{" "}
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
           </div>
         </section>
 
