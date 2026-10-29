@@ -1,36 +1,36 @@
 # GpuLayer
 
-Run PyTorch on any GPU you can reach: this machine, a GPU server down the hall, a cloud VM, or
-several of them at once. Write one training file; GpuLayer decides where it can run, starts it
-there, and brings back logs, metrics, checkpoints and the trained model.
+Run any GPU workload on any GPU you can reach: this machine, a GPU server down the hall, a cloud
+VM, or several of them at once. A workload can be a command in any language, a Python function
+using any library, or a distributed job. GpuLayer finds a machine that can run it, starts it
+there, and brings back logs, outputs and results. PyTorch gets a deeper integration on top.
 
-```python
-import gpulayer.pytorch as glt
-
-class Regressor(glt.Module):
-    def __init__(self):
-        super().__init__()
-        self.net = nn.Sequential(nn.Linear(8, 64), nn.ReLU(), nn.Linear(64, 1))
-
-    def training_step(self, batch, batch_idx):
-        x, y = batch
-        loss = nn.functional.mse_loss(self.net(x), y)
-        self.log("train_loss", loss)
-        return loss
-
-    def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=1e-2)
-
-trainer = glt.Trainer(max_epochs=5)                                  # this process, best device
-trainer = glt.Trainer(max_epochs=5, devices=2, accelerator="cpu")    # DDP, 2 processes
-trainer = glt.Trainer(max_epochs=5, accelerator="cuda", devices=4,
-                      num_nodes=2, target="remote")                  # 8 GPUs on two machines
-trainer.fit(model, train_loader, val_loader)
+```bash
+gpulayer submit --accelerator cuda --source ./app -- ./render.sh          # any command
 ```
 
-> **Status: pre-alpha.** Tested on CPU and Apple Silicon (MPS), with multiple workers on one
-> host. NVIDIA GPUs and multi-machine runs are implemented but not validated yet; automatic
-> cloud provisioning is simulated. See [Status and roadmap](docs/project/status.md).
+```python
+import gpulayer as gl
+
+@gl.remote(accelerator="mps", frameworks={"mlx": ">=0.10"})               # any library
+def matmul_benchmark(n: int) -> dict:
+    import mlx.core as mx
+    ...
+
+matmul_benchmark.map([1024, 2048, 4096])                                  # in parallel
+```
+
+```python
+import gpulayer.pytorch as glt                                            # PyTorch integration
+
+trainer = glt.Trainer(max_epochs=5, accelerator="cuda", devices=4, num_nodes=2, target="remote")
+trainer.fit(model, train_loader, val_loader)                              # 8 GPUs, two machines
+```
+
+> **Status: pre-alpha.** Tested on CPU and Apple Silicon (Metal: PyTorch MPS and MLX), with
+> multiple workers on one host. NVIDIA GPUs and multi-machine runs are implemented but not
+> validated yet; automatic cloud provisioning is simulated. See
+> [Status and roadmap](docs/project/status.md).
 
 ## Install
 
@@ -43,39 +43,52 @@ gpulayer resources detect          # what this machine can run
 
 ## Quickstart
 
-1. **Train in this process.** Picks CUDA, MPS or CPU automatically.
+1. **Run a command as a job.** Any executable; inputs staged, outputs returned.
+
+   ```bash
+   gpulayer submit --source examples/shell_job --input examples/shell_job/sales.csv:sales.csv -- bash report.sh
+   ```
+
+2. **Run Python functions in parallel**, with any library (NumPy here, MLX on the Apple GPU in
+   `examples/mlx_metal`).
+
+   ```bash
+   python examples/numpy_batch/estimate.py
+   ```
+
+3. **Train a PyTorch model in this process.** Picks CUDA, MPS or CPU automatically.
 
    ```bash
    python examples/trainer_regression/train.py
    ```
 
-2. **Same file, two processes with DDP.** GpuLayer starts a local worker, launches torchrun,
+4. **Same file, two processes with DDP.** GpuLayer starts a local worker, launches torchrun,
    shards the data, and loads the trained weights back into your `model`.
 
    ```bash
    python examples/trainer_regression/train.py --accelerator cpu --devices 2
    ```
 
-3. **Two nodes.** Two workers, ranks and rendezvous handled for you.
+5. **Two nodes.** Two workers, ranks and rendezvous handled for you.
 
    ```bash
    python examples/trainer_regression/train.py --accelerator cpu --nodes 2 --devices 2
    ```
 
-4. **Ask for hardware you don't have.** The job is rejected before it starts, with a reason
+6. **Ask for hardware you don't have.** The job is rejected before it starts, with a reason
    per worker (`needs 1 usable cuda device(s), worker has 0`).
 
    ```bash
    python examples/trainer_regression/train.py --accelerator cuda --target local
    ```
 
-5. **A parallel sweep** with `@gl.remote`:
+7. **A PyTorch sweep** with `@gl.remote`:
 
    ```bash
    python examples/remote_sweep/sweep.py
    ```
 
-6. **Add more machines.** On a machine that will be the server (it also runs jobs):
+8. **Add more machines.** On a machine that will be the server (it also runs jobs):
 
    ```bash
    gpulayer up
@@ -85,7 +98,7 @@ gpulayer resources detect          # what this machine can run
    `export GPULAYER_URL=... GPULAYER_TOKEN=... GPULAYER_FINGERPRINT=...` line for your laptop.
    After that, the same commands as above run on the server's workers.
 
-7. **See what ran.**
+9. **See what ran.**
 
    ```bash
    gpulayer job list
@@ -95,26 +108,32 @@ gpulayer resources detect          # what this machine can run
 
 The [full quickstart](docs/get-started/quickstart.md) shows the output of each step.
 
-## With and without GpuLayer
+## Where GpuLayer sits
+
+Frameworks (PyTorch, JAX, MLX, CuPy, ...) decide how a computation uses the hardware they are
+given. GpuLayer decides which hardware runs it, gets code and data there, starts it, and returns
+the results: for training, inference batches, rendering, simulation or data processing.
 
 | Situation | Without | With GpuLayer |
 |---|---|---|
-| Code on a laptop, GPU elsewhere | ssh, copy code, rebuild env, tmux, copy checkpoints back | `python train.py --target remote` |
-| Several GPU machines | track free boxes by hand; jobs crash on the wrong GPU or CUDA build | one queue; each job lands where it fits or is rejected with the reason |
-| Multi-node training | torchrun on every node with matching ranks, address and port | `Trainer(num_nodes=2, devices=4)` |
-| Hyperparameter sweep | sequential loop or custom scripts | `train.map([...])` in parallel |
-| Mac, CPU and CUDA from one file | device, DDP and sampler boilerplate | `accelerator="auto"` |
+| Code on a laptop, GPU somewhere else | ssh, copy code, rebuild env, tmux, copy results back | `gpulayer submit --target remote -- <cmd>` or `python train.py --target remote` |
+| Several GPU machines | track free boxes by hand; jobs crash on the wrong GPU, driver or library | one queue; each job lands where its accelerator and frameworks exist, or is rejected with the reason |
+| NVIDIA boxes and Apple Silicon Macs | separate scripts and setup per machine | ask for `cuda` or `mps`; one interface |
+| A batch of independent tasks | loops and ad-hoc scripts | `fn.map([...])` in parallel |
+| Multi-node training | `torchrun` on every node with matching ranks, address and port | `Trainer(num_nodes=2, devices=4)` |
 
-On a single machine with a single GPU, plain PyTorch is simpler. GpuLayer is also not a
-sandbox for untrusted code. Details: [Why GpuLayer](docs/get-started/why-gpulayer.md).
+On a single machine with a single GPU, running your code directly is simpler. GpuLayer runs jobs
+that finish (long-running services are planned) and is not a sandbox for untrusted code.
+Details: [Why GpuLayer](docs/get-started/why-gpulayer.md).
 
-## Three ways to use it
+## Ways to use it
 
 | API | For |
 |---|---|
-| [`Trainer` + `Module`](docs/pytorch/trainer.md) | new training code: one file, any device, any target |
+| [`gpulayer submit -- <cmd>`](docs/workloads/commands.md) | any command, script or binary |
+| [`@gl.remote`](docs/workloads/functions.md) | Python functions with any library: `.run()`, `.map()`, distributed |
+| [`Trainer` + `Module`](docs/pytorch/trainer.md) | PyTorch training: one file, any device, any target |
 | [`launch()`](docs/pytorch/launch.md) | an existing PyTorch script: two lines at the top |
-| [`@gl.remote`](docs/pytorch/remote-functions.md) | functions and sweeps: `.run()`, `.map()` |
 
 ## Examples
 
@@ -125,7 +144,10 @@ sandbox for untrusted code. Details: [Why GpuLayer](docs/get-started/why-gpulaye
 | [`trainer_char_lm`](examples/trainer_char_lm) | a small transformer: LR schedule, clipping, mixed precision, resume, sampling |
 | [`runtime_custom_loop`](examples/runtime_custom_loop) | your own loop with `Runtime` handling devices and DDP |
 | [`launch_ddp_script`](examples/launch_ddp_script) | a plain DDP script made portable with `launch()` |
-| [`remote_sweep`](examples/remote_sweep) | `@gl.remote` and `.map()` |
+| [`remote_sweep`](examples/remote_sweep) | a PyTorch sweep with `@gl.remote` and `.map()` |
+| [`mlx_metal`](examples/mlx_metal) | MLX on the Apple GPU (no PyTorch) |
+| [`numpy_batch`](examples/numpy_batch) | NumPy chunks in parallel with `.map()` |
+| [`shell_job`](examples/shell_job) | a shell script with input and output files |
 
 ## Documentation
 
@@ -133,8 +155,9 @@ The docs live in [`docs/`](docs/) and are published by the site in [`site/`](sit
 (`cd site && npm install && npm run dev`).
 
 - Get started: [Introduction](docs/index.md) · [Installation](docs/get-started/installation.md) · [Quickstart](docs/get-started/quickstart.md) · [Core concepts](docs/get-started/concepts.md)
-- PyTorch: [Trainer](docs/pytorch/trainer.md) · [Distributed](docs/pytorch/distributed.md) · [launch()](docs/pytorch/launch.md) · [Runtime](docs/pytorch/runtime.md) · [Remote functions](docs/pytorch/remote-functions.md)
-- Guides: [Run a server](docs/guides/self-hosting.md) · [Apple Silicon](docs/guides/apple-silicon.md) · [NVIDIA CUDA](docs/guides/nvidia-cuda.md) · [Cloud](docs/guides/cloud-providers.md) · [CLI jobs](docs/guides/jobs-and-cli.md)
+- Workloads: [Commands](docs/workloads/commands.md) · [Python functions](docs/workloads/functions.md) · [Any GPU framework](docs/workloads/frameworks.md) · [Distributed jobs](docs/workloads/distributed.md)
+- PyTorch integration: [Trainer](docs/pytorch/trainer.md) · [Distributed training](docs/pytorch/distributed.md) · [launch()](docs/pytorch/launch.md) · [Runtime](docs/pytorch/runtime.md)
+- Guides: [Run a server](docs/guides/self-hosting.md) · [Apple Silicon](docs/guides/apple-silicon.md) · [NVIDIA CUDA](docs/guides/nvidia-cuda.md) · [Cloud](docs/guides/cloud-providers.md)
 - Architecture: [Overview](docs/architecture/overview.md) · [Scheduling](docs/architecture/scheduling.md) · [Security](docs/architecture/security.md) · [Decisions (ADRs)](docs/decisions/README.md)
 - Reference: [Python API](docs/reference/python-api.md) · [CLI](docs/reference/cli.md) · [JobSpec](docs/reference/job-spec.md)
 

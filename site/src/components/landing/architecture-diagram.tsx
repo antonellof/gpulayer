@@ -27,8 +27,8 @@ export function ArchitectureDiagram() {
 
       {/* clients */}
       <rect x="250" y="10" width="260" height="56" rx="8" className={box} />
-      <text x="380" y="34" textAnchor="middle" className={label}>Python SDK · CLI · Trainer</text>
-      <text x="380" y="53" textAnchor="middle" className={sub}>gl.remote · gpulayer.pytorch · gpulayer submit</text>
+      <text x="380" y="34" textAnchor="middle" className={label}>CLI · Python SDK · PyTorch</text>
+      <text x="380" y="53" textAnchor="middle" className={sub}>gpulayer submit · gl.remote · gpulayer.pytorch</text>
       <line x1="380" y1="66" x2="380" y2="96" className={arrow} strokeWidth="1.5" markerEnd="url(#arr)" />
 
       {/* control plane */}
@@ -78,7 +78,7 @@ export function ArchitectureDiagram() {
       <rect x="45" y="384" width="670" height="72" rx="8" className={accent} />
       <text x="380" y="410" textAnchor="middle" className={label}>Process group per task</text>
       <text x="380" y="432" textAnchor="middle" className={sub}>
-        command · Python function · torchrun (gloo / nccl) on CPU, CUDA or MPS
+        any command · Python function · torchrun group, on CPU, CUDA or Apple Metal
       </text>
       <text x="380" y="448" textAnchor="middle" className={sub}>
         outputs and checkpoints flow back as artifacts

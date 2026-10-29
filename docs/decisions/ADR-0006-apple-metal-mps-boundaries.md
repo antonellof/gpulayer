@@ -58,3 +58,10 @@ CPU.
 
 - Optional operator and dtype probes for MPS capability detail.
 - A separate design and validation effort before any distributed MPS claim.
+
+## Amendment (2026-10-29, ADR-0015)
+
+The `mps` accelerator now means the Apple GPU reached through Metal, by any framework: PyTorch
+MPS, MLX and others. It is reported on every Apple Silicon worker; PyTorch jobs additionally
+require the `torch.mps` capability. MLX matrix products have been run on the Apple GPU through
+GpuLayer (`examples/mlx_metal`). The single-process rule is unchanged.

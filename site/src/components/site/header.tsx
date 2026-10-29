@@ -7,6 +7,7 @@ import { REPO } from "@/lib/docs";
 const NAV = [
   { href: "/docs/", label: "Docs" },
   { href: "/docs/get-started/quickstart/", label: "Quickstart" },
+  { href: "/docs/workloads/commands/", label: "Workloads" },
   { href: "/docs/pytorch/trainer/", label: "PyTorch" },
   { href: "/docs/reference/python-api/", label: "API" },
 ];

@@ -8,20 +8,22 @@ backend counts as supported only if it is listed there.
 | Accelerator | Independent jobs | Distributed jobs | Notes |
 |---|---|---|---|
 | `cpu` | tested | tested (gloo, one host) | no GPU libraries required |
-| `cuda` | implemented | implemented (nccl/gloo) | mocked detection + scheduling tests; not yet run on NVIDIA hardware |
-| `mps` | hardware-validated | unsupported | Apple Silicon smoke test passes; see below |
+| `cuda` | implemented | implemented (nccl/gloo) | any CUDA workload; mocked detection + scheduling tests; not yet run on NVIDIA hardware |
+| `mps` | hardware-validated | unsupported | the Apple GPU through Metal (PyTorch MPS, MLX, ...); run on Apple Silicon |
 | `rocm` | detection-only | unsupported | reported with `execution_supported=false`, never scheduled |
 
 ## Detection (`gpu/discovery.py`)
 
 - NVIDIA devices come from `nvidia-smi --query-gpu=...` (name, memory, compute capability,
-  driver). If the driver sees a GPU but the worker's Python has no CUDA-enabled torch, the
-  devices are reported with `execution_supported=false` and a note, because a visible GPU can
-  still lack a usable runtime.
-- The torch probe runs `python -c ...` in a subprocess of the workload interpreter
-  (`--python`), so a missing or broken torch cannot crash the worker. It reports the torch
-  version, CUDA devices, `torch.backends.mps.is_built()/is_available()` and gloo/nccl
-  availability.
+  driver). A working driver makes them usable for any CUDA workload.
+- On Apple Silicon the Metal GPU is reported as `mps` with unified memory, whether or not a
+  framework is installed.
+- A probe runs in a subprocess of the workload interpreter (`--python`), so a missing or broken
+  framework cannot crash the worker. It reads installed GPU framework versions from package
+  metadata (`torch`, `jax`, `tensorflow`, `mlx`, `cupy`, `onnxruntime`, `tensorrt`, `triton`,
+  `vllm`, `transformers`, `numpy`) without importing them, and asks torch, if present, whether
+  it can use CUDA or MPS (reported as `torch.cuda` / `torch.mps`) and which distributed
+  backends it has.
 - ROCm detection only checks for `rocm-smi`.
 - Unknown values stay `None` and are listed in `capabilities.notes`; a requirement against an
   unknown value is not satisfied.

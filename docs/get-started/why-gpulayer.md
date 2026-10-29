@@ -1,58 +1,61 @@
 # Why GpuLayer
 
-PyTorch decides how a model trains. GpuLayer decides where it trains, and handles everything
-between the machine you type on and the machine that runs the job.
+Most GPU code assumes the GPU is on the machine where you run it. GpuLayer removes that
+assumption. You describe what a workload needs (an accelerator, memory, frameworks), and
+GpuLayer runs it on a machine that has it, wherever that machine is.
+
+## Where it sits
+
+GPU frameworks, from PyTorch and its training libraries to JAX, MLX and CuPy, decide how a
+computation uses the hardware they are given. They work inside the machine, or the cluster,
+they were started on. Choosing that machine, shipping code and data to it, starting the work,
+watching it and collecting the results is left to you.
+
+GpuLayer is that missing layer. It does not replace your framework, and it is not limited to
+training: rendering, inference batches, simulations, data processing and benchmarks are all
+workloads. PyTorch gets an extra integration (a Trainer, `launch()`, runtime helpers) because
+distributed training needs more coordination than most workloads.
 
 ## When it helps
 
-On one machine with one GPU, plain `python train.py` is already as simple as it gets, and
-GpuLayer adds little. It pays off as soon as the GPU you want is not the one in front of you,
-or there is more than one.
-
 | Situation | Without GpuLayer | With GpuLayer |
 |---|---|---|
-| Code on a laptop, GPU in another machine (office server, cloud VM) | ssh in, copy the code, rebuild the environment, run in tmux, copy checkpoints back | `python train.py --target remote`: code shipped, logs streamed, checkpoint downloaded, trained weights back in your local `model` |
-| Several GPU machines (team, lab, rented VMs) | keep track by hand of which box is free; jobs crash on the wrong GPU, CUDA build or memory size | one queue; each job goes to a machine that fits, or is rejected before it starts with the reason |
-| Multi-node training | on every node: same code and environment, `torchrun` with matching node rank, master address and port; start all together; clean up when one dies | `Trainer(num_nodes=2, devices=4)` |
-| Hyperparameter sweep | a sequential loop, or your own scripts to spread runs | `train.map([...])` runs in parallel on free workers |
-| Same code on a Mac (MPS), CPU and CUDA | device selection, DDP and sampler boilerplate, different launch commands | `accelerator="auto"`; DDP, data sharding and precision handled |
+| Code on a laptop, GPU somewhere else | ssh, copy code, rebuild the environment, run in tmux, copy results back | `gpulayer submit --target remote -- <cmd>`, or `python train.py --target remote` |
+| Several GPU machines (team, lab, rented VMs) | track free machines by hand; jobs crash on the wrong GPU, driver or library version | one queue; each job lands where its accelerator and frameworks are available, or is rejected with the reason |
+| Mixed hardware (NVIDIA boxes and Apple Silicon Macs) | separate scripts and setup per machine | one interface; CUDA jobs go to NVIDIA workers, Metal jobs to Macs |
+| A batch of independent tasks (sweeps, rendering, data processing) | loops and ad-hoc scripts | `fn.map([...])` in parallel across free workers |
+| Multi-node training | `torchrun` on every node with matching ranks, addresses and ports | `Trainer(num_nodes=2, devices=4)` or `launch(nodes=2, ...)` |
 
 ## A concrete example
 
-You have a MacBook and a Linux box with two NVIDIA GPUs.
-
-Without GpuLayer: push the code, ssh to the box, `git pull`, check that the environment
-matches, run `torchrun --nproc-per-node 2 train.py` inside `tmux`, check back later,
-`scp` the checkpoint to the laptop, load it.
-
-With GpuLayer, once:
+You have a MacBook and a Linux box with two NVIDIA GPUs. Once, on the Linux box:
 
 ```bash
-# on the GPU box
 gpulayer up
 ```
 
-Then, from the laptop, every time:
+Then, from the laptop, any of these runs on the box and streams its output back:
 
 ```bash
-python train.py --accelerator cuda --devices 2
+gpulayer submit --accelerator cuda --source ./video -- ./transcode.sh
+python sweep.py                                  # @gl.remote(...).map([...]) over both GPUs
+python train.py --accelerator cuda --devices 2   # PyTorch DDP on both GPUs
 ```
 
-The laptop prints the training logs as they happen. When the job ends, the checkpoint is in
-`gpulayer_runs/<job-id>/` and the `model` object in your script holds the trained weights.
+Outputs land in your current directory (`gpulayer_runs/<job-id>/`, or `gpulayer job result
+--download`). The Mac itself can run MLX or PyTorch MPS jobs from the same queue.
 
 ## When not to use it
 
-- **One machine, one GPU, interactive work.** Plain PyTorch is simpler. GpuLayer adds a
-  control plane, workers and tokens you do not need.
-- **You need a hardened multi-tenant service.** Workloads run as normal processes on workers,
-  not in a sandbox. Use GpuLayer among people who trust each other.
-- **You need what it has not validated yet.** GpuLayer is pre-alpha. Multi-machine training
-  and NVIDIA GPUs are implemented but not validated on real hardware, and automatic cloud
-  provisioning is simulated. Cloud machines you start yourself can join with `gpulayer join`.
-- **You need a large training framework.** The Trainer is small: no callbacks, early stopping
-  or FSDP yet. You can still keep another framework and use [`launch()`](../pytorch/launch.md)
-  to run its scripts on GpuLayer workers.
+- **One machine, one GPU, interactive work.** Running your code directly is simpler. GpuLayer
+  adds a control plane, workers and tokens you do not need.
+- **Long-running services.** An inference server that must stay up and accept traffic is not
+  supported yet; GpuLayer runs jobs that finish.
+- **Untrusted users.** Workloads run as normal processes on workers, not in a sandbox. Use
+  GpuLayer among people who trust each other.
+- **Validated scale today.** GpuLayer is pre-alpha. NVIDIA GPUs and multi-machine runs are
+  implemented but not validated yet, distributed jobs use torchrun only, and automatic cloud
+  provisioning is simulated. Cloud VMs you start yourself can join with `gpulayer join`.
 
-Two constraints to know about: `@gl.remote` arguments and results must be JSON, and code
-ships as files (the directory of your script), not as pickled Python objects.
+Two constraints: function arguments and results must be JSON, and code ships as files (the
+directory of your script), not as pickled Python objects.

@@ -10,7 +10,7 @@ import gpulayer as gl
 |---|---|
 | `gl.connect(url, token, *, fingerprint=None, ca_file=None) -> Client` | use a GpuLayer server for this process; checks the connection immediately |
 | `gl.default_client() -> Client` | the client set by `connect()`, else one from `$GPULAYER_URL`, else the embedded control plane |
-| `gl.remote(fn=None, **options)` | decorator returning a `RemoteFunction`; see [Remote functions](../pytorch/remote-functions.md) |
+| `gl.remote(fn=None, **options)` | decorator returning a `RemoteFunction`; see [Python functions](../workloads/functions.md) |
 | `gl.Client(...)` | explicit client, described below |
 | `gl.command(argv, **kw)`, `gl.function(entrypoint, *args, **kw)`, `gl.distributed(entrypoint, *, source, num_workers, procs_per_worker, **kw)` | build a `JobSpec` |
 | `gl.JobSpec`, `gl.ResourceRequest`, `gl.PlacementPolicy`, `gl.Accelerator`, `gl.ExecutionTarget`, `gl.JobState` | contracts; see [JobSpec](job-spec.md) |

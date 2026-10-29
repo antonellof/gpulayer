@@ -26,7 +26,28 @@
       ]
     },
     {
-      "title": "PyTorch",
+      "title": "Workloads",
+      "pages": [
+        {
+          "slug": "workloads/commands",
+          "title": "Commands and scripts"
+        },
+        {
+          "slug": "workloads/functions",
+          "title": "Python functions and sweeps"
+        },
+        {
+          "slug": "workloads/frameworks",
+          "title": "Any GPU framework"
+        },
+        {
+          "slug": "workloads/distributed",
+          "title": "Distributed jobs"
+        }
+      ]
+    },
+    {
+      "title": "PyTorch integration",
       "pages": [
         {
           "slug": "pytorch/trainer",
@@ -43,10 +64,6 @@
         {
           "slug": "pytorch/runtime",
           "title": "Runtime helpers"
-        },
-        {
-          "slug": "pytorch/remote-functions",
-          "title": "Remote functions and sweeps"
         }
       ]
     },
@@ -58,24 +75,20 @@
           "title": "Run a server (gpulayer up)"
         },
         {
-          "slug": "guides/remote-workers",
-          "title": "Remote workers"
-        },
-        {
-          "slug": "guides/cloud-providers",
-          "title": "Cloud and providers"
-        },
-        {
           "slug": "guides/apple-silicon",
-          "title": "Apple Silicon (MPS)"
+          "title": "Apple Silicon (Metal)"
         },
         {
           "slug": "guides/nvidia-cuda",
           "title": "NVIDIA CUDA"
         },
         {
-          "slug": "guides/jobs-and-cli",
-          "title": "Jobs from the CLI"
+          "slug": "guides/cloud-providers",
+          "title": "Cloud and providers"
+        },
+        {
+          "slug": "guides/remote-workers",
+          "title": "Remote workers (low level)"
         }
       ]
     },

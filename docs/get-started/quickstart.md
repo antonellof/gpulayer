@@ -1,8 +1,9 @@
 # Quickstart
 
-This walkthrough takes about ten minutes. You train one model from one file in five different
-places: your current process, two processes with DDP, two nodes, a GPU job, and a parallel
-sweep. Every command was run on an Apple Silicon Mac; the CPU steps work on any machine.
+This walkthrough takes about fifteen minutes. You run a shell command and a Python function as
+jobs, then train one PyTorch model in several places: your current process, two processes with
+DDP, two nodes and a GPU job. Every command was run on an Apple Silicon Mac; the CPU steps work
+on any machine.
 
 ## 1. Install
 
@@ -13,7 +14,51 @@ uv pip install -e '.[dev]' torch
 gpulayer resources detect
 ```
 
-## 2. Look at the training file
+## 2. Run a command as a job
+
+```bash
+gpulayer submit --source examples/shell_job \
+    --input examples/shell_job/sales.csv:sales.csv -- bash report.sh
+```
+
+```text
+submitted job-88eeb3960503 (independent, target local)
+running on my-mac, accelerator=cpu
+east,99.99
+north,162.75
+south,90.00
+job-88eeb3960503 succeeded
+```
+
+The CLI started a local worker, shipped the directory and the input file to it, ran the script
+and streamed its output. Any executable works the same way. See
+[Commands and scripts](../workloads/commands.md).
+
+## 3. Run Python functions in parallel
+
+[`examples/numpy_batch/estimate.py`](../../examples/numpy_batch/estimate.py) splits a NumPy job
+into eight chunks with `@gl.remote` and `.map()`:
+
+```bash
+python examples/numpy_batch/estimate.py
+```
+
+```text
+pi ~= 3.14160 from 40,000,000 samples in 8 jobs
+```
+
+On an Apple Silicon Mac with MLX installed (`uv pip install mlx`), the same pattern runs on the
+GPU:
+
+```bash
+python examples/mlx_metal/matmul.py
+```
+
+```text
+{'n': 4096, 'cpu_s': 0.0637, 'gpu_s': 0.0316, 'gpu_gflops': 4349.9}
+```
+
+## 4. Look at the training file
 
 [`examples/trainer_regression/train.py`](../../examples/trainer_regression/train.py) is a small
 regression model written against `gpulayer.pytorch`:
@@ -50,7 +95,7 @@ trainer.fit(model, train_loader, val_loader)
 
 The command-line flags only change the `Trainer` arguments.
 
-## 3. Train in this process
+## 5. Train in this process
 
 ```bash
 python examples/trainer_regression/train.py
@@ -69,7 +114,7 @@ checkpoint: gpulayer_runs/local/checkpoints/last.ckpt
 No job was submitted: with one device and no target, the Trainer runs in your process like any
 training loop.
 
-## 4. Same file, two processes with DDP
+## 6. Same file, two processes with DDP
 
 ```bash
 python examples/trainer_regression/train.py --accelerator cpu --devices 2
@@ -88,7 +133,7 @@ This time the Trainer submitted a job. A local worker ran the script under `torc
 processes, the Trainer wrapped the model in DDP and sharded the data, and the checkpoint came
 back to `gpulayer_runs/`. Your local `model` object now holds the trained weights.
 
-## 5. Two nodes
+## 7. Two nodes
 
 ```bash
 python examples/trainer_regression/train.py --accelerator cpu --nodes 2 --devices 2
@@ -98,7 +143,7 @@ GpuLayer starts two local workers, places one node on each, publishes a rendezvo
 from node 0, and launches torchrun on both. World size is 4. On real hardware the workers would
 be different machines; see [Remote workers](../guides/remote-workers.md).
 
-## 6. Use the GPU through a job
+## 8. Use the GPU through a job
 
 ```bash
 python examples/trainer_regression/train.py --accelerator mps --target local     # Apple Silicon
@@ -113,7 +158,7 @@ worker:
   (wkr-10c5089a6044: needs 1 usable cuda device(s), worker has 0; ...)
 ```
 
-## 7. A parallel sweep
+## 9. A PyTorch sweep
 
 [`examples/remote_sweep/sweep.py`](../../examples/remote_sweep/sweep.py) decorates a training
 function with `@gl.remote` and runs four learning rates as four jobs:
@@ -131,7 +176,7 @@ plain local call: {'lr': 0.1, 'loss': 0.06246, 'device': 'cpu'}
 best: {'lr': 0.1, 'loss': 0.00383, 'device': 'mps'}
 ```
 
-## 8. Inspect what ran
+## 10. Inspect what ran
 
 ```bash
 gpulayer job list
@@ -141,7 +186,7 @@ gpulayer job events <job-id>
 gpulayer worker status
 ```
 
-## 9. Optional: a server and a second machine
+## 11. Optional: a server and a second machine
 
 Start a server on one machine. It also runs jobs on its own hardware:
 
@@ -169,6 +214,7 @@ More in [Run a server](../guides/self-hosting.md).
 
 ## Next
 
+- [Any GPU framework](../workloads/frameworks.md) for JAX, MLX, CuPy and others
 - [Trainer and Module](../pytorch/trainer.md) for the full training API
 - [Run any script with launch()](../pytorch/launch.md) if you already have a training script
 - [Core concepts](concepts.md) for how placement works

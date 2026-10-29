@@ -38,8 +38,9 @@ SHA-256), and the worker imports your module by name. Function arguments and ret
 be JSON. Closures, lambdas and pickled objects are not supported, because they break across
 machines, Python versions and trust boundaries ([ADR-0002](../decisions/ADR-0002-job-contracts-and-packaging.md)).
 
-The [PyTorch layer](../pytorch/trainer.md) builds on these: `Trainer` and `launch()` submit
-`CommandJob`s and `DistributedJob`s for you, and `@gl.remote` submits `FunctionJob`s.
+`@gl.remote` submits `FunctionJob`s for any Python library. The
+[PyTorch integration](../pytorch/trainer.md) builds on the same kinds: `Trainer` and `launch()`
+submit `CommandJob`s and `DistributedJob`s for you.
 
 ## Workers
 
@@ -52,7 +53,8 @@ tasks. Its origin decides which target it serves:
 | `existing` | `remote` | `gpulayer --url URL worker start` with a join token |
 | `provider` | `cloud` | booted by a provider adapter with a single-use token |
 
-Workers report **capabilities**: OS, CPU, RAM, disk, Python and torch versions, accelerator
+Workers report **capabilities**: OS, CPU, RAM, disk, Python version, installed GPU frameworks
+(PyTorch, JAX, MLX, CuPy, ...), accelerator
 devices with their memory and compute capability, distributed backends, and the address peers
 can reach. The scheduler also tracks **availability**: whether the worker is online and has a
 free task slot. A worker can be compatible but busy, or free but incompatible.

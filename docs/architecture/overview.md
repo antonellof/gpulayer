@@ -18,7 +18,7 @@ src/gpulayer/
 │   ├── process.py           process-group execution, timeout, cancel, log streaming
 │   ├── function_runner.py   stdlib-only runner for FunctionJob (copied into the workspace)
 │   └── distributed.py       rank planning and torchrun argv construction
-├── gpu/discovery.py         nvidia-smi, isolated torch probe (CUDA/MPS), rocm-smi
+├── gpu/discovery.py         nvidia-smi, Apple Silicon, rocm-smi; GPU frameworks; torch probe
 ├── gpu/support.py           explicit support matrix consulted by the scheduler
 ├── providers/               ProviderAdapter interface, FakeProvider (simulated)
 ├── storage/sqlite.py        metadata store (jobs, tasks, workers, events, logs, instances, costs)

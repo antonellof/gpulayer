@@ -1,7 +1,19 @@
 # Examples
 
-Every example is one file and needs only `torch`. Data is generated or embedded, so nothing is
-downloaded. All of them have been run on an Apple Silicon Mac (CPU and MPS).
+Each example is one file. Data is generated or embedded, so nothing is downloaded. All of them
+have been run on an Apple Silicon Mac.
+
+## Any workload
+
+| Example | What it shows | Try |
+|---|---|---|
+| [`shell_job/`](shell_job) | a shell script as a job, with an input file and an output artifact | see its README |
+| [`numpy_batch/`](numpy_batch/estimate.py) | a NumPy function split into eight parallel jobs with `@gl.remote` and `.map()` | `python estimate.py` |
+| [`mlx_metal/`](mlx_metal/matmul.py) | MLX on the Apple GPU (no PyTorch); the job requires `mps` and `mlx` | `pip install mlx`, then `python matmul.py` |
+
+## PyTorch integration
+
+These need `torch`.
 
 | Example | What it shows | Try |
 |---|---|---|

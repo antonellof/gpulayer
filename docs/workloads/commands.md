@@ -1,7 +1,8 @@
-# Jobs from the CLI
+# Commands and scripts
 
-Everything the Python API does is also available from the `gpulayer` command, which is handy
-for scripts, shell commands and non-Python workloads.
+Any executable can be a GpuLayer job: a shell script, a compiled CUDA program, a Python script,
+`ffmpeg`, a Julia or R script. The job runs in a fresh directory on the chosen worker, with
+your source directory and input files staged next to it.
 
 ## Run a command
 
@@ -20,6 +21,17 @@ command.
 A leading `python` means the worker's interpreter. Jobs do not inherit the worker's
 environment; pass values with `--env` and `--secret` (see
 [Environment variables](../reference/environment.md)).
+
+## A complete example
+
+[`examples/shell_job`](../../examples/shell_job) sums a CSV with `awk` and returns the result
+file:
+
+```bash
+gpulayer submit --source examples/shell_job \
+    --input examples/shell_job/sales.csv:sales.csv -- bash report.sh
+gpulayer job result <job-id> --download ./out      # out/totals.csv
+```
 
 ## Call a function
 
@@ -67,7 +79,7 @@ scheduling: no eligible worker
 ## Against a server
 
 Set `GPULAYER_URL`, `GPULAYER_TOKEN` and `GPULAYER_FINGERPRINT` (printed by
-[`gpulayer up`](self-hosting.md)), or pass `--url`, `--token` and `--fingerprint` before the
+[`gpulayer up`](../guides/self-hosting.md)), or pass `--url`, `--token` and `--fingerprint` before the
 command. The same commands then talk to the server instead of the embedded control plane.
 
 Full option list: [CLI reference](../reference/cli.md).

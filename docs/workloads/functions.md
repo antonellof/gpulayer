@@ -1,7 +1,8 @@
-# Remote functions and sweeps
+# Python functions and sweeps
 
-`@gl.remote` turns a top-level function into something you can run on any compatible worker,
-or many times in parallel.
+`@gl.remote` turns a top-level Python function into a job that runs on any compatible worker,
+or many times in parallel. The function can use any library: NumPy, MLX, JAX, CuPy, PyTorch,
+OpenCV or your own code.
 
 ```python
 import os
@@ -70,4 +71,8 @@ all_reduce_check.run()   # {'world': 4, 'sum': 10.0}
 - Imports used only by the function can live inside it, which keeps the submitting process
   light.
 
-Full example: [`examples/remote_sweep/sweep.py`](../../examples/remote_sweep/sweep.py).
+Examples:
+
+- [`examples/numpy_batch/estimate.py`](../../examples/numpy_batch/estimate.py): eight NumPy jobs with `.map()`
+- [`examples/mlx_metal/matmul.py`](../../examples/mlx_metal/matmul.py): MLX on the Apple GPU
+- [`examples/remote_sweep/sweep.py`](../../examples/remote_sweep/sweep.py): a PyTorch learning-rate sweep

@@ -1,7 +1,9 @@
-# Apple Silicon (MPS)
+# Apple Silicon (Metal)
 
-On Apple Silicon Macs, PyTorch can use the GPU through the Metal Performance Shaders (MPS)
-backend. GpuLayer detects it and schedules MPS jobs on Macs that have it.
+Apple Silicon Macs have a GPU that frameworks reach through Metal: PyTorch through its MPS
+backend, MLX natively, Core ML and others. GpuLayer reports the GPU of every Apple Silicon worker
+as accelerator `mps` and schedules jobs that ask for it there. Whether torch on that machine can
+use it is reported separately as the `torch.mps` capability.
 
 ## Check
 
@@ -13,10 +15,22 @@ gpulayer resources detect
 device    [0] mps Apple arm64 GPU (MPS) (32.0 GB unified) independent=hardware-validated distributed=unsupported
 ```
 
-If the line is missing, the Python that runs jobs has no MPS-enabled torch. Install a recent
-torch in that environment, or point the worker at another interpreter with `--python`.
+For PyTorch jobs the worker must also report `torch.mps`; install a recent torch in the Python
+that runs jobs, or point the worker at another interpreter with `--python`.
 
-## Train on MPS
+## MLX
+
+```python
+@gl.remote(accelerator="mps", frameworks={"mlx": ">=0.10"})
+def matmul_benchmark(n: int) -> dict:
+    import mlx.core as mx
+    ...
+```
+
+[`examples/mlx_metal/matmul.py`](../../examples/mlx_metal/matmul.py) runs this on the Apple GPU
+(about 4.3 TFLOPS for 4096 x 4096 float32 matrix products on an M-series laptop).
+
+## PyTorch on MPS
 
 ```python
 trainer = glt.Trainer(max_epochs=5, accelerator="mps")    # or "auto", which picks MPS on a Mac

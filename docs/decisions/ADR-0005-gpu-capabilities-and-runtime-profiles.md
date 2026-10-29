@@ -68,3 +68,11 @@ without GPU libraries, and it must report uncertain values as uncertain instead 
 - Runtime profiles: named, versioned combinations (interpreter, torch/CUDA build, OS)
   usable as a job requirement. A profile is a compatibility aid, not a guarantee.
 - Periodic re-detection and resource-usage observations.
+
+## Amendment (2026-10-29, ADR-0015)
+
+GPU usability no longer depends on PyTorch. An NVIDIA GPU is usable when `nvidia-smi` works, and
+an Apple Silicon Mac always reports its Metal GPU as `mps`. Installed GPU frameworks are reported
+in `frameworks` from package metadata, and torch's ability to drive the GPU is reported as the
+`torch.cuda` / `torch.mps` capability. The PyTorch integration requires those capabilities;
+other jobs state their own framework requirements.

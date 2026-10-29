@@ -5,7 +5,7 @@ export function SiteFooter() {
   return (
     <footer className="border-t border-border">
       <div className="mx-auto flex max-w-[90rem] flex-col gap-3 px-4 py-8 text-sm text-muted-foreground md:flex-row md:items-center md:justify-between md:px-6">
-        <p>GpuLayer is pre-alpha open-source software. No telemetry.</p>
+        <p>GpuLayer: one layer between your code and your GPUs. Pre-alpha, open source, no telemetry.</p>
         <div className="flex gap-5">
           <Link href="/docs/" className="hover:text-foreground">Docs</Link>
           <Link href="/docs/project/status/" className="hover:text-foreground">Status</Link>

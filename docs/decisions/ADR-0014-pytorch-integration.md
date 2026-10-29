@@ -5,6 +5,8 @@
 
 ## Context
 
+GpuLayer is workload-agnostic (ADR-0015); this ADR covers its first framework integration.
+
 Milestone 1 made GpuLayer able to place and run jobs, but a PyTorch user still had to split
 code into a training script and a submission script, and had to handle devices, DDP wrapping,
 data sharding and checkpoints by hand. That offered too little over plain PyTorch.
@@ -18,7 +20,9 @@ should cover both: how a model trains and where it trains.
 ## Decision
 
 Integrate with PyTorch in three layers, each usable on its own, all in `gpulayer.pytorch`.
-Torch is imported lazily, so CPU-only installs without torch keep working.
+Torch is imported lazily, so installs without torch keep working. Jobs submitted by this layer
+require the `torch` framework and, for GPUs, the `torch.cuda` or `torch.mps` capability
+(ADR-0015), so they only land on workers whose torch can drive the requested GPU.
 
 1. Launcher (framework agnostic). `gpulayer.pytorch.launch(nodes=, devices=, accelerator=,
    target=, ...)` goes at the top of any script. Outside a GpuLayer job it packages the

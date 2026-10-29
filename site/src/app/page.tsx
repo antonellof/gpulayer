@@ -2,19 +2,43 @@ import Link from "next/link";
 import {
   ArrowRight,
   Boxes,
-  Cpu,
   FileCode2,
+  Flame,
+  Library,
   Network,
   ScrollText,
   SearchCheck,
 } from "lucide-react";
 import { CodeBlock } from "@/components/docs/code-block";
 import { ArchitectureDiagram } from "@/components/landing/architecture-diagram";
+import { CodeTabs, type CodeTab } from "@/components/landing/code-tabs";
 import { SiteFooter } from "@/components/site/footer";
 import { SiteHeader } from "@/components/site/header";
 import { REPO } from "@/lib/docs";
 
-const TRAINER = `import torch
+const HERO_TABS: CodeTab[] = [
+  {
+    label: "Any command",
+    language: "bash",
+    code: `gpulayer submit --accelerator cuda --source ./app -- ./render.sh
+gpulayer submit --accelerator mps -- python infer.py --model small`,
+  },
+  {
+    label: "Any library",
+    language: "python",
+    code: `import gpulayer as gl
+
+@gl.remote(accelerator="mps", frameworks={"mlx": ">=0.10"})
+def matmul_benchmark(n: int) -> dict:
+    import mlx.core as mx
+    ...
+
+matmul_benchmark.map([1024, 2048, 4096])`,
+  },
+  {
+    label: "PyTorch",
+    language: "python",
+    code: `import torch
 from torch import nn
 import gpulayer.pytorch as glt
 
@@ -38,55 +62,91 @@ class Regressor(glt.Module):
         return torch.optim.Adam(self.parameters(), lr=self.lr)
 
 
-trainer = glt.Trainer(max_epochs=5, accelerator="auto")   # this process, best device
-# trainer = glt.Trainer(accelerator="cpu", devices=2)      # 2-process DDP
-# trainer = glt.Trainer(accelerator="cuda", devices=4, num_nodes=2, target="remote")
-trainer.fit(Regressor(), train_loader, val_loader)`;
-
-const STEPS = [
-  {
-    title: "Start a server on any machine",
-    code: "gpulayer up",
-  },
-  {
-    title: "Add your GPU machines",
-    code: "gpulayer join <url> --token ... --fingerprint ...",
-  },
-  {
-    title: "Train there from your laptop",
-    code: "python train.py --target remote",
+trainer = glt.Trainer(max_epochs=5, accelerator="cuda", devices=4, num_nodes=2,
+                      target="remote")
+trainer.fit(Regressor(), train_loader, val_loader)`,
   },
 ];
 
-const LOCAL_VARIANT =
-  "git clone https://github.com/antonellof/gpulayer && cd gpulayer\nuv venv && uv pip install -e '.[dev]' torch\npython examples/trainer_regression/train.py";
+const STEPS = [
+  { title: "Start a server on any machine", code: "gpulayer up" },
+  {
+    title: "Join each GPU machine or cloud VM",
+    code: "gpulayer join <url> --token … --fingerprint …",
+  },
+  {
+    title: "Run your workload",
+    code: `gpulayer submit --target remote -- <cmd>   # any command
+fn.run()                                   # a @gl.remote function
+trainer.fit(model, loader)                 # PyTorch Trainer`,
+  },
+];
+
+const LOCAL_VARIANT = "python examples/trainer_regression/train.py";
+
+const FEATURES = [
+  {
+    icon: FileCode2,
+    title: "Any workload",
+    body: "Commands, scripts and binaries in any language. If it runs in a shell, GpuLayer can place it.",
+  },
+  {
+    icon: Library,
+    title: "Any library",
+    body: "PyTorch, JAX, MLX, CuPy, NumPy and others are detected per worker and required per job.",
+  },
+  {
+    icon: Boxes,
+    title: "Any GPU you can reach",
+    body: "Your laptop, servers that join, cloud VMs. NVIDIA CUDA and Apple Metal; ROCm is detection only for now.",
+  },
+  {
+    icon: SearchCheck,
+    title: "Placement that explains itself",
+    body: "Capability-aware scheduling. When nothing fits, the job is rejected with the reason for each worker.",
+  },
+  {
+    icon: Network,
+    title: "Distributed when you need it",
+    body: "Gang-scheduled worker groups with ranks and rendezvous handled for you. torchrun today.",
+  },
+  {
+    icon: ScrollText,
+    title: "Results come back",
+    body: "Logs stream while the job runs; outputs and checkpoints return as artifacts. Cancel and timeouts work.",
+  },
+  {
+    icon: Flame,
+    title: "PyTorch integration",
+    body: "A small Trainer and Module, launch() for existing scripts, and Runtime helpers for devices, DDP and precision.",
+  },
+];
 
 const COMPARISON: { situation: string; without: string; with: string }[] = [
   {
-    situation: "Laptop for code, GPU on another machine (office server or cloud VM)",
-    without: "ssh in, copy code, rebuild the environment, run in tmux, copy checkpoints back",
-    with: "`python train.py --target remote`: code shipped, logs streamed, checkpoint downloaded, trained weights back in your local model",
+    situation: "Code on a laptop, GPU somewhere else",
+    without: "ssh, copy code, rebuild the environment, run in tmux, copy results back",
+    with: "`gpulayer submit --target remote -- <cmd>` or `python train.py --target remote`",
   },
   {
-    situation: "Several GPU machines (team, lab, rented VMs)",
-    without: "track by hand which box is free; jobs crash on the wrong GPU, CUDA build or memory",
-    with: "one queue; each job goes to a machine that fits, or is rejected before it starts with the reason",
+    situation: "Several GPU machines",
+    without: "track free boxes by hand; jobs crash on the wrong GPU, driver or library version",
+    with: "one queue; each job lands where its accelerator and frameworks are available, or is rejected with the reason",
+  },
+  {
+    situation: "Mixed hardware (NVIDIA boxes and Apple Silicon Macs)",
+    without: "separate scripts and setup per machine",
+    with: "one interface; CUDA jobs go to NVIDIA workers, Metal jobs to Macs",
+  },
+  {
+    situation: "Batch of independent tasks (sweeps, rendering, data processing)",
+    without: "loops and ad-hoc scripts",
+    with: "`fn.map([...])` in parallel across free workers",
   },
   {
     situation: "Multi-node training",
-    without:
-      "on every node: same code and env, torchrun with matching node rank, master address and port; start together; clean up when one dies",
-    with: "`Trainer(num_nodes=2, devices=4)`",
-  },
-  {
-    situation: "Hyperparameter sweep",
-    without: "sequential loop, or your own scripts to spread runs",
-    with: "`train.map([...])` in parallel across free workers",
-  },
-  {
-    situation: "Same code on Mac (MPS), CPU and CUDA",
-    without: "device logic, DDP and sampler boilerplate, different launch commands",
-    with: "`accelerator=\"auto\"`; DDP, sharding and precision handled",
+    without: "torchrun on every node with matching ranks, addresses and ports",
+    with: "`Trainer(num_nodes=2, devices=4)` or `launch(nodes=2, ...)`",
   },
 ];
 
@@ -96,56 +156,7 @@ const CONS = [
   "Trusted users only: workloads run as normal processes on workers, not in a sandbox.",
   "`@gl.remote` arguments and results must be JSON; code ships as files.",
   "The Trainer is small: no callbacks, early stopping or FSDP yet.",
-];
-
-/** Render `inline code` spans inside short table/list strings. */
-function Inline({ text }: { text: string }) {
-  return (
-    <>
-      {text.split(/(`[^`]+`)/g).map((part, i) =>
-        part.startsWith("`") && part.endsWith("`") ? (
-          <code key={i} className="rounded bg-secondary px-1 py-0.5 font-mono text-[0.85em] text-foreground">
-            {part.slice(1, -1)}
-          </code>
-        ) : (
-          <span key={i}>{part}</span>
-        ),
-      )}
-    </>
-  );
-}
-
-const FEATURES = [
-  {
-    icon: FileCode2,
-    title: "One file, any target",
-    body: "The same training script runs in-process, on another worker, or across nodes. Only the Trainer arguments change.",
-  },
-  {
-    icon: SearchCheck,
-    title: "Placement you can read",
-    body: "Jobs land only on workers whose reported GPU, memory, Python and torch versions fit. Rejections list the reason for each worker.",
-  },
-  {
-    icon: Network,
-    title: "Distributed with torchrun",
-    body: "GpuLayer allocates the worker group, assigns ranks and publishes the rendezvous. PyTorch does the collectives.",
-  },
-  {
-    icon: Boxes,
-    title: "Local, remote, cloud",
-    body: "An embedded control plane needs no account. A self-hosted server adds remote workers; provider adapters add cloud capacity.",
-  },
-  {
-    icon: ScrollText,
-    title: "Logs, artifacts, checkpoints",
-    body: "Logs stream back while the job runs. Output files and checkpoints return as content-addressed artifacts.",
-  },
-  {
-    icon: Cpu,
-    title: "CUDA and MPS aware",
-    body: "Apple MPS and NVIDIA CUDA are separate backends with their own rules. Unified memory is reported as unified memory.",
-  },
+  "Long-running services (an inference server that must stay up) are not supported yet; GpuLayer runs batch jobs.",
 ];
 
 const STATUS: { label: string; tone: string; items: string[] }[] = [
@@ -157,6 +168,7 @@ const STATUS: { label: string; tone: string; items: string[] }[] = [
       "Capability-aware scheduling",
       "DDP: 2 nodes x 2 processes on one host",
       "Remote worker over HTTPS (one host)",
+      "Non-PyTorch workloads (MLX on Apple GPU, NumPy, shell) on one host",
     ],
   },
   {
@@ -177,9 +189,26 @@ const STATUS: { label: string; tone: string; items: string[] }[] = [
   {
     label: "Planned",
     tone: "text-muted-foreground",
-    items: ["Real cloud provider", "Multi-machine validation", "Hosted control plane"],
+    items: ["Real cloud provider", "Multi-machine validation", "Hosted control plane", "Long-running services"],
   },
 ];
+
+/** Render `inline code` spans inside short table/list strings. */
+function Inline({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(/(`[^`]+`)/g).map((part, i) =>
+        part.startsWith("`") && part.endsWith("`") ? (
+          <code key={i} className="rounded bg-secondary px-1 py-0.5 font-mono text-[0.85em] text-foreground">
+            {part.slice(1, -1)}
+          </code>
+        ) : (
+          <span key={i}>{part}</span>
+        ),
+      )}
+    </>
+  );
+}
 
 export default function Home() {
   return (
@@ -194,12 +223,12 @@ export default function Home() {
                 Open source · pre-alpha
               </span>
               <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
-                Run PyTorch on any GPU you can reach.
+                Run any GPU workload on any GPU you can reach.
               </h1>
               <p className="mt-5 text-lg text-muted-foreground">
-                GpuLayer places your training job on a compatible machine (this laptop, a GPU box on your network,
-                or a group of nodes) and brings back logs, metrics and checkpoints. Write the training code once;
-                choose where it runs with an argument.
+                One layer between your code and your GPUs, whether they sit in your laptop, a workstation, servers or
+                cloud VMs. Run commands in any language, Python functions with any library and distributed jobs, with
+                a first-class PyTorch integration.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <Link
@@ -224,9 +253,7 @@ export default function Home() {
                 </a>
               </div>
             </div>
-            <div className="min-w-0">
-              <CodeBlock code={TRAINER} language="python" className="my-0 shadow-sm" />
-            </div>
+            <CodeTabs tabs={HERO_TABS} />
           </div>
         </section>
 
@@ -235,7 +262,7 @@ export default function Home() {
           <div className="mx-auto max-w-6xl px-6 py-16">
             <h2 className="text-2xl font-semibold tracking-tight">Quickstart in three steps</h2>
             <p className="mt-2 text-muted-foreground">
-              Run a server on any machine, join your GPU boxes to it, and send training there from your laptop.
+              Start a server on any machine, join your GPU machines to it, and send work there from your laptop.
             </p>
             <div className="mt-8 grid gap-6 lg:grid-cols-3">
               {STEPS.map((s, i) => (
@@ -250,7 +277,7 @@ export default function Home() {
                 </div>
               ))}
             </div>
-            <div className="mt-4 rounded-lg border border-border bg-card p-5">
+            <div className="mt-2 rounded-lg border border-border bg-card p-5">
               <p className="text-sm font-medium">No second machine? Zero-setup local run</p>
               <p className="mt-1 text-sm text-muted-foreground">
                 Without a server, GpuLayer runs an embedded control plane and a worker inside your process.
@@ -263,6 +290,35 @@ export default function Home() {
             >
               Full step-by-step quickstart <ArrowRight className="h-3.5 w-3.5" />
             </Link>
+          </div>
+        </section>
+
+        {/* Features */}
+        <section className="border-b border-border">
+          <div className="mx-auto max-w-6xl px-6 py-16">
+            <h2 className="text-2xl font-semibold tracking-tight">What GpuLayer does</h2>
+            <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {FEATURES.map(({ icon: Icon, title, body }) => (
+                <div key={title} className="rounded-lg border border-border bg-card p-5">
+                  <Icon className="h-5 w-5 text-primary" />
+                  <h3 className="mt-3 font-medium">{title}</h3>
+                  <p className="mt-1.5 text-sm text-muted-foreground">{body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Where it sits */}
+        <section className="border-b border-border">
+          <div className="mx-auto max-w-6xl px-6 py-16">
+            <h2 className="text-2xl font-semibold tracking-tight">Where GpuLayer sits</h2>
+            <p className="mt-3 max-w-3xl text-muted-foreground">
+              GpuLayer is the layer underneath your framework. Training frameworks decide how a model trains inside the
+              machines they are started on. GpuLayer decides which machines run a workload, starts it there and
+              returns the results, for training, inference, rendering, simulation or data jobs, whether they use
+              PyTorch, JAX, MLX, CuPy, NumPy or no Python at all.
+            </p>
           </div>
         </section>
 
@@ -306,22 +362,6 @@ export default function Home() {
             >
               Why GpuLayer <ArrowRight className="h-3.5 w-3.5" />
             </Link>
-          </div>
-        </section>
-
-        {/* Features */}
-        <section className="border-b border-border">
-          <div className="mx-auto max-w-6xl px-6 py-16">
-            <h2 className="text-2xl font-semibold tracking-tight">What GpuLayer adds to PyTorch</h2>
-            <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {FEATURES.map(({ icon: Icon, title, body }) => (
-                <div key={title} className="rounded-lg border border-border bg-card p-5">
-                  <Icon className="h-5 w-5 text-primary" />
-                  <h3 className="mt-3 font-medium">{title}</h3>
-                  <p className="mt-1.5 text-sm text-muted-foreground">{body}</p>
-                </div>
-              ))}
-            </div>
           </div>
         </section>
 

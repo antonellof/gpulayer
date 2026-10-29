@@ -8,11 +8,11 @@ const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono", displ
 
 export const metadata: Metadata = {
   title: {
-    default: "GpuLayer | Run PyTorch on any GPU you can reach",
+    default: "GpuLayer | Run any GPU workload on any GPU you can reach",
     template: "%s | GpuLayer",
   },
   description:
-    "Open-source GPU execution and orchestration for PyTorch. One training file runs on CPU, Apple MPS or NVIDIA CUDA, locally, on remote machines or across nodes. Pre-alpha.",
+    "Open-source, workload-agnostic GPU layer. Run commands in any language, Python functions with any library, and distributed jobs on your laptop, workstations, servers or cloud VMs, with a first-class PyTorch integration. Pre-alpha.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

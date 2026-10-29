@@ -28,12 +28,13 @@ like this:
 ```text
 host      my-mac (darwin/arm64), 10 cores, 32.0 GB RAM, python 3.11.5
 torch     2.15.0  distributed backends: gloo
-device    [0] mps Apple arm64 GPU (MPS) (32.0 GB unified) independent=hardware-validated distributed=unsupported
+device    [0] mps Apple arm64 GPU (Metal) (32.0 GB unified) independent=hardware-validated distributed=unsupported
 ```
 
-On a machine without torch the `torch` line says `not installed` and only CPU jobs can run
-there. That is fine for the core platform; GPU discovery uses torch in the interpreter that runs
-your jobs.
+GPUs are detected through their driver or platform, so they show up with or without PyTorch.
+The `torch` line, and the framework list in `gpulayer worker status --json`, show which GPU
+frameworks are installed in the Python that runs jobs. Jobs that need a framework (for example
+PyTorch with CUDA, or MLX) only go to workers that have it.
 
 ## Where state is kept
 

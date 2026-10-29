@@ -1,57 +1,66 @@
 # GpuLayer
 
-GpuLayer runs PyTorch code on whatever compute you can reach: the GPU in your laptop, a
-workstation down the hall, a rented cloud machine, or several of them at once. You write one
-training file. GpuLayer decides where it can run, starts it there, and brings back the logs,
-metrics, checkpoints and results.
+GpuLayer runs GPU workloads on any GPU you can reach: the one in your laptop, a workstation
+down the hall, a rack of servers, or rented cloud VMs. A workload can be a command in any
+language, a Python function using any library, or a distributed job across several machines.
+GpuLayer finds a machine that can run it, starts it there, and brings back the logs, outputs and
+results.
+
+```bash
+gpulayer submit --accelerator cuda --source ./app -- ./render.sh        # any command
+```
 
 ```python
-import gpulayer.pytorch as glt
+@gl.remote(accelerator="mps", frameworks={"mlx": ">=0.10"})             # any library
+def benchmark(n: int) -> dict: ...
 
-trainer = glt.Trainer(max_epochs=5, accelerator="cuda", devices=4, num_nodes=2, target="remote")
-trainer.fit(model, train_loader, val_loader)   # 8 GPUs on two remote machines
+benchmark.map([1024, 2048, 4096])
 ```
 
-Change the `Trainer` arguments and the same file trains in your current process, as a
-multi-process DDP job on your machine, or across a group of remote workers.
+```python
+trainer = glt.Trainer(accelerator="cuda", devices=4, num_nodes=2, target="remote")
+trainer.fit(model, train_loader)                                         # PyTorch integration
+```
 
-> **Status: pre-alpha.** Local execution, scheduling, the remote-worker protocol and
-> single-host distributed training are implemented and tested. Cloud provisioning is
-> simulated, and multi-machine and NVIDIA runs are not validated yet.
-> See [Status and roadmap](project/status.md).
+> **Status: pre-alpha.** Local execution, scheduling, the server and worker protocol, and
+> distributed jobs on one host are implemented and tested, on CPU and Apple Silicon. NVIDIA GPUs
+> and multi-machine runs are implemented but not validated yet, and automatic cloud
+> provisioning is simulated. See [Status and roadmap](project/status.md).
 
-## What GpuLayer adds to PyTorch
-
-PyTorch decides how a model trains. GpuLayer decides where:
-
-| You want to | Plain PyTorch | With GpuLayer |
-|---|---|---|
-| Train on this machine | `python train.py` | the same, or `Trainer(...)` with automatic device selection |
-| Use 2 processes with DDP | write `torchrun` commands, wrap DDP, shard data | `Trainer(devices=2)` |
-| Train on a remote GPU box | ssh, copy code, set up env, run, copy results back | `Trainer(target="remote", accelerator="cuda")` |
-| Train across machines | run torchrun on every node with matching rank and address flags | `Trainer(num_nodes=2, devices=4)` |
-| Run a hyperparameter sweep | a loop, or a scheduler of your own | `train.map([0.1, 0.01, 0.001])` |
-| Know why a job can't run | read a CUDA error after it starts | a rejection reason per worker before it starts |
-
-## How it fits together
+## Where GpuLayer sits
 
 ```mermaid
-flowchart LR
-    A["Your code<br/>Trainer / launch() / @gl.remote / CLI"] --> B["Control plane<br/>queue, scheduler, worker registry"]
-    B --> C1["Local worker<br/>CPU / MPS / CUDA"]
-    B --> C2["Remote worker<br/>your GPU servers"]
-    B --> C3["Cloud worker<br/>via a provider adapter"]
-    C1 & C2 & C3 --> D["Logs, metrics,<br/>checkpoints, results"]
-    D --> A
+flowchart TB
+    subgraph You["Your workload"]
+        A1["Commands and scripts<br/>(any language, any binary)"]
+        A2["Python functions<br/>(PyTorch, JAX, MLX, CuPy, NumPy, ...)"]
+        A3["PyTorch training<br/>(Trainer, launch())"]
+    end
+    You --> G["GpuLayer<br/>placement, launch, logs, artifacts, coordination"]
+    G --> M1["This machine<br/>CPU / Apple GPU / NVIDIA GPU"]
+    G --> M2["Servers that joined<br/>gpulayer join"]
+    G --> M3["Cloud VMs<br/>joined, or via a provider adapter"]
 ```
 
-The control plane can run inside your Python process, with no server and no account, or as a
-self-hosted service that remote workers join.
+Frameworks decide how a computation runs on the hardware they are given. GpuLayer decides which
+hardware runs it, gets the code and data there, starts it, and returns the results. It works
+under any framework, and adds a deeper integration for PyTorch training.
+
+## What you can do with it
+
+| You want to | With GpuLayer |
+|---|---|
+| Run a script on a GPU that is not in front of you | `gpulayer submit --target remote -- python infer.py` |
+| Use one interface for NVIDIA boxes and Apple Silicon Macs | ask for `cuda` or `mps`; each job lands where that accelerator and its frameworks exist |
+| Spread a batch of tasks over all free GPUs | `fn.map([...])` |
+| Know why a job cannot run before it starts | a rejection reason per worker, e.g. `framework 'jax' not installed` |
+| Train a model on 8 GPUs across two machines | `Trainer(devices=4, num_nodes=2)` or `launch(nodes=2, devices=4)` |
+| Add a GPU machine to the pool | `gpulayer join <url> --token ...` |
 
 ## Where to go next
 
-- [Installation](get-started/installation.md)
-- [Quickstart](get-started/quickstart.md): train a model locally, then with DDP, then on two nodes
-- [Core concepts](get-started/concepts.md): targets, workloads, workers and placement
-- [Trainer and Module](pytorch/trainer.md): the training API
-- [Run any script with launch()](pytorch/launch.md): keep your existing training code
+- [Quickstart](get-started/quickstart.md): commands, functions and training, from this machine to several
+- [Why GpuLayer](get-started/why-gpulayer.md): what it adds, and when not to use it
+- [Commands and scripts](workloads/commands.md), [Python functions](workloads/functions.md), [Any GPU framework](workloads/frameworks.md)
+- [PyTorch integration](pytorch/trainer.md)
+- [Run a server](guides/self-hosting.md): add more machines
