@@ -10,6 +10,8 @@ before 1.0, minor versions may change public APIs, with migration notes here.
   shares kept-open connections between threads (a worker no longer opens a TLS connection per
   job), and worker capabilities are parsed once. Server CPU per job in
   `benchmarks/server_throughput.py`: 6.7-6.8 ms to 5.2-6.0 ms.
+- `POST /v1/jobs/batch` and `Client.submit_batch`: many jobs in one request, one transaction
+  and one scheduling pass (all or none); server CPU per job 5.6-6.2 to 4.1 ms.
 - Site: sitemap.xml, robots.txt, canonical URLs, link previews and structured data.
 
 ## 0.3.0 (2026-10-30)

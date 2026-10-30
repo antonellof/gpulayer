@@ -199,6 +199,10 @@ class HttpControlPlaneClient:
             self.t.request("POST", "/v1/jobs", spec.model_dump(mode="json"))
         )
 
+    def submit_many(self, specs: list[JobSpec]) -> list[str]:
+        body = {"jobs": [s.model_dump(mode="json") for s in specs]}
+        return list(self.t.request("POST", "/v1/jobs/batch", body)["job_ids"])
+
     def get_job(self, job_id: str) -> JobStatus:
         return JobStatus.model_validate(self.t.request("GET", f"/v1/jobs/{job_id}"))
 

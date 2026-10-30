@@ -24,6 +24,7 @@ artifacts used by their current tasks.
 | Method and path | Body / query | Returns |
 |---|---|---|
 | `POST /v1/jobs` | `JobSpec` | `JobStatus` |
+| `POST /v1/jobs/batch` | `{"jobs": [JobSpec, ...]}` (1 to 1000) | `{"job_ids": [...]}`; all stored in one transaction, or none |
 | `GET /v1/jobs?limit=&state=` | | list of `JobStatus` |
 | `GET /v1/jobs/{id}?wait=` | optional `wait` (seconds, max 30): hold the request until the job is terminal | `JobStatus` |
 | `POST /v1/jobs/{id}/cancel` | | `JobStatus` |

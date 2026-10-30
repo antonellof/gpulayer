@@ -18,7 +18,7 @@ from gpulayer.api.auth import generate_credentials
 from gpulayer.api.client import HttpTransport, HttpWorkerChannel
 from gpulayer.api.server import ControlPlaneServer
 from gpulayer.contracts import JobState, WorkerOrigin
-from gpulayer.errors import ProtocolMismatch, Unauthorized
+from gpulayer.errors import ProtocolMismatch, Unauthorized, ValidationFailed
 
 pytestmark = pytest.mark.integration
 
@@ -161,3 +161,22 @@ def test_client_replaces_a_connection_the_server_closed(server, monkeypatch):
     time.sleep(0.6)
     jobs = t.request("GET", "/v1/jobs?limit=10")
     assert [j["job_id"] for j in jobs] == [sub["job_id"]]  # the retried request ran once
+
+
+def test_batch_submit_over_http(server, tmp_path):
+    srv, client_token, join_token = server
+    c = gl.Client(url=srv.url, token=client_token)
+    jobs = c.submit_batch([gl.command(["true"], target="local") for _ in range(1200)])
+    assert len(jobs) == 1200 and len({j.id for j in jobs}) == 1200  # three requests of <=500
+
+    t = HttpTransport(srv.url, client_token)
+    with pytest.raises(ValidationFailed, match="at most 1000"):
+        t.request(
+            "POST",
+            "/v1/jobs/batch",
+            {"jobs": [gl.command(["true"]).model_dump(mode="json")] * 1001},
+        )
+    with pytest.raises(ValidationFailed, match="at least one job"):
+        t.request("POST", "/v1/jobs/batch", {"jobs": []})
+    with pytest.raises(Unauthorized):
+        HttpTransport(srv.url, join_token).request("POST", "/v1/jobs/batch", {"jobs": []})

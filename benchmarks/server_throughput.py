@@ -1,6 +1,6 @@
 """Jobs per second through one server with remote workers: the path a fleet uses.
 
-    python benchmarks/server_throughput.py [--workers 6 --slots 4 --jobs 1000] [--profile out.prof]
+    python benchmarks/server_throughput.py [--workers 6 --slots 4 --jobs 1000] [--batch]
 
 Starts a TLS control-plane server in this process, `--workers` worker processes
 (`gpulayer join`, separate homes) and submits `--jobs` tiny function jobs from 16 client
@@ -42,6 +42,7 @@ def main() -> None:
     ap.add_argument("--slots", type=int, default=4)
     ap.add_argument("--jobs", type=int, default=1000)
     ap.add_argument("--profile")
+    ap.add_argument("--batch", action="store_true", help="submit with Client.submit_batch")
     args = ap.parse_args()
     tmp = Path(tempfile.mkdtemp())
     cp = ControlPlane(SqliteStore(tmp / "db.sqlite"), LocalArtifactStore(tmp / "a"))
@@ -97,7 +98,7 @@ def main() -> None:
             prof.enable()
         c0, t0 = cpu(), time.perf_counter()
         with ThreadPoolExecutor(16) as ex:
-            jobs = list(ex.map(c.submit, specs))
+            jobs = c.submit_batch(specs) if args.batch else list(ex.map(c.submit, specs))
             states = list(ex.map(lambda j: j.wait(600).state.value, jobs))
         wall, used = time.perf_counter() - t0, cpu() - c0
         if prof:
@@ -105,7 +106,8 @@ def main() -> None:
             prof.dump_stats(args.profile)
         ok = states.count("succeeded")
         print(
-            f"{args.jobs} jobs on {args.workers} workers x {args.slots} slots: {ok} succeeded, "
+            f"{'batch ' if args.batch else ''}{args.jobs} jobs on {args.workers} workers x "
+            f"{args.slots} slots: {ok} succeeded, "
             f"{wall:.1f}s, {args.jobs / wall:.1f} jobs/s, server+client CPU "
             f"{used / args.jobs * 1000:.1f} ms per job"
         )

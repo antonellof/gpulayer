@@ -29,7 +29,7 @@ Without `url` (and without `$GPULAYER_URL`) the client runs an embedded control 
 | Method | Description |
 |---|---|
 | `submit(spec) -> Job` | submit a `JobSpec` |
-| `submit_batch(specs) -> list[Job]` | independent jobs |
+| `submit_batch(specs) -> list[Job]` | independent jobs, sent 500 per request and scheduled in one pass per request |
 | `run(spec, timeout=None) -> JobResult` | submit and wait |
 | `job(job_id) -> Job`, `jobs(limit=50)`, `workers()` | look up |
 | `package(directory) -> ArtifactReference` | upload a source bundle |

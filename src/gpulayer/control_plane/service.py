@@ -139,6 +139,22 @@ class ControlPlane:
     # ================================================================== jobs
 
     def submit(self, spec: JobSpec, *, submitted_by: str | None = None) -> JobStatus:
+        (job_id,) = self.submit_many([spec], submitted_by=submitted_by)
+        return self.get_job(job_id)
+
+    def submit_many(self, specs: list[JobSpec], *, submitted_by: str | None = None) -> list[str]:
+        """Submit independent jobs in one transaction and one scheduling pass; all or none.
+        Returns the job ids in order."""
+        checked = [self._checked(s) for s in specs]  # validate every job before storing any
+        ids = [_new_id("job") for _ in checked]
+        now = ts(self.now())
+        with self.store.tx() as c:
+            for job_id, spec in zip(ids, checked, strict=True):
+                self._insert_job(c, job_id, spec, submitted_by, now)
+        self.schedule_pending()
+        return ids
+
+    def _checked(self, spec: JobSpec) -> JobSpec:
         spec = JobSpec.model_validate(spec.model_dump())  # re-validate at the trust boundary
         for ref in self._referenced_artifacts(spec):
             if not self.artifacts.exists(ref.sha256):
@@ -150,34 +166,34 @@ class ControlPlane:
                 f"provider {spec.placement.provisioning.provider!r} is not configured on this "
                 "control plane"
             )
-        job_id = _new_id("job")
-        now = ts(self.now())
-        with self.store.tx() as c:
-            c.execute(
-                "INSERT INTO jobs (id, name, state, spec, created_at, updated_at, submitted_by) "
-                "VALUES (?,?,?,?,?,?,?)",
-                (
-                    job_id,
-                    spec.name,
-                    JobState.QUEUED.value,
-                    spec.model_dump_json(),
-                    now,
-                    now,
-                    submitted_by,
-                ),
-            )
-            self.store.add_event(
-                "job.submitted",
-                f"{spec.workload_type.value} job '{spec.name}' submitted, target "
-                f"{spec.placement.target.value}",
-                job_id=job_id,
-            )
-            self.store.inc(
-                "gpulayer_jobs_submitted_total",
-                {"workload_type": spec.workload_type.value, "target": spec.placement.target.value},
-            )
-        self.schedule_pending()
-        return self.get_job(job_id)
+        return spec
+
+    def _insert_job(
+        self, c: Any, job_id: str, spec: JobSpec, submitted_by: str | None, now: str | None
+    ) -> None:
+        c.execute(
+            "INSERT INTO jobs (id, name, state, spec, created_at, updated_at, submitted_by) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (
+                job_id,
+                spec.name,
+                JobState.QUEUED.value,
+                spec.model_dump_json(),
+                now,
+                now,
+                submitted_by,
+            ),
+        )
+        self.store.add_event(
+            "job.submitted",
+            f"{spec.workload_type.value} job '{spec.name}' submitted, target "
+            f"{spec.placement.target.value}",
+            job_id=job_id,
+        )
+        self.store.inc(
+            "gpulayer_jobs_submitted_total",
+            {"workload_type": spec.workload_type.value, "target": spec.placement.target.value},
+        )
 
     @staticmethod
     def _referenced_artifacts(spec: JobSpec) -> list[ArtifactReference]:

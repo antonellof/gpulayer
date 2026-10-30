@@ -371,3 +371,28 @@ def test_placement_wakes_only_the_chosen_worker(cp, monkeypatch):
     assert got[checks[0]] is not None
     for t in threads:
         t.join(5)
+
+
+def test_submit_many_is_all_or_nothing_and_schedules_once(cp, monkeypatch):
+    w = reg(cp, max_concurrent_tasks=4)
+    passes = []
+    original = cp.schedule_pending
+    monkeypatch.setattr(cp, "schedule_pending", lambda: (passes.append(1), original())[1])
+    ids = cp.submit_many([cmd_spec() for _ in range(6)])
+    assert len(ids) == 6 and len(set(ids)) == 6 and len(passes) == 1
+    assert [cp.get_job(i).state for i in ids].count(JobState.SCHEDULED) == 4  # 4 slots
+    before = len(cp.list_jobs(limit=100))
+    from gpulayer.contracts import ArtifactReference
+
+    bad = JobSpec(
+        workload=CommandJob(
+            command=["x"],
+            source=ArtifactReference(
+                uri="artifact://sha256/" + "0" * 64, sha256="0" * 64, size_bytes=1
+            ),
+        )
+    )
+    with pytest.raises(ValidationFailed, match="has not been uploaded"):
+        cp.submit_many([cmd_spec(), bad])
+    assert len(cp.list_jobs(limit=100)) == before  # nothing from the rejected batch
+    assert cp.acquire_task(w) is not None

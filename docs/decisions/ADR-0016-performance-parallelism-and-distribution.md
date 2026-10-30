@@ -139,7 +139,9 @@ can hold at most one server thread per open request; the failed-login limiter st
    scanned every task ever run: 2.2 ms at 13,000 tasks, now 0.002 ms), a connection pool
    shared by a client's threads (workers had a TLS handshake per job), and cached worker
    capabilities; `benchmarks/server_throughput.py` (6 local workers) went from 6.7-6.8 to
-   5.2-6.0 ms of server CPU per job. Next: batch endpoints (submit many jobs, acquire several
-   tasks, finish with outputs in one request), then an async or multi-process server.
+   5.2-6.0 ms of server CPU per job. `POST /v1/jobs/batch` (used by `Client.submit_batch`)
+   stores and schedules many jobs at once: 4.1 ms per job. Next: let a worker acquire several
+   tasks and report a task's outputs and outcome in one request, then an async or
+   multi-process server.
 
 Validating items 3 and 5, and any multi-node claim, requires NVIDIA hardware.

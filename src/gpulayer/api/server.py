@@ -192,6 +192,12 @@ class ControlPlaneServer:
                 lambda q: cp.submit(JobSpec.model_validate(q.json()), submitted_by=q.principal),
             ),
             (
+                "POST",
+                r"/v1/jobs/batch",
+                "client",
+                lambda q: {"job_ids": cp.submit_many(_batch(q.json()), submitted_by=q.principal)},
+            ),
+            (
                 "GET",
                 r"/v1/jobs",
                 "client",
@@ -555,6 +561,19 @@ class _RequestHandler(BaseHTTPRequestHandler):
 
     def do_PUT(self) -> None:  # noqa: N802
         self._dispatch("PUT")
+
+
+MAX_BATCH = 1000
+
+
+def _batch(body: Any) -> list[JobSpec]:
+    """Body of POST /v1/jobs/batch: {"jobs": [JobSpec, ...]}, at most MAX_BATCH."""
+    jobs = body.get("jobs") if isinstance(body, dict) else None
+    if not isinstance(jobs, list) or not jobs:
+        raise ValidationFailed('expected {"jobs": [JobSpec, ...]} with at least one job')
+    if len(jobs) > MAX_BATCH:
+        raise ValidationFailed(f"at most {MAX_BATCH} jobs per batch, got {len(jobs)}")
+    return [JobSpec.model_validate(j) for j in jobs]
 
 
 def _err(code: str, message: str) -> dict[str, Any]:

@@ -146,8 +146,21 @@ class Client:
 
     def submit_batch(self, specs: list[JobSpec]) -> list[Job]:
         """Independent jobs, scheduled separately. For one coordinated workload use
-        ``gpulayer.distributed(...)`` instead."""
-        return [self.submit(s) for s in specs]
+        ``gpulayer.distributed(...)`` instead.
+
+        Sent in chunks of up to 500 jobs per request, each chunk stored in one transaction and
+        scheduled in one pass; a chunk is accepted whole or rejected whole."""
+        if self.mode == "embedded":
+            nodes = max(
+                (s.num_nodes for s in specs if s.placement.target == ExecutionTarget.LOCAL),
+                default=0,
+            )
+            if nodes:
+                self.ensure_local_workers(nodes)
+        ids: list[str] = []
+        for i in range(0, len(specs), 500):
+            ids += self._api.submit_many(specs[i : i + 500])
+        return [Job(self, job_id) for job_id in ids]
 
     def run(self, spec: JobSpec, timeout: float | None = None) -> JobResult:
         job = self.submit(spec)
