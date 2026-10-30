@@ -24,8 +24,9 @@
 | `CUDA_VISIBLE_DEVICES` | granted CUDA devices; empty for CPU jobs |
 | `PYTHONUNBUFFERED=1` | so logs stream as they are written |
 
-Distributed jobs also get torchrun's variables: `RANK`, `WORLD_SIZE`, `LOCAL_RANK`,
-`LOCAL_WORLD_SIZE`, `GROUP_RANK`, `MASTER_ADDR`, `MASTER_PORT`.
+Distributed jobs also get torchrun's variables, with either launcher: `RANK`, `WORLD_SIZE`,
+`LOCAL_RANK`, `LOCAL_WORLD_SIZE`, `GROUP_RANK`, `MASTER_ADDR`, `MASTER_PORT`, and
+`TORCHELASTIC_RUN_ID` (the job id with the direct launcher).
 
 Jobs do not inherit the worker's environment, except `PATH`, `HOME`, `USER`, `LANG`, `LC_ALL`,
 `TMPDIR` and `TERM`. Pass anything else with `env` or `secrets`.

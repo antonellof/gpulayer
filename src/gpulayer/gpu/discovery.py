@@ -334,7 +334,7 @@ def detect_capabilities(
         if tp.nccl:
             backends.append("nccl")
         if backends:
-            launchers.append("torchrun")
+            launchers += ["direct", "torchrun"]
     elif tp.error:
         notes.append(f"torch unavailable: {tp.error}")
 

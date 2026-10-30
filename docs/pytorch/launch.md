@@ -14,7 +14,7 @@ Run it as usual (`python train.py --lr 0.01`). In your terminal, `launch()`:
 
 1. packages the script's directory and uploads it;
 2. submits the same script with the same arguments: a single process for `nodes=1, devices=1`,
-   otherwise a `torchrun` job with `nodes x devices` processes;
+   otherwise a distributed job with `nodes x devices` processes;
 3. streams the job's output to your terminal;
 4. downloads everything the job wrote to `$GPULAYER_OUTPUT_DIR` into `gpulayer_runs/<job-id>/`;
 5. exits with the job's exit code.

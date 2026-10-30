@@ -135,8 +135,8 @@ final metrics: {'train_loss': 0.5561, 'val_loss': 0.4698, 'epoch': 4, 'epoch_sec
 checkpoint: gpulayer_runs/job-5cc477d4ffad/node0/checkpoints/last.ckpt
 ```
 
-This time the Trainer submitted a job. A local worker ran the script under `torchrun` with two
-processes, the Trainer wrapped the model in DDP and sharded the data, and the checkpoint came
+This time the Trainer submitted a job. A local worker ran the script as two
+processes with the torchrun environment, the Trainer wrapped the model in DDP and sharded the data, and the checkpoint came
 back to `gpulayer_runs/`. Your local `model` object now holds the trained weights.
 
 ## 7. Two nodes
@@ -146,7 +146,7 @@ python examples/trainer_regression/train.py --accelerator cpu --nodes 2 --device
 ```
 
 GPUlayer starts two local workers, places one node on each, publishes a rendezvous address
-from node 0, and launches torchrun on both. World size is 4. On real hardware the workers would
+from node 0, and starts two processes on each. World size is 4. On real hardware the workers would
 be different machines; see [Remote workers](../guides/remote-workers.md).
 
 ## 8. Use the GPU through a job

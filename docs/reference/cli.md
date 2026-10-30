@@ -46,7 +46,7 @@ gpulayer submit [options] [-- COMMAND ...]
 | `--source DIR` | package and upload a directory; the command runs inside it |
 | `--input FILE[:DEST]` | stage a file into `$GPULAYER_INPUT_DIR` |
 | `--function MODULE:FUNC --arg JSON ...` | function job |
-| `--distributed --entrypoint SCRIPT --nodes N --procs-per-node P --backend gloo\|nccl` | torchrun job |
+| `--distributed --entrypoint SCRIPT --nodes N --procs-per-node P --backend gloo\|nccl [--launcher direct\|torchrun]` | distributed job |
 | `--accelerator cpu\|cuda\|mps\|rocm --gpus N --gpu-memory GB --gpu-memory-kind dedicated\|unified --cpus N --memory GB` | resources |
 | `--framework 'torch>=2.1'` | framework requirement |
 | `--profile pytorch-cuda` | runtime profile: fills in accelerator and frameworks (see [JobSpec](job-spec.md#runtime-profiles)) |

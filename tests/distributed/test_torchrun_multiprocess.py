@@ -1,7 +1,7 @@
 """REAL distributed execution: two worker agents (two "nodes") on one host, each
-launching torchrun, forming one gloo process group of world size 4 and verifying an
-all_reduce. Scope: multi-process, multi-node-topology on a single machine over
-loopback. It does NOT establish multi-machine support.
+launching its ranks (directly or through torchrun), forming one gloo process group of
+world size 4 and verifying an all_reduce. Scope: multi-process, multi-node-topology on a
+single machine over loopback. It does NOT establish multi-machine support.
 """
 
 import threading
@@ -44,7 +44,7 @@ dist.destroy_process_group()
 @pytest.fixture
 def group(real_cp, tmp_path):
     caps = detect_capabilities(origin=WorkerOrigin.LOCAL, advertise_address="127.0.0.1")
-    if "torchrun" not in caps.launchers:
+    if not {"direct", "torchrun"} <= set(caps.launchers):
         pytest.skip("torch.distributed with gloo not available")
     agents = []
     for i in range(2):
@@ -79,13 +79,15 @@ def _source(cp, tmp_path):
     return cp.put_artifact(build_source_bundle(src), "src", "source")
 
 
-def test_two_node_allreduce(group, tmp_path):
+@pytest.mark.parametrize("launcher", ["direct", "torchrun"])
+def test_two_node_allreduce(group, tmp_path, launcher):
     cp = group
     spec = gl.distributed(
         "train.py",
         source=_source(cp, tmp_path),
         num_workers=2,
         procs_per_worker=2,
+        launcher=launcher,
         timeout_seconds=150,
     )
     st = _wait(cp, cp.submit(spec).job_id)
@@ -105,7 +107,8 @@ def test_two_node_allreduce(group, tmp_path):
     assert [o.name for o in res.outputs] == ["node0/result.txt"]
 
 
-def test_rank_failure_fails_whole_job(group, tmp_path):
+@pytest.mark.parametrize("launcher", ["direct", "torchrun"])
+def test_rank_failure_fails_whole_job(group, tmp_path, launcher):
     cp = group
     spec = gl.distributed(
         "train.py",
@@ -113,6 +116,7 @@ def test_rank_failure_fails_whole_job(group, tmp_path):
         num_workers=2,
         procs_per_worker=1,
         env={"FAIL_RANK": "1"},
+        launcher=launcher,
         timeout_seconds=150,
     )
     st = _wait(cp, cp.submit(spec).job_id)
@@ -123,3 +127,23 @@ def test_rank_failure_fails_whole_job(group, tmp_path):
         time.sleep(0.2)
     states = {t.state.value for t in cp.get_job(st.job_id).tasks}
     assert states <= {"failed", "cancelled"} and "failed" in states
+
+
+def test_direct_launcher_stops_ranks_on_the_same_node(group, tmp_path):
+    """Rank 1 exits with 3 after the all_reduce; rank 0 waits in a barrier that never
+    completes. The launcher must stop rank 0 at once instead of leaving it to the timeout."""
+    cp = group
+    spec = gl.distributed(
+        "train.py",
+        source=_source(cp, tmp_path),
+        num_workers=1,
+        procs_per_worker=2,
+        env={"FAIL_RANK": "1"},
+        timeout_seconds=150,
+    )
+    t0 = time.time()
+    st = _wait(cp, cp.submit(spec).job_id)
+    assert st.state == JobState.FAILED and st.tasks[0].exit_code == 3
+    assert time.time() - t0 < 60
+    logs = [line.line for line in cp.job_logs(st.job_id)]
+    assert any("rank 1 exited with code 3; stopped the others" in x for x in logs), logs[-10:]

@@ -221,7 +221,7 @@ const NOTES: Note[] = [
     choose:
       "Choose them for training features. Lightning has a far richer Trainer than GPUlayer's, and Accelerate makes an existing loop portable.",
     together:
-      "Keep your training code and add `gpulayer.pytorch.launch(...)` at the top of the script. GPUlayer then places it on workers and starts torchrun with the standard environment that both libraries read. This combination follows from the torchrun environment but has not been tested in this repository yet.",
+      "Keep your training code and add `gpulayer.pytorch.launch(...)` at the top of the script. GPUlayer then places it on workers and starts the processes with the standard torchrun environment that both libraries read. This combination follows from the torchrun environment but has not been tested in this repository yet.",
   },
   {
     name: "Ray",
@@ -274,8 +274,8 @@ const BEHIND = [
   "No real cloud provisioning or autoscaling yet (simulated adapter only); SkyPilot, dstack and Ray already do this.",
   "No long-running services yet; dstack, Ray Serve, Modal and Kubernetes handle them.",
   "A small PyTorch Trainer: no FSDP, DeepSpeed or logger integrations, unlike PyTorch Lightning.",
-  "Distributed jobs start about a second slower than PyTorch Lightning's DDP on one machine, because they go through job packaging and scheduling.",
-  "Distributed jobs use torchrun only; no JAX multi-host or MPI launcher yet.",
+  "Measured with the torchrun launcher, distributed jobs started about a second slower than PyTorch Lightning's DDP on one machine. The direct launcher, now the default, removes about 1.1 s; the comparison has not been re-run.",
+  "Distributed jobs support PyTorch process groups only; no JAX multi-host or MPI launcher yet.",
   "First release (v0.1.0): NVIDIA GPUs and multi-machine runs are implemented but not validated yet. Not a sandbox for untrusted users.",
 ];
 
@@ -487,9 +487,11 @@ export default function ComparePage() {
               </p>
               <p>
                 Differences under about 10% are within run-to-run noise on this machine, so the
-                larger DDP case is a tie. GPUlayer runs DDP as a local GPUlayer job (packaged,
-                scheduled and started with torchrun), which is why its DDP start-up is about a
-                second longer. These are CPU and Apple GPU results on one machine; NVIDIA and
+                larger DDP case is a tie. GPUlayer ran DDP as a local GPUlayer job (packaged,
+                scheduled and started with torchrun), which is why its DDP start-up was about a
+                second longer. These runs used the torchrun launcher; the direct launcher, now
+                the default, removes about 1.1 s from a distributed job&apos;s start-up and
+                shutdown, and the comparison has not been re-run with it. These are CPU and Apple GPU results on one machine; NVIDIA and
                 multi-machine results have not been measured yet.
               </p>
             </div>

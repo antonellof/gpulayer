@@ -4,8 +4,10 @@ A distributed job is one workload spread over several workers and processes. GPU
 whole group at once, assigns ranks, publishes a rendezvous address, starts every node, collects
 per-node logs and outputs, and stops the group if any node fails.
 
-The launcher today is `torchrun`, so the processes get the standard variables `RANK`,
-`WORLD_SIZE`, `LOCAL_RANK`, `MASTER_ADDR` and `MASTER_PORT`. Any code that can use them works,
+Every process gets the standard torchrun variables `RANK`, `WORLD_SIZE`, `LOCAL_RANK`,
+`MASTER_ADDR` and `MASTER_PORT`. GPUlayer starts the processes itself by default
+(`launcher="direct"`, about 1 s faster per job); `launcher="torchrun"` (or `--launcher
+torchrun` on the CLI) starts them through torchrun instead. Any code that can use them works,
 including non-training workloads that only need a process group.
 
 ## Three ways to start one

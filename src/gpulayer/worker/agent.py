@@ -33,8 +33,8 @@ from gpulayer.contracts import (
     WorkerCapabilities,
 )
 from gpulayer.errors import Conflict, Forbidden, GpuLayerError, Unauthorized
-from gpulayer.runtime import dist_function_runner, function_runner
-from gpulayer.runtime.distributed import free_port, torchrun_argv
+from gpulayer.runtime import dist_function_runner, function_runner, rank_launcher
+from gpulayer.runtime.distributed import direct_argv, direct_env, free_port, torchrun_argv
 from gpulayer.runtime.process import run_process
 from gpulayer.worker.channel import WorkerChannel
 
@@ -407,7 +407,8 @@ class WorkerAgent:
                 base_rank = rdzv.node_rank * rdzv.procs_per_node
 
                 def per_rank(stream: str, line: str) -> None:
-                    # torchrun --tee prefixes each rank's lines with "[default<local rank>]:".
+                    # torchrun --tee and rank_launcher.py prefix each rank's lines with
+                    # "[default<local rank>]:".
                     m = _RANK_PREFIX.match(line)
                     if m:
                         sink(stream, m.group(2), base_rank + int(m.group(1)))
@@ -421,9 +422,19 @@ class WorkerAgent:
                     env.setdefault(
                         "GLOO_SOCKET_IFNAME", "lo0" if sys.platform == "darwin" else "lo"
                     )
+                if w.launcher == "direct":
+                    env.update(direct_env(a.job_id, rdzv))
+                    launcher = ws / "rank_launcher.py"
+                    shutil.copyfile(rank_launcher.__file__, launcher)
+
+                def launch_argv(entry: Path, args: list[str]) -> list[str]:
+                    if w.launcher == "direct":
+                        return direct_argv(self.python, str(launcher), rdzv, str(entry), args)
+                    return torchrun_argv(self.python, rdzv, str(entry), args)
+
                 sink(
                     "system",
-                    f"torchrun node {rdzv.node_rank}/{rdzv.num_nodes} rendezvous "
+                    f"{w.launcher} node {rdzv.node_rank}/{rdzv.num_nodes} rendezvous "
                     f"{rdzv.master_addr}:{rdzv.master_port} world_size {rdzv.world_size}",
                 )
                 if w.function is not None:
@@ -444,8 +455,7 @@ class WorkerAgent:
                         result_file = ws / "result.json"
                     if source is not None:
                         env["PYTHONPATH"] = str(src)
-                    argv = torchrun_argv(self.python, w, rdzv, str(entry))
-                    argv += [str(call), str(ws / "result.json")]
+                    argv = launch_argv(entry, [*w.args, str(call), str(ws / "result.json")])
                 else:
                     assert w.entrypoint is not None
                     entry = (src / w.entrypoint).resolve()
@@ -453,7 +463,7 @@ class WorkerAgent:
                         raise GpuLayerError(
                             f"entrypoint {w.entrypoint!r} not found in source bundle"
                         )
-                    argv = torchrun_argv(self.python, w, rdzv, str(entry))
+                    argv = launch_argv(entry, list(w.args))
             else:  # pragma: no cover - exhaustiveness
                 raise GpuLayerError(f"unsupported workload {type(w).__name__}")
 

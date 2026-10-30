@@ -13,6 +13,13 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 - Trainer callbacks: `Callback` hooks, `EarlyStopping` and `ModelCheckpoint` (best checkpoint,
   also returned from remote runs); when one DDP rank asks to stop, every rank stops after the
   same epoch.
+- Faster distributed jobs: `DistributedJob.launcher="direct"` is the new default. Workers
+  start the ranks themselves, with the same environment torchrun sets, instead of through
+  torchrun's elastic agent: a 2 x 2 job on one Mac takes 0.93 s instead of about 2.1 s.
+  `launcher="torchrun"` (`--launcher torchrun`) keeps the old behaviour.
+  Migration: workers and the server must both be upgraded to run `direct` jobs. v0.1.0
+  workers report only `torchrun` and are not chosen for them; a v0.1.0 server rejects the
+  new value, so submit with `launcher="torchrun"` there.
 
 ## 0.1.0 (2026-10-29)
 

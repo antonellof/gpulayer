@@ -1,7 +1,8 @@
 # Distributed training
 
-GPUlayer runs distributed PyTorch with `torchrun` and DistributedDataParallel. It finds a group
-of compatible workers, assigns ranks, publishes the rendezvous address and starts every node.
+GPUlayer runs distributed PyTorch with DistributedDataParallel. It finds a group of compatible
+workers, assigns ranks, publishes the rendezvous address and starts every process, with the
+same environment torchrun would give it.
 PyTorch does the gradient communication.
 
 ## With the Trainer
@@ -41,9 +42,9 @@ sequenceDiagram
     W0->>CP: publish rendezvous host:port
     W1->>CP: acquire task (node rank 1, gets host:port)
     par
-        W0->>W0: torchrun --node-rank 0 (ranks 0, 1)
+        W0->>W0: start ranks 0, 1
     and
-        W1->>W1: torchrun --node-rank 1 (ranks 2, 3)
+        W1->>W1: start ranks 2, 3
     end
     W0-->>W1: gloo / nccl collectives
     W0->>CP: logs, outputs, succeeded

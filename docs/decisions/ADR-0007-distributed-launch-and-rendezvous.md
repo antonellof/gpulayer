@@ -12,7 +12,7 @@ not own collective communication, which PyTorch already provides.
 ## Decision
 
 - `DistributedJob` (`contracts/models.py`) declares `num_workers`, `procs_per_worker`,
-  `launcher="torchrun"`, `comm_backend` (`gloo` or `nccl`; `nccl` requires CUDA), the
+  `launcher` (`direct` or `torchrun`), `comm_backend` (`gloo` or `nccl`; `nccl` requires CUDA), the
   `entrypoint` script inside the source bundle, and `rendezvous` (`static`, optional
   port, join timeout). `failure_policy` is `fail_fast`.
 - **Allocation:** gang scheduling of a compatible worker group (ADR-0004). One task is
@@ -24,10 +24,13 @@ not own collective communication, which PyTorch already provides.
   `publish_rendezvous`. The control plane withholds rank>0 assignments until that
   endpoint exists. Only node rank 0 may publish, and a conflicting re-publish is
   rejected.
-- **Launch:** each worker runs `python -m torch.distributed.run --nnodes N
-  --nproc-per-node P --node-rank r --master-addr A --master-port p --max-restarts=0
-  <entrypoint>` (`torchrun_argv`) in its own process group. The script reads
-  `GPULAYER_COMM_BACKEND` and calls `init_process_group`.
+- **Launch:** with `launcher="torchrun"` each worker runs `python -m torch.distributed.run
+  --nnodes N --nproc-per-node P --node-rank r --master-addr A --master-port p
+  --max-restarts=0 <entrypoint>` (`torchrun_argv`) in its own process group. With
+  `launcher="direct"` (the default since ADR-0016 item 4) it runs `runtime/rank_launcher.py`,
+  which starts the node's P ranks with the same environment and stops them all when one
+  fails (`direct_argv`, `direct_env`). The script reads `GPULAYER_COMM_BACKEND` and calls
+  `init_process_group`.
 - **Coordination:** the job succeeds only when every node succeeds. When any node
   fails, is lost or times out, the job fails immediately, and running siblings get
   `cancel_requested` (delivered by heartbeat) while unstarted ones are cancelled.

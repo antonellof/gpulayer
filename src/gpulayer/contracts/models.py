@@ -381,7 +381,7 @@ class RendezvousSpec(_Model):
 
 
 class DistributedJob(_Model):
-    """ONE logical workload spanning ``num_workers`` nodes, launched with torchrun.
+    """ONE logical workload spanning ``num_workers`` nodes.
 
     Give exactly one of ``entrypoint`` (a script; ``args`` are its CLI arguments) or
     ``function`` (``module:function`` called on every rank with JSON ``function_args``;
@@ -389,7 +389,11 @@ class DistributedJob(_Model):
     """
 
     kind: Literal["distributed"] = "distributed"
-    launcher: Literal["torchrun"] = "torchrun"
+    launcher: Literal["direct", "torchrun"] = Field(
+        "direct",
+        description="direct: GPUlayer starts the ranks with the torchrun environment (faster "
+        "start-up and exit); torchrun: start them through torch.distributed.run.",
+    )
     entrypoint: str | None = Field(
         None, description="Script path relative to the source bundle root."
     )

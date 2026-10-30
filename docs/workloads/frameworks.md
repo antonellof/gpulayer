@@ -77,6 +77,6 @@ Inside the job, `GPULAYER_ACCELERATOR` says which accelerator was granted, and f
 
 ## Multi-process jobs in other frameworks
 
-Distributed jobs are launched with `torchrun` today. Frameworks with their own launchers
+Distributed jobs start PyTorch-style process groups (the torchrun environment) today. Frameworks with their own launchers
 (JAX multi-host, MPI, Horovod) are planned; until then, run them as independent jobs or
 coordinate them yourself.

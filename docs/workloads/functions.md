@@ -47,8 +47,8 @@ parallel. With a remote control plane, the jobs spread over all compatible worke
 
 ## Distributed functions
 
-With `nodes` or `procs_per_node` above 1, the function becomes a distributed job. torchrun
-calls it on every process, and global rank 0's return value is the result:
+With `nodes` or `procs_per_node` above 1, the function becomes a distributed job. It is
+called on every process, and global rank 0's return value is the result:
 
 ```python
 @gl.remote(nodes=2, procs_per_node=2)

@@ -99,11 +99,11 @@ uncommitted local changes, so it was deliberately left untouched.
 - Done: several tasks per worker, each with its own reserved GPUs (tested with simulated
   multi-GPU workers and real concurrent CPU processes).
 - Done: per-rank log streams (every distributed log line carries its global rank).
-- Done: distributed start-up measured (`benchmarks/distributed_startup.py`): GPUlayer adds
-  under 0.01 s; torchrun start and shutdown take about 1.2 s. A direct launcher (opt-in, about
-  1.1 s faster) awaits a decision.
+- Done: faster distributed start-up. The default `direct` launcher starts ranks without
+  torchrun: a 2 x 2 job takes 0.93 s instead of about 2.1 s (`benchmarks/distributed_startup.py`,
+  one Mac, CPU). GPUlayer itself adds under 0.01 s.
 - Next: topology-aware
-  group placement, faster distributed start-up. FSDP and `torch.compile` need CUDA hardware.
+  group placement. FSDP and `torch.compile` need CUDA hardware.
 
 ### Distribution (ADR-0017)
 

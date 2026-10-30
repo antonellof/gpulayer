@@ -39,19 +39,24 @@ start, logs and finish. Multi-machine numbers will be published once they are me
 
 ## Distributed job start-up
 
-`benchmarks/distributed_startup.py` splits the start-up of a trivial 2 x 2 torchrun job:
+`benchmarks/distributed_startup.py` runs a trivial 2 nodes x 2 processes job (import torch,
+`init_process_group`, barrier) on local workers and splits its wall time. Apple M2 Pro, macOS,
+Python 3.12, torch 2.15, gloo, 4 runs per launcher:
 
-| Stage | Seconds |
-|---|---|
-| GPUlayer dispatch (submit to tasks started) | 0.00 |
-| torchrun start-up (task start to script running) | 0.64 to 0.70 |
-| `import torch` in each rank | 0.56 to 0.58 |
-| process-group init (gloo) | 0.03 |
-| torchrun shutdown after the script ends | 0.55 to 0.67 |
-| GPUlayer completion (task finished to client sees it) | 0.00 |
+| Stage | `direct` (default) | `torchrun` |
+|---|---|---|
+| GPUlayer dispatch (submit to tasks started) | 0.00 | 0.00 |
+| launcher start-up (task start to script running) | 0.06 to 0.07 | 0.73 to 0.74 |
+| `import torch` in each rank | 0.60 to 0.63 | 0.57 to 0.67 |
+| process-group init (gloo) | 0.03 to 0.06 | 0.02 to 0.07 |
+| shutdown after the script ends | 0.21 | 0.64 to 0.75 |
+| GPUlayer completion (task finished to client sees it) | 0.00 | 0.00 |
+| **total** | **0.93 to 0.94** | **2.05 to 2.21** |
 
-Almost all of it is torchrun and PyTorch itself. See ADR-0016 for the proposed direct
-launcher.
+The direct launcher starts the ranks from a small standard-library process instead of
+torchrun's elastic agent. What is left is PyTorch itself: importing torch in each rank and the
+rank's own exit. These are CPU results on one machine; NVIDIA and multi-machine start-up have
+not been measured.
 
 ## Training loop
 

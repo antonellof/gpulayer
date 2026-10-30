@@ -1,10 +1,11 @@
 """Where the start-up time of a distributed job goes.
 
     python benchmarks/distributed_startup.py [--nodes 2 --procs 2 --repeat 3]
+                                             [--launcher direct|torchrun|both]
 
-Runs a trivial torchrun job (import torch, init_process_group, barrier) on local workers and
-splits its wall time into GPUlayer dispatch, torchrun start-up, torch import, process-group
-init, torchrun shutdown and GPUlayer completion. Requires torch.
+Runs a trivial distributed job (import torch, init_process_group, barrier) on local workers
+and splits its wall time into GPUlayer dispatch, launcher start-up, torch import,
+process-group init, launcher shutdown and GPUlayer completion. Requires torch.
 """
 
 from __future__ import annotations
@@ -37,6 +38,7 @@ def main() -> None:
     ap.add_argument("--nodes", type=int, default=2)
     ap.add_argument("--procs", type=int, default=2)
     ap.add_argument("--repeat", type=int, default=3)
+    ap.add_argument("--launcher", choices=["direct", "torchrun", "both"], default="both")
     args = ap.parse_args()
     with tempfile.TemporaryDirectory() as tmp:
         src = Path(tmp, "src")
@@ -46,11 +48,17 @@ def main() -> None:
             c.ensure_local_workers(args.nodes)
             bundle = c.package(src)
             print(f"{args.nodes} node(s) x {args.procs} process(es), seconds")
-            for _ in range(args.repeat):
+            launchers = ["direct", "torchrun"] if args.launcher == "both" else [args.launcher]
+            runs = [lch for lch in launchers for _ in range(args.repeat)]
+            for launcher in runs:
                 t_submit = time.time()
                 job = c.submit(
                     gl.distributed(
-                        "t.py", source=bundle, num_workers=args.nodes, procs_per_worker=args.procs
+                        "t.py",
+                        source=bundle,
+                        num_workers=args.nodes,
+                        procs_per_worker=args.procs,
+                        launcher=launcher,
                     )
                 )
                 st = job.wait(300)
@@ -63,14 +71,14 @@ def main() -> None:
                 finished = max(t.finished_at.timestamp() for t in st.tasks if t.finished_at)
                 parts = {
                     "dispatch": started - t_submit,
-                    "torchrun start": proc - started,
+                    "launcher start": proc - started,
                     "import torch": imported - proc,
                     "init group": ready - imported,
-                    "torchrun exit": finished - ready,
+                    "launcher exit": finished - ready,
                     "completion": seen - finished,
                     "total": seen - t_submit,
                 }
-                print("  ".join(f"{k} {v:5.2f}" for k, v in parts.items()))
+                print(f"{launcher:8}  " + "  ".join(f"{k} {v:5.2f}" for k, v in parts.items()))
 
 
 if __name__ == "__main__":

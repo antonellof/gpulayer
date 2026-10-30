@@ -106,7 +106,7 @@ const FEATURES = [
   {
     icon: Network,
     title: "Distributed when needed",
-    body: "Worker groups are placed together, with ranks and rendezvous set up. Launched with torchrun.",
+    body: "Worker groups are placed together, with ranks and rendezvous set up. Ranks start with the standard torchrun environment, without torchrun's start-up cost.",
   },
   {
     icon: ScrollText,

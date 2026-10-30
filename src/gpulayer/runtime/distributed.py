@@ -1,4 +1,4 @@
-"""Worker-group planning and torchrun launch construction for DistributedJob.
+"""Worker-group planning and launch construction (torchrun or direct) for DistributedJob.
 
 GPUlayer allocates the group, assigns node ranks and publishes the rendezvous endpoint;
 PyTorch (torchrun + the chosen process-group backend) does the collective communication.
@@ -52,7 +52,7 @@ def free_port(host: str = "") -> int:
 
 
 def torchrun_argv(
-    python: str, job: DistributedJob, rdzv: RendezvousInfo, entrypoint_path: str
+    python: str, rdzv: RendezvousInfo, entrypoint_path: str, args: list[str]
 ) -> list[str]:
     """Static rendezvous: every node gets rank 0's MASTER_ADDR/PORT and its node rank."""
     return [
@@ -70,5 +70,40 @@ def torchrun_argv(
         # can tag every line with its global rank.
         "--tee=3",
         entrypoint_path,
-        *job.args,
+        *args,
     ]
+
+
+def direct_argv(
+    python: str, launcher_path: str, rdzv: RendezvousInfo, entrypoint_path: str, args: list[str]
+) -> list[str]:
+    """``launcher="direct"``: rank_launcher.py starts this node's ranks without torchrun."""
+    first_rank = rdzv.node_rank * rdzv.procs_per_node
+    return [
+        python,
+        launcher_path,
+        str(rdzv.procs_per_node),
+        str(first_rank),
+        python,
+        entrypoint_path,
+        *args,
+    ]
+
+
+def direct_env(run_id: str, rdzv: RendezvousInfo) -> dict[str, str]:
+    """The node-wide part of the environment torchrun gives each rank (rank_launcher.py adds
+    RANK, LOCAL_RANK and ROLE_RANK). TORCHELASTIC_USE_AGENT_STORE is left unset so rank 0
+    hosts the TCPStore at MASTER_ADDR:MASTER_PORT."""
+    return {
+        "MASTER_ADDR": rdzv.master_addr,
+        "MASTER_PORT": str(rdzv.master_port),
+        "WORLD_SIZE": str(rdzv.world_size),
+        "LOCAL_WORLD_SIZE": str(rdzv.procs_per_node),
+        "GROUP_RANK": str(rdzv.node_rank),
+        "GROUP_WORLD_SIZE": str(rdzv.num_nodes),
+        "ROLE_NAME": "default",
+        "ROLE_WORLD_SIZE": str(rdzv.world_size),
+        "TORCHELASTIC_RUN_ID": run_id,
+        "TORCHELASTIC_RESTART_COUNT": "0",
+        "TORCHELASTIC_MAX_RESTARTS": "0",
+    }

@@ -17,7 +17,7 @@ flowchart TB
     end
     subgraph Types["Workload type: what"]
         I["independent<br/>CommandJob, FunctionJob"]
-        D["distributed<br/>DistributedJob (torchrun)"]
+        D["distributed<br/>DistributedJob (ranks)"]
     end
 ```
 
@@ -31,7 +31,7 @@ single process. A job runs on another target only when you list it in
 |---|---|---|---|
 | `CommandJob` | independent | a command, inside the source bundle if one is given | optional source bundle |
 | `FunctionJob` | independent | `module:function(*args, **kwargs)` | source bundle on `PYTHONPATH`, or an installed module |
-| `DistributedJob` | distributed | `torchrun` on every node, running a script or `module:function` | source bundle |
+| `DistributedJob` | distributed | one process per rank on every node, with the torchrun environment, running a script or `module:function` | source bundle |
 
 Code travels as source. GPUlayer zips the directory, uploads it once (addressed by its
 SHA-256), and the worker imports your module by name. Function arguments and return values must

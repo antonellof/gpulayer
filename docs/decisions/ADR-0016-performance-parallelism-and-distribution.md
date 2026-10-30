@@ -119,11 +119,17 @@ can hold at most one server thread per open request; the failed-login limiter st
    (2 nodes x 2 processes, one Mac): total about 1.8 to 2.0 s, of which GPUlayer dispatch and
    completion take under 0.01 s each. The rest is torchrun start-up (0.6 to 0.7 s), `import
    torch` in each rank (0.55 s), process-group init (0.03 s) and torchrun shutdown after the
-   script ends (0.55 to 0.7 s, unchanged by `--monitor-interval`). The remaining large gain
-   (about 1.1 s per job) would come from starting ranks directly instead of through torchrun.
-   That changes the environment frameworks use to detect how they were launched
-   (`TORCHELASTIC_*`), so it is proposed as an opt-in launcher, not a default; decision
-   pending.
+   script ends (0.55 to 0.7 s, unchanged by `--monitor-interval`).
+   Done: `DistributedJob.launcher="direct"`, now the default. The worker starts the ranks
+   from `runtime/rank_launcher.py` (standard library only) with the same variables torchrun
+   sets, including `TORCHELASTIC_RUN_ID`, so frameworks that detect torchrun see the same
+   environment. `TORCHELASTIC_USE_AGENT_STORE` stays unset so rank 0 hosts the c10d store.
+   The launcher keeps fail-fast and per-rank log capture. Measured on the same benchmark:
+   0.93 s instead of 2.05 to 2.21 s per job. `launcher="torchrun"` remains available for code
+   that needs the elastic agent. Workers from v0.1.0 report only `torchrun`, so the scheduler
+   does not place `direct` jobs on them. Next: the remaining 0.6 s is `import torch` in each
+   rank; a pre-imported fork server could remove it on Linux, but forking after framework
+   imports is unsafe on macOS and with CUDA initialised, so it is not planned yet.
 5. **Sharded data parallelism (FSDP)** for models larger than one GPU, and a `torch.compile`
    option, validated on CUDA hardware.
 6. **Async server** if long-poll thread counts become the limit.

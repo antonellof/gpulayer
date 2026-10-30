@@ -17,7 +17,7 @@ export function ArchitectureDiagram() {
       <title id="arch-title">GPUlayer architecture</title>
       <desc id="arch-desc">
         The SDK and CLI talk to a control plane with a scheduler, worker registry, leases, provisioning and
-        storage. Local, existing and provider workers poll it and run commands, functions or torchrun.
+        storage. Local, existing and provider workers poll it and run commands, functions or distributed rank groups.
       </desc>
       <defs>
         <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">

@@ -39,7 +39,7 @@ def test_mps_available_reports_unified_memory():
     mps = caps.devices(Accelerator.MPS)
     assert len(mps) == 1 and mps[0].memory_kind == MemoryKind.UNIFIED
     assert caps.frameworks == {"torch": "2.4.0", "torch.mps": "2.4.0"}
-    assert caps.launchers == ["torchrun"]
+    assert caps.launchers == ["direct", "torchrun"]
 
 
 def test_mps_built_but_unavailable(monkeypatch):

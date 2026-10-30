@@ -18,7 +18,7 @@ from gpulayer.contracts import (
     WorkerState,
 )
 from gpulayer.errors import Conflict, Forbidden, ValidationFailed
-from gpulayer.runtime.distributed import plan_group, torchrun_argv
+from gpulayer.runtime.distributed import direct_argv, direct_env, plan_group, torchrun_argv
 
 OK = TaskOutcome(state=TaskState.SUCCEEDED, exit_code=0)
 
@@ -232,16 +232,22 @@ def test_rank_plan_and_launch_args():
         plan_group(job, ["a"])
     from gpulayer.contracts import RendezvousInfo
 
-    argv = torchrun_argv(
-        "py",
-        job,
-        RendezvousInfo(
-            master_addr="10.0.0.1", master_port=29500, num_nodes=2, procs_per_node=4, node_rank=1
-        ),
-        "/w/t.py",
+    rdzv = RendezvousInfo(
+        master_addr="10.0.0.1", master_port=29500, num_nodes=2, procs_per_node=4, node_rank=1
     )
+    argv = torchrun_argv("py", rdzv, "/w/t.py", ["--lr", "1"])
     assert "--node-rank=1" in argv and "--master-addr=10.0.0.1" in argv
-    assert "--max-restarts=0" in argv
+    assert "--max-restarts=0" in argv and argv[-3:] == ["/w/t.py", "--lr", "1"]
+
+    assert job.launcher == "direct"  # the default
+    argv = direct_argv("py", "/w/rank_launcher.py", rdzv, "/w/t.py", ["--lr", "1"])
+    assert argv == ["py", "/w/rank_launcher.py", "4", "4", "py", "/w/t.py", "--lr", "1"]
+    env = direct_env("job-1", rdzv)
+    assert env["MASTER_ADDR"] == "10.0.0.1" and env["MASTER_PORT"] == "29500"
+    assert env["WORLD_SIZE"] == "8" and env["LOCAL_WORLD_SIZE"] == "4"
+    assert env["GROUP_RANK"] == "1" and env["TORCHELASTIC_RUN_ID"] == "job-1"
+    # Rank 0 must host the TCPStore itself; with this set it would wait for an agent's store.
+    assert "TORCHELASTIC_USE_AGENT_STORE" not in env
 
 
 def test_distributed_rendezvous_gates_non_zero_ranks(cp):

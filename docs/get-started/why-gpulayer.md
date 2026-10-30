@@ -54,7 +54,7 @@ Outputs land in your current directory (`gpulayer_runs/<job-id>/`, or `gpulayer 
 - **Untrusted users.** Workloads run as normal processes on workers, not in a sandbox. Use
   GPUlayer among people who trust each other.
 - **Validated scale today.** GPUlayer is at its first release (v0.1.0). NVIDIA GPUs and multi-machine runs are
-  implemented but not validated yet, distributed jobs use torchrun only, and automatic cloud
+  implemented but not validated yet, distributed jobs support PyTorch only, and automatic cloud
   provisioning is simulated. Cloud VMs you start yourself can join with `gpulayer join`.
 
 Two constraints: function arguments and results must be JSON, and code ships as files (the

@@ -69,7 +69,7 @@ def mps_device(mem: float = 32.0) -> AcceleratorDevice:
 TORCH_CAPS = dict(
     frameworks={"torch": "2.4.0"},
     distributed_backends=["gloo"],
-    launchers=["torchrun"],
+    launchers=["direct", "torchrun"],
     advertise_address="127.0.0.1",
 )
 

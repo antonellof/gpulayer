@@ -42,7 +42,7 @@ GPUlayer has three parts:
   bundles, inputs, outputs and logs, and checks tokens. For work on one machine it runs inside
   your process; for several machines it runs as a server (`gpulayer up`).
 - **Workers**, one per machine, report their GPUs and installed frameworks, ask the control
-  plane for tasks, run them as normal processes (through `torchrun` for
+  plane for tasks, run them as normal processes (one per rank for
   [distributed jobs](architecture/distributed.md)), stream logs back and upload outputs.
   Workers open every connection themselves, so they can sit behind NAT. A cloud VM is a
   worker that joined with `gpulayer join`.

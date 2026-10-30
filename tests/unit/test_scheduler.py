@@ -173,10 +173,22 @@ def test_distributed_requires_launcher_backend_and_address():
     no_torch = view("a")
     no_addr = view("b", **{**TORCH_CAPS, "advertise_address": None})
     reasons = compatibility_reasons(dist(2), no_torch.capabilities)
-    assert any("torchrun" in r for r in reasons) and any("gloo" in r for r in reasons)
+    assert any("direct" in r for r in reasons) and any("gloo" in r for r in reasons)
     assert any(
         "advertise_address" in r for r in compatibility_reasons(dist(2), no_addr.capabilities)
     )
+
+
+def test_direct_launcher_needs_a_worker_that_supports_it():
+    # Workers from v0.1.0 report only torchrun; a direct job never lands there.
+    old = view("old", **{**TORCH_CAPS, "launchers": ["torchrun"]})
+    assert any(
+        "launcher 'direct' unavailable" in r
+        for r in compatibility_reasons(dist(1), old.capabilities)
+    )
+    torchrun = dist(1)
+    torchrun.workload.launcher = "torchrun"
+    assert compatibility_reasons(torchrun, old.capabilities) == []
 
 
 def test_distributed_group_has_consistent_torch():

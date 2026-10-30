@@ -17,7 +17,7 @@ src/gpulayer/
 ├── runtime/
 │   ├── process.py           process-group execution, timeout, cancel, log streaming
 │   ├── function_runner.py   stdlib-only runner for FunctionJob (copied into the workspace)
-│   └── distributed.py       rank planning and torchrun argv construction
+│   └── distributed.py       rank planning, direct and torchrun launch
 ├── gpu/discovery.py         nvidia-smi, Apple Silicon, rocm-smi; GPU frameworks; torch probe
 ├── gpu/support.py           explicit support matrix consulted by the scheduler
 ├── providers/               ProviderAdapter interface, FakeProvider (simulated)
@@ -45,7 +45,7 @@ flowchart TB
         SVC --> ART[("Artifact store<br/>sha256-addressed")]
     end
     subgraph W["Worker (any machine)"]
-        AG["Worker agent<br/>heartbeat, acquire, report"] --> RUN["Process group<br/>command / function / torchrun"]
+        AG["Worker agent<br/>heartbeat, acquire, report"] --> RUN["Process group<br/>command / function / ranks"]
     end
     AG -- "poll over HTTPS<br/>or in-process" --> API
 ```
