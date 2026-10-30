@@ -5,22 +5,22 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
-- Workers report `jax.cuda` and `cupy.cuda` only when JAX or CuPy actually ran on the GPU (a
-  probe in its own interpreter, run only when they are installed), as `torch.cuda` already
-  was. Before, an installed CPU-only `jax` was enough for a `--accelerator cuda --framework
-  jax` job to be placed there.
-- Examples for remote NVIDIA GPUs: Blender Cycles rendering, ffmpeg NVENC transcoding, JAX and
-  CuPy, and a PyTorch inference service. Not yet run on a GPU.
+## 0.5.0 (2026-10-30)
 
 - Two-level gradient sync (ADR-0020): with gloo and several processes per machine, the
   Trainer sums gradients inside each machine before all-reducing across machines
   (`Trainer(gradient_sync="auto" | "flat" | "two_level")`). On 8 GCP machines x 4 processes a
   DDP step went from 117 to 102 ms, and the strong-scaling job ran 11.9% faster than
   Lightning (50.5 s vs 57.3 s). NCCL jobs are unchanged.
-
+- Workers report `jax.cuda` and `cupy.cuda` only when JAX or CuPy actually ran on the GPU (a
+  probe in its own interpreter, run only when they are installed), as `torch.cuda` already
+  was. Before, an installed CPU-only `jax` was enough for a `--accelerator cuda --framework
+  jax` job to be placed there.
 - Google Cloud GPU provisioning validated: a `--provider gcp --accelerator cuda` job made
   GPUlayer create a Spot T4 VM, which joined with its GPU and `torch.cuda` 78 s after boot
   started, ran a `Trainer` job on CUDA, and was deleted when it ended.
+- Examples for remote NVIDIA GPUs: Blender Cycles rendering, ffmpeg NVENC transcoding, JAX and
+  CuPy, and a PyTorch inference service. Not yet run on a GPU.
 
 ## 0.4.0 (2026-10-30)
 

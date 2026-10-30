@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "gpulayer"
-version = "0.4.0"
+version = "0.5.0"
 description = "Run any workload on every GPU (and CPU) you can reach: job orchestration across local, remote and cloud machines, distributed PyTorch, a web dashboard and an MCP server for AI agents."
 readme = "README.md"
 requires-python = ">=3.10"

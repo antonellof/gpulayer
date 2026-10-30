@@ -20,7 +20,7 @@ it (this one, remote servers, clusters, data centers, cloud VMs, or several at o
 it there and brings back logs, outputs and results. PyTorch gets a deeper integration on top.
 Documentation: [gpulayer.dev/docs](https://www.gpulayer.dev/docs/).
 
-> **v0.4.0.** Tested on CPU, Apple Silicon (PyTorch MPS and MLX) and an
+> **v0.5.0.** Tested on CPU, Apple Silicon (PyTorch MPS and MLX) and an
 > NVIDIA Tesla T4, and on up to 30 machines on Google Cloud. Several GPUs per machine and NCCL
 > across machines are implemented but not validated yet; cloud provisioning covers Google Cloud. See
 > [Status and roadmap](https://github.com/antonellof/gpulayer/blob/main/docs/project/status.md).
