@@ -1,0 +1,8 @@
+submitted job-2caea1246bef (distributed, target remote)
+[rank0] PROFILE world=32 local=4 params=141034 batch_per_proc=8 same_result=True
+[rank0] PROFILE compute           83.41 ms
+[rank0] PROFILE flat              25.51 ms
+[rank0] PROFILE two-level         10.95 ms
+[rank0] PROFILE ddp              117.21 ms
+[rank0] PROFILE ddp+two-level    101.84 ms
+job-2caea1246bef succeeded

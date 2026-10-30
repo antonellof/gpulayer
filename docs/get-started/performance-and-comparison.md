@@ -123,6 +123,30 @@ three runs. An earlier run without pinning put the two trainers on different VMs
 swung by up to 9% either way, so it is not used here. Scripts: `benchmarks/lightning_comparison/scaling.py`
 and `scaling_run.py`; logs in `benchmarks/results/2026-10-30-gcp-9vm/`.
 
+### Two-level gradient sync
+
+A profile of the 8-machine run (`benchmarks/lightning_comparison/profile_step.py`, 8 x 4
+processes) showed where a step goes: 83 ms of compute, and 25.5 ms to all-reduce the
+gradients over all 32 processes. Summing inside each machine first and then all-reducing
+among the 8 machines took 11.0 ms for the same result, and a full DDP step went from 117 ms
+to 102 ms. The Trainer now does this by default with gloo when a job has several machines and
+several processes per machine (`gradient_sync="auto"`, ADR-0020); NCCL jobs are unchanged.
+
+Rerun with the same method on a new set of 9 `n1-standard-4` VMs (GPUlayer with two-level
+sync, Lightning with its default DDP; median of three, interleaved, same machines):
+
+| Machines | Processes | GPUlayer | Lightning | GPUlayer ahead by |
+|---|---|---|---|---|
+| 2 | 8 | 118.9 s | 120.8 s | 1.6% |
+| 4 | 16 | 73.3 s | 77.4 s | 5.3% |
+| 8 | 32 | 50.5 s | 57.3 s | 11.9% |
+
+The final losses agree (2.162 and 2.164 on 8 machines). These VMs were slower than the ones
+in the table above for both trainers, so compare within a table, not across them. The lead
+comes from fewer network round trips per step, so it grows with the number of machines and
+matters most for small models; one machine is unaffected. Logs:
+`benchmarks/results/2026-10-30-gcp-two-level/`.
+
 ## Thirty machines
 
 One server and 30 workers (`n1-standard-4`, 4 slots each, 120 slots), 23 in Belgium

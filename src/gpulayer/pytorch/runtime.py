@@ -84,15 +84,27 @@ def _fsdp_no_sync(modules: list[Any]) -> Iterator[None]:
             m.set_requires_gradient_sync(True, recurse=False)
 
 
+GRADIENT_SYNC = ("auto", "flat", "two_level")
+
+
 class Runtime:
-    def __init__(self, accelerator: str = "auto", precision: str = "32-true") -> None:
+    def __init__(
+        self, accelerator: str = "auto", precision: str = "32-true", gradient_sync: str = "auto"
+    ) -> None:
         if precision not in PRECISIONS:
             raise ValidationFailed(f"precision must be one of {PRECISIONS}, got {precision!r}")
+        if gradient_sync not in GRADIENT_SYNC:
+            raise ValidationFailed(
+                f"gradient_sync must be one of {GRADIENT_SYNC}, got {gradient_sync!r}"
+            )
+        self.gradient_sync = gradient_sync
+        self._two_level: Any = None
         self.accelerator = resolve_accelerator(accelerator)
         self.precision = precision
         self.world_size = int(os.environ.get("WORLD_SIZE", "1"))
         self.global_rank = int(os.environ.get("RANK", "0"))
         self.local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+        self.local_world_size = int(os.environ.get("LOCAL_WORLD_SIZE", "1"))
         self.node_rank = int(
             os.environ.get("GPULAYER_NODE_RANK", os.environ.get("GROUP_RANK", "0"))
         )
@@ -147,7 +159,30 @@ class Runtime:
             return model
         from torch.nn.parallel import DistributedDataParallel as DDP
 
-        return DDP(model, device_ids=[self.local_rank] if self.accelerator == "cuda" else None)
+        ddp = DDP(model, device_ids=[self.local_rank] if self.accelerator == "cuda" else None)
+        if self.uses_two_level_sync():
+            from gpulayer.pytorch.hierarchical import HierarchicalAllReduce
+
+            if self._two_level is None:  # new_group is a collective: create the groups once
+                self._two_level = HierarchicalAllReduce.create(self.local_world_size)
+            ddp.register_comm_hook(self._two_level, HierarchicalAllReduce.hook)
+        return ddp
+
+    def uses_two_level_sync(self) -> bool:
+        """Sum gradients inside each machine before crossing the network (ADR-0020). "auto"
+        does it for gloo with several machines and several processes per machine; NCCL plans
+        its own topology-aware rings."""
+        if self.gradient_sync == "flat" or not self.distributed:
+            return False
+        local = self.local_world_size
+        if self.gradient_sync == "two_level":
+            return True
+        return (
+            dist.is_initialized()
+            and dist.get_backend() == "gloo"
+            and 1 < local < self.world_size
+            and self.world_size % local == 0
+        )
 
     def dataloader(self, loader: DataLoader, *, shuffle: bool | None = None) -> DataLoader:
         """Return a loader that gives each rank its own shard (unchanged when not distributed)."""

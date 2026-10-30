@@ -1,6 +1,6 @@
 # GPUlayer
 
-GPUlayer runs your workloads on every GPU and CPU you can reach: the ones in your laptop, remote
+GPUlayer runs your workloads on every GPU (and CPU) you can reach: the ones in your laptop, remote
 servers, clusters, data centers, or cloud VMs. A workload can be a command in any
 language, a Python function using any library, or a distributed job across several machines.
 GPUlayer finds a machine that can run it, starts it there, and brings back the logs, outputs and

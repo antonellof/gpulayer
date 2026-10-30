@@ -277,7 +277,7 @@ const BEHIND = [
   "Cloud provisioning covers Google Cloud only, with no autoscaling of a standing pool; SkyPilot, dstack and Ray cover more clouds.",
   "Services have no load balancer, rolling updates or autoscaling; dstack, Ray Serve, Modal and Kubernetes have them.",
   "A small PyTorch Trainer: FSDP is experimental (CPU-tested), and there is no DeepSpeed or logger integration, unlike PyTorch Lightning.",
-  "Multi-node training runs at the same speed as PyTorch Lightning under torchrun (within 2% on 1 to 8 machines). GPUlayer is faster at start-up and per step on small models, and it starts all the nodes for you.",
+  "Multi-node speed against PyTorch Lightning is measured on CPUs with gloo only: 11.9% faster on 8 machines with two-level gradient sync, the same on one machine. NCCL on GPUs is not measured yet.",
   "Distributed jobs support PyTorch process groups only; no JAX multi-host or MPI launcher yet.",
   "v0.4.0: validated on one NVIDIA GPU and on up to 30 machines; several GPUs per machine and NCCL across machines are not validated yet. Not a sandbox for untrusted users.",
 ];
@@ -499,7 +499,10 @@ export default function ComparePage() {
               <p>
                 On 1, 2, 4 and 8 GCP machines (4 processes each, same machines and interleaved runs for both trainers),
                 one CNN training job took 145.9, 83.0, 52.9 and 40.5 s with GPUlayer and 145.8, 84.1, 53.3 and 41.2 s
-                with Lightning under torchrun. The speed is the same; GPUlayer starts every node from one{" "}
+                with Lightning under torchrun: the same speed. With two-level gradient sync (summing inside each
+                machine before crossing the network, now the default with gloo), a rerun on new VMs took 118.9, 73.3
+                and 50.5 s on 2, 4 and 8 machines against 120.8, 77.4 and 57.3 s for Lightning: 11.9% faster on 8.
+                GPUlayer starts every node from one{" "}
                 <code className="font-mono">Trainer(num_nodes=N)</code> call.
               </p>
               <p>

@@ -74,6 +74,22 @@ Notes:
 | `results/2026-10-30-gcp/summary.json` | the numbers behind the docs and charts |
 | `results/2026-10-30-gcp/t4/` | Tesla T4: validation logs, Lightning comparison, `nvidia-smi`, package versions |
 | `results/2026-10-30-gcp/multi-machine/` | two VMs: multi-machine log and results, HTTP before and after |
+| `results/2026-10-30-gcp-fleet/` | 30 workers: distributed jobs on 16 machines, fail-fast, worker loss, throughput |
+| `results/2026-10-30-gcp-9vm/` | 9 VMs: strong scaling against Lightning (pinned and unpinned), 2,000-job bursts |
+| `results/2026-10-30-gcp-two-level/` | 9 VMs: per-step profile on 8 x 4 processes, and strong scaling against Lightning with two-level gradient sync |
+| `results/2026-10-30-gcp-provider/` | Google Cloud adapter: CPU VM created, joined, ran a job, deleted |
+| `results/2026-10-30-gcp-provider-t4/` | Google Cloud adapter: Spot T4 VM created, ran `Trainer` on CUDA, deleted |
+
+Profile a distributed step (compute, flat and two-level all-reduce, DDP with and without the
+two-level hook) on a running fleet:
+
+```bash
+gpulayer submit --target remote --distributed --source benchmarks/lightning_comparison \
+  --entrypoint profile_step.py --nodes 8 --procs-per-node 4
+```
+
+Latest strong-scaling result (8 x `n1-standard-4`, 4 gloo processes each, median of three,
+same machines, interleaved): GPUlayer with two-level sync 50.5 s, Lightning 57.3 s.
 
 Regenerate the charts after adding results:
 

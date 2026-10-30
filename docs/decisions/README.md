@@ -36,6 +36,7 @@ proposed. Each ADR says which part is which.
 | [0016](ADR-0016-performance-parallelism-and-distribution.md) | Speed, parallelism and job distribution as primary goals | Accepted (milestone 2) | No fixed sleeps on hot paths (long-poll dispatch and job waits), no per-step device syncs, measured changes, and a roadmap for concurrent tasks per worker and topology-aware placement. |
 | [0018](ADR-0018-trainer-scope.md) | Trainer scope relative to PyTorch Lightning | Accepted (milestone 2) | Adopt Lightning's names for the features most scripts need, keep the per-step path lean, leave the ecosystem (loggers, DeepSpeed) to `launch()`. |
 | [0019](ADR-0019-long-running-services.md) | Long-running services | Accepted (first slice) | `ServiceJob`: replicas that stay up, `$PORT` and reported endpoints, restarts on the worker, re-placement on worker loss; no ingress yet. |
+| [0020](ADR-0020-two-level-gradient-sync.md) | Two-level gradient sync | Accepted | With gloo and several processes per machine, the Trainer sums gradients inside each machine before crossing the network. |
 
 ## Template
 

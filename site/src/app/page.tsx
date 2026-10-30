@@ -226,7 +226,7 @@ export default function Home() {
               <ArrowRight className="h-3 w-3" />
             </Link>
             <h1 className="mt-6 max-w-4xl text-5xl font-semibold leading-[1.02] tracking-[-0.045em] sm:text-6xl lg:text-7xl">
-              Run any workload on every GPU and CPU you can reach.
+              Run any workload on every GPU (and CPU) you can reach.
             </h1>
             <p className="lede mt-6 max-w-2xl sm:text-xl">
               GPUlayer sits between your code and your GPUs and CPUs: your laptop, remote servers, clusters, data

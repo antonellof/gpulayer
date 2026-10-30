@@ -29,7 +29,7 @@ from gpulayer.errors import ValidationFailed
 from gpulayer.pytorch.callbacks import Callback, _call
 from gpulayer.pytorch.launch import LaunchResult, is_launcher_process, launch
 from gpulayer.pytorch.module import Module, _TrainingStep
-from gpulayer.pytorch.runtime import Runtime, resolve_accelerator
+from gpulayer.pytorch.runtime import GRADIENT_SYNC, Runtime, resolve_accelerator
 from gpulayer.sdk.remote import RemoteError, default_client, default_target, explain_failure
 
 CHECKPOINT = "checkpoints/last.ckpt"
@@ -48,6 +48,7 @@ class Trainer:
         num_nodes: int = 1,
         strategy: str = "ddp",
         precision: str = "32-true",
+        gradient_sync: str = "auto",
         target: str | None = None,
         gradient_clip_val: float | None = None,
         accumulate_grad_batches: int = 1,
@@ -69,6 +70,11 @@ class Trainer:
             )
         if max_steps is not None and max_steps < 1:
             raise ValidationFailed("max_steps must be >= 1 (or None for no limit)")
+        if gradient_sync not in GRADIENT_SYNC:
+            raise ValidationFailed(
+                f"gradient_sync must be one of {GRADIENT_SYNC}, got {gradient_sync!r}"
+            )
+        self.gradient_sync = gradient_sync
         if strategy not in ("ddp", "fsdp"):
             raise ValidationFailed(f"strategy must be 'ddp' or 'fsdp', got {strategy!r}")
         if strategy == "fsdp" and precision == "16-mixed":
@@ -203,7 +209,7 @@ class Trainer:
             self._launch(model, ckpt_path)
             _call(self.callbacks, "on_fit_end", self, model)
             return
-        rt = Runtime(self.accelerator, self.precision).setup()
+        rt = Runtime(self.accelerator, self.precision, self.gradient_sync).setup()
         self.runtime = rt
         try:
             self._fit_loop(rt, model, train_dataloaders, val_dataloaders, _resume_path(ckpt_path))
@@ -279,6 +285,8 @@ class Trainer:
         where = f"{rt.accelerator}" + (
             f", rank {rt.global_rank}/{rt.world_size}" if rt.distributed else ""
         )
+        if sharded is None and rt.uses_two_level_sync():
+            where += f", two-level gradient sync ({rt.local_world_size} per machine)"
         self._say(
             f"[gpulayer] training on {where}, precision {rt.precision}, {self.max_epochs} epoch(s)"
         )
@@ -414,7 +422,7 @@ class Trainer:
     def predict(self, model: Module, dataloaders: DataLoader) -> list[Any]:
         """Run ``predict_step`` over ``dataloaders`` in this process (no gradients) and return
         one output per batch, moved to the CPU."""
-        rt = Runtime(self.accelerator, self.precision).setup()
+        rt = Runtime(self.accelerator, self.precision, self.gradient_sync).setup()
         self.runtime = rt
         out: list[Any] = []
         try:
@@ -429,7 +437,7 @@ class Trainer:
             rt.teardown()
 
     def _run_eval(self, model: Module, dataloaders: DataLoader, step: str) -> dict[str, float]:
-        rt = Runtime(self.accelerator, self.precision).setup()
+        rt = Runtime(self.accelerator, self.precision, self.gradient_sync).setup()
         self.runtime = rt
         try:
             model.to(rt.device)

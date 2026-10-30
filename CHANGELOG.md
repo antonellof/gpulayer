@@ -5,6 +5,12 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Two-level gradient sync (ADR-0020): with gloo and several processes per machine, the
+  Trainer sums gradients inside each machine before all-reducing across machines
+  (`Trainer(gradient_sync="auto" | "flat" | "two_level")`). On 8 GCP machines x 4 processes a
+  DDP step went from 117 to 102 ms, and the strong-scaling job ran 11.9% faster than
+  Lightning (50.5 s vs 57.3 s). NCCL jobs are unchanged.
+
 - Google Cloud GPU provisioning validated: a `--provider gcp --accelerator cuda` job made
   GPUlayer create a Spot T4 VM, which joined with its GPU and `torch.cuda` 78 s after boot
   started, ran a `Trainer` job on CUDA, and was deleted when it ended.
