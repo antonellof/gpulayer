@@ -141,7 +141,8 @@ case "$cmd" in
       sudo -E uv venv -q --python 3.12 .venv
       sudo -E uv pip install -q --python .venv/bin/python torch --index-url https://download.pytorch.org/whl/cpu
       sudo -E uv pip install -q --python .venv/bin/python -e ".[dev,examples]" "lightning==2.6.6"
-      sudo ln -sf /opt/gpulayer/.venv/bin/gpulayer /usr/local/bin/gpulayer; gpulayer --version'
+      sudo ln -sf /opt/gpulayer/.venv/bin/gpulayer /usr/local/bin/gpulayer; gpulayer --version
+      sudo chmod -R a+rwX /opt/gpulayer   # benchmark runs write their outputs next to the code'
     gcloud compute instances stop "$b" "${G[@]}" --zone "$ZONE" --quiet
     gcloud compute images create "$img" "${G[@]}" --source-disk "$b" --source-disk-zone "$ZONE" \
       --labels purpose=gpulayer-bench
