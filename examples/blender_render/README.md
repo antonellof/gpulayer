@@ -20,7 +20,8 @@ gpulayer job result JOB_ID --download frames/
 ```
 
 `OPTIX` uses the RT cores of RTX and newer cards and also runs on a T4; `CUDA` works on any
-CUDA GPU; `CPU` renders without the GPU, for comparison. If Blender cannot use the requested
+CUDA GPU; `METAL` is the Apple Silicon GPU (`--accelerator mps`); `CPU` renders without the GPU,
+for comparison. The first Metal or OptiX render compiles kernels (over a minute once). If Blender cannot use the requested
 GPU device the job fails and says which devices it found; it does not fall back to the CPU.
 
 To spread a long animation over several GPUs, submit one job per frame range

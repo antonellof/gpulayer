@@ -36,7 +36,7 @@ else:
             used.append(d.name)
     if not used:
         found = sorted({f"{d.type}:{d.name}" for d in prefs.devices})
-        sys.exit(f"no {device} device available to Blender (found: {found})")
+        raise RuntimeError(f"no {device} device available to Blender (found: {found})")
     scene.cycles.device = "GPU"
 print(f"blender {bpy.app.version_string}, device {device}: {', '.join(used)}", flush=True)
 

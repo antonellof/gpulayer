@@ -5,6 +5,10 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Examples run on an Apple M2 Pro: the Blender example now fails the job when the requested GPU
+  device is missing (Blender exited 0 on a script error), the ffmpeg example uses VideoToolbox
+  on a Mac and works with macOS `date`, and the inference service also uses MPS.
+
 ## 0.5.0 (2026-10-30)
 
 - Two-level gradient sync (ADR-0020): with gloo and several processes per machine, the

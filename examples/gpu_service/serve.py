@@ -15,7 +15,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import torch
 from torch import nn
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+elif torch.backends.mps.is_available():  # Apple Silicon
+    device = torch.device("mps")
+else:
+    device = torch.device("cpu")
 torch.manual_seed(0)
 model = (
     nn.Sequential(
@@ -25,7 +30,7 @@ model = (
     .eval()
     .half()
 )
-name = torch.cuda.get_device_name(0) if device.type == "cuda" else "cpu"
+name = torch.cuda.get_device_name(0) if device.type == "cuda" else device.type
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -36,7 +41,7 @@ class Handler(BaseHTTPRequestHandler):
         x = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         t0 = time.perf_counter()
         with torch.inference_mode():
-            y = model(torch.tensor([x], device=device, dtype=torch.half)).float().cpu()
+            y = model(torch.tensor([x], device=device, dtype=torch.half)).float().cpu()  # syncs
         self._send(
             {"output": y[0].tolist(), "ms": (time.perf_counter() - t0) * 1000, "device": name}
         )

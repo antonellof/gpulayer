@@ -8,4 +8,5 @@ blender=${BLENDER:-blender}
 command -v "$blender" >/dev/null || { echo "blender not found on $(hostname)" >&2; exit 127; }
 cd "$(dirname "$0")"
 command -v nvidia-smi >/dev/null && nvidia-smi --query-gpu=name,driver_version --format=csv,noheader
-exec "$blender" -b --factory-startup -P render.py -- "${1:-OPTIX}" "${2:-4}" "${3:-64}" "${4:-1}"
+# --python-exit-code: a script error must fail the job (Blender exits 0 otherwise).
+exec "$blender" -b --factory-startup --python-exit-code 1 -P render.py -- "${1:-OPTIX}" "${2:-4}" "${3:-64}" "${4:-1}"
