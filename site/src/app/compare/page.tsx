@@ -16,11 +16,14 @@ import {
 import { SiteFooter } from "@/components/site/footer";
 import { SiteHeader } from "@/components/site/header";
 import { LayerStack } from "@/components/landing/layer-stack";
+import { OG_IMAGE } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "GPUlayer compared | PyTorch Lightning, Ray, SkyPilot, dstack, Modal and more",
   description:
     "How GPUlayer relates to PyTorch Lightning, Hugging Face Accelerate, Ray, SkyPilot, dstack, Modal, Slurm and Kubernetes: what each one does, where they overlap, and when to use which.",
+  alternates: { canonical: "/compare/" },
+  openGraph: { url: "/compare/", images: [OG_IMAGE] },
 };
 
 type Row = {

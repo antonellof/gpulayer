@@ -5,6 +5,7 @@ import { ArrowLeft, ArrowRight, Pencil } from "lucide-react";
 import { Markdown } from "@/components/docs/markdown";
 import { Toc } from "@/components/docs/toc";
 import { REPO, allDocs, extractHeadings, findDoc, navNeighbors, readDoc, routeHref } from "@/lib/docs";
+import { OG_IMAGE } from "@/lib/site";
 
 interface PageProps {
   params: { slug?: string[] };
@@ -18,7 +19,37 @@ export function generateStaticParams() {
 
 export function generateMetadata({ params }: PageProps): Metadata {
   const entry = findDoc(params.slug ?? []);
-  return { title: entry ? entry.title : "Not found" };
+  if (!entry) return { title: "Not found", robots: { index: false } };
+  const url = routeHref(entry.route);
+  const description = summary(readDoc(entry));
+  return {
+    title: entry.title,
+    description,
+    alternates: { canonical: url },
+    openGraph: {
+      type: "article",
+      url,
+      title: `${entry.title} | GPUlayer docs`,
+      description,
+      images: [OG_IMAGE],
+    },
+  };
+}
+
+/** The first paragraph of a page, as plain text, for search results and link previews. */
+function summary(md: string | null): string | undefined {
+  if (!md) return undefined;
+  for (const block of md.split(/\n\s*\n/)) {
+    const text = block.trim();
+    if (!text || /^(#|```|\||>|!\[|<|- |\d+\. )/.test(text)) continue;
+    const plain = text
+      .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+      .replace(/[`*_]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    return plain.length > 300 ? `${plain.slice(0, 297).replace(/\s+\S*$/, "")}...` : plain;
+  }
+  return undefined;
 }
 
 export default function DocsPage({ params }: PageProps) {

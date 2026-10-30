@@ -20,6 +20,23 @@ import { Terminal, type TerminalTab } from "@/components/landing/terminal";
 import { SiteFooter } from "@/components/site/footer";
 import { SiteHeader } from "@/components/site/header";
 import { REPO } from "@/lib/docs";
+import { SITE_DESCRIPTION, SITE_URL } from "@/lib/site";
+
+// Structured data for search engines: GPUlayer as free, open-source software.
+const JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "GPUlayer",
+  url: SITE_URL,
+  description: SITE_DESCRIPTION,
+  applicationCategory: "DeveloperApplication",
+  operatingSystem: "Linux, macOS",
+  softwareVersion: VERSION,
+  license: "https://www.apache.org/licenses/LICENSE-2.0",
+  downloadUrl: "https://pypi.org/project/gpulayer/",
+  codeRepository: REPO,
+  offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+};
 
 // Output below is copied from real runs on an Apple Silicon Mac (see the quickstart).
 const TERMINAL_TABS: TerminalTab[] = [
@@ -195,6 +212,7 @@ export default function Home() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }} />
       <main className="flex-1">
         {/* Hero */}
         <section className="border-b border-border">
