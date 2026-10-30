@@ -18,7 +18,7 @@ Updated 2026-10-29 at the end of the first iteration.
 | NVIDIA CUDA execution | hardware-validated on a Tesla T4 (single GPU) |
 | AMD ROCm | detection only |
 | Long-running services (ADR-0019): replicas, `$PORT`, endpoints, restarts | tested on a local worker and on Kubernetes (kind); no load balancer |
-| Cloud provisioning through provider adapters | Google Cloud: validated with a CPU VM (create, join, run, delete); other clouds: none yet; `FakeProvider` for tests |
+| Cloud provisioning through provider adapters | Google Cloud: validated with a CPU VM and a Spot T4 VM (create, join, run a CUDA training job, delete); other clouds: none yet; `FakeProvider` for tests |
 | Documentation site (`site/`) | builds as a static export |
 
 ## Milestone 2 (in progress): PyTorch and ease of use

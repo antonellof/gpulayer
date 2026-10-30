@@ -24,7 +24,7 @@ Describe the machines GPUlayer may create in a JSON file:
     "offers": [
       {"id": "cpu4", "machine_type": "e2-standard-4"},
       {"id": "t4", "machine_type": "n1-standard-8", "gpu_type": "nvidia-tesla-t4",
-       "gpu_count": 1, "spot": true, "packages": ["torch"],
+       "gpu_count": 1, "spot": true, "packages": ["torch", "numpy"],
        "frameworks": {"torch": "2.15", "torch.cuda": "2.15"}, "price_per_hour": 0.4}
     ]
   }
@@ -59,10 +59,17 @@ New VMs connect to the server's `public_url` (`--advertise-address`), so they mu
 for example on the same VPC network. Their metadata holds the single-use instance token; it is
 useless once the worker has registered.
 
-Validated on GCP (2026-10-30): a job submitted with `--provider gcp` created an
-`e2-standard-2` VM in 12 s; it booted, installed GPUlayer and joined 46 s later, ran the job,
-and was deleted 1 s after the job ended (`benchmarks/results/2026-10-30-gcp-provider/`). GPU
-offers use the same path but have not been run through it yet.
+Validated on GCP (2026-10-30), with GPUlayer 0.4.0 installed from PyPI on the server:
+
+| Offer | VM created | Worker joined | Job | VM deleted |
+|---|---|---|---|---|
+| `e2-standard-2` (CPU) | 12 s after submit | 46 s later | a command | 1 s after the job ended |
+| `n1-standard-8` + 1 T4, Spot | 23 s after submit | 78 s later, 1 accelerator, `torch.cuda` | `Trainer` on CUDA, fp32 and 16-mixed, 17 s | 1 s after the job ended |
+
+The GPU VM used the default CUDA image (driver preinstalled) and installed PyTorch from the
+offer's `packages`. Logs: `benchmarks/results/2026-10-30-gcp-provider/` and
+`benchmarks/results/2026-10-30-gcp-provider-t4/`. Add `numpy` to `packages` when jobs need it;
+the PyTorch wheel does not install it.
 
 ## Interface
 
@@ -100,7 +107,7 @@ instance names are metadata only; the scheduler sees capabilities.
 ## Status
 
 - `GCPProvider` (`providers/gcp.py`) is the first real adapter. It is unit-tested against a
-  fake Compute Engine API and validated once on GCP with a CPU VM.
+  fake Compute Engine API and validated on GCP with a CPU VM and a Spot T4 VM.
 - `FakeProvider` is an in-memory, deterministic adapter with failure injection, simulated, used
   by the lifecycle tests.
 - Other clouds (AWS, Azure, Lambda, RunPod) have no adapter yet. GPUlayer does not ship

@@ -1,0 +1,53 @@
+17:16:29 job.submitted independent job 'job' submitted, target cloud
+17:16:29 job.provisioning no workers online; requesting 1 instance(s) from gcp
+17:16:52 instance.provisioned gcp instance gpulayer-inst-6b5ebd513568 (provisioning)
+17:18:10 worker.registered worker gpulayer-inst-6b5ebd513568 registered (provider, 1 accelerator(s))
+17:18:10 job.scheduled placed on worker ['wkr-151f468337c4'] (target cloud, policy spread)
+17:18:10 task.running node rank 0 started
+17:18:10 job.running job scheduled -> running
+17:18:27 task.succeeded node rank 0 succeeded (exit 0)
+17:18:27 job.succeeded job running -> succeeded
+17:18:28 instance.terminated released instance gpulayer-inst-6b5ebd513568
+---
+submitted job-e3414bae659f (independent, target cloud)
+/opt/gpulayer/lib/python3.12/site-packages/torch/_subclasses/functional_tensor.py:377: UserWarning: Failed to initialize NumPy: No module named 'numpy' (Triggered internally at /__w/pytorch/pytorch/torch/csrc/utils/tensor_numpy.cpp:82.)
+  cpu = _conversion_method_template(device=torch.device("cpu"))
+device Tesla T4 torch 2.15.0+cu132
+[gpulayer] training on cuda, precision 32-true, 5 epoch(s)
+epoch 0 step 50 train_loss=0.5205
+epoch 0 step 100 train_loss=0.5133
+epoch 0 done in 0.938s: train_loss=0.5421 val_loss=0.4984
+epoch 1 step 150 train_loss=0.5207
+epoch 1 step 200 train_loss=0.5064
+epoch 1 done in 0.489s: train_loss=0.4956 val_loss=0.4901
+epoch 2 step 250 train_loss=0.4679
+epoch 2 step 300 train_loss=0.4646
+epoch 2 done in 0.634s: train_loss=0.4629 val_loss=0.3586
+epoch 3 step 350 train_loss=0.2899
+epoch 3 step 400 train_loss=0.1681
+epoch 3 done in 0.486s: train_loss=0.1887 val_loss=0.1305
+epoch 4 step 450 train_loss=0.1299
+epoch 4 step 500 train_loss=0.0896
+epoch 4 step 550 train_loss=0.1005
+epoch 4 done in 0.495s: train_loss=0.1085 val_loss=0.0956
+RESULT precision=32-true epochs=5 seconds=8.13 train_loss 0.5421->0.1085 val_loss=0.0956 epoch_seconds_after_first=0.526 ckpt=/var/lib/gpulayer/workers/wkr-151f468337c4/tasks/task-31a1e702b6c9/outputs/checkpoints/last.ckpt
+[gpulayer] training on cuda, precision 16-mixed, 5 epoch(s)
+epoch 0 step 50 train_loss=0.4938
+epoch 0 step 100 train_loss=0.4760
+epoch 0 done in 0.729s: train_loss=0.5231 val_loss=0.4968
+epoch 1 step 150 train_loss=0.4885
+epoch 1 step 200 train_loss=0.4924
+epoch 1 done in 0.697s: train_loss=0.4884 val_loss=0.4725
+epoch 2 step 250 train_loss=0.4133
+epoch 2 step 300 train_loss=0.2054
+epoch 2 done in 0.549s: train_loss=0.2948 val_loss=0.1823
+epoch 3 step 350 train_loss=0.1356
+epoch 3 step 400 train_loss=0.0999
+epoch 3 done in 0.555s: train_loss=0.1066 val_loss=0.0757
+epoch 4 step 450 train_loss=0.0573
+epoch 4 step 500 train_loss=0.0502
+epoch 4 step 550 train_loss=0.0455
+epoch 4 done in 0.549s: train_loss=0.0454 val_loss=0.0390
+RESULT precision=16-mixed epochs=5 seconds=3.25 train_loss 0.5231->0.0454 val_loss=0.0390 epoch_seconds_after_first=0.588 ckpt=/var/lib/gpulayer/workers/wkr-151f468337c4/tasks/task-31a1e702b6c9/outputs/checkpoints/last.ckpt
+OK
+job-e3414bae659f succeeded

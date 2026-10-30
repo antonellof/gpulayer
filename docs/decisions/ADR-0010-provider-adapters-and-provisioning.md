@@ -1,6 +1,6 @@
 # ADR-0010: Provider adapters and provisioning
 
-- **Status:** Accepted. Interface and provisioning flow (milestone 1); first real provider: Google Cloud Compute Engine (2026-10-30), validated end to end with a CPU VM.
+- **Status:** Accepted. Interface and provisioning flow (milestone 1); first real provider: Google Cloud Compute Engine (2026-10-30), validated end to end with a CPU VM and a Spot T4 GPU VM.
 - **Date:** 2026-10-29
 
 ## Context

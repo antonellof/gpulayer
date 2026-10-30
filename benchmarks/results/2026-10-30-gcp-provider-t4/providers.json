@@ -1,0 +1,12 @@
+{
+  "gcp": {
+    "type": "gcp",
+    "project": "my-project",
+    "zone": "europe-west1-b",
+    "offers": [
+      {"id": "t4", "machine_type": "n1-standard-8", "gpu_type": "nvidia-tesla-t4",
+       "gpu_count": 1, "spot": true, "packages": ["torch", "numpy"],
+       "frameworks": {"torch": "2.9", "torch.cuda": "2.9"}}
+    ]
+  }
+}

@@ -5,6 +5,10 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Google Cloud GPU provisioning validated: a `--provider gcp --accelerator cuda` job made
+  GPUlayer create a Spot T4 VM, which joined with its GPU and `torch.cuda` 78 s after boot
+  started, ran a `Trainer` job on CUDA, and was deleted when it ended.
+
 ## 0.4.0 (2026-10-30)
 
 - Long-running services (ADR-0019): `gpulayer submit --service`, `gl.service(...)` and
