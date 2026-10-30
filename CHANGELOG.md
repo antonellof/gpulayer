@@ -3,6 +3,14 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
+## Unreleased
+
+- `--gpus 0,1|none` on `gpulayer up`, `join` and `worker start`: a worker offers only those
+  GPUs, so several workers on one machine no longer offer the same GPU (the known issue in
+  0.2.0). `--gpus none` makes a CPU-only worker on a GPU machine.
+- CUDA jobs get `CUDA_DEVICE_ORDER=PCI_BUS_ID`, so `CUDA_VISIBLE_DEVICES` selects the GPUs
+  that were reserved (`nvidia-smi` numbering) on machines with mixed GPU models.
+
 ## 0.2.0 (2026-10-30)
 
 Validated on an NVIDIA GPU and across machines, faster distributed start-up and HTTP API, and

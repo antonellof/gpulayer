@@ -209,6 +209,7 @@ def cmd_up(args: argparse.Namespace) -> int:
             advertise_address=advertise,
             labels=_kv(args.label, "--label"),
             runner=_python_runner(python),
+            gpus=_gpus(args.gpus),
         )
         channel = EmbeddedChannel.register(cp, args.name or caps.hostname, caps)
         agent = WorkerAgent(channel, caps, home / "workers" / channel.worker_id, python=python)
@@ -258,6 +259,18 @@ Tokens are kept in {home / "up-tokens.json"}. Press Ctrl+C to stop.
     server.shutdown()
     print("stopped")
     return 0
+
+
+def _gpus(value: str | None) -> list[int] | None:
+    """--gpus: "0,1" -> [0, 1], "none" -> [] (offer no GPUs), unset -> all GPUs."""
+    if value is None:
+        return None
+    if value.strip().lower() == "none":
+        return []
+    try:
+        return sorted({int(x) for x in value.split(",") if x.strip()})
+    except ValueError:
+        raise SystemExit(f"error: --gpus takes indices like 0,1 or 'none', got {value!r}") from None
 
 
 def cmd_join(args: argparse.Namespace) -> int:
@@ -414,6 +427,7 @@ def cmd_worker_start(args: argparse.Namespace) -> int:
             advertise_address=args.advertise_address or default_advertise_address(),
             runner=_python_runner(python),
             max_concurrent_tasks=getattr(args, "concurrency", None),
+            gpus=_gpus(getattr(args, "gpus", None)),
         )
         channel: Any = HttpWorkerChannel.register(
             args.url,
@@ -432,6 +446,7 @@ def cmd_worker_start(args: argparse.Namespace) -> int:
             advertise_address=args.advertise_address or "127.0.0.1",
             runner=_python_runner(python),
             max_concurrent_tasks=getattr(args, "concurrency", None),
+            gpus=_gpus(getattr(args, "gpus", None)),
         )
         channel = EmbeddedChannel.register(
             open_control_plane(args.home), args.name or f"local-{os.getpid()}", caps
@@ -764,6 +779,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--port", type=int, default=8470)
     s.add_argument("--advertise-address", help="address other machines use to reach this one")
     s.add_argument("--no-worker", action="store_true", help="do not run jobs on this machine")
+    s.add_argument(
+        "--gpus",
+        metavar="0,1|none",
+        help="GPU indices this worker offers (default: all); 'none' for CPU only",
+    )
     s.add_argument("--name", help="worker name for this machine")
     s.add_argument("--label", action="append", metavar="KEY=VALUE")
     s.add_argument("--python", help="interpreter for jobs on this machine")
@@ -797,6 +817,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--python", help="interpreter used for jobs (default: this one)")
     s.add_argument("--advertise-address", help="address peers use for distributed rendezvous")
     s.add_argument("--concurrency", type=int, help="tasks to run at once (default: one per GPU)")
+    s.add_argument(
+        "--gpus",
+        metavar="0,1|none",
+        help="GPU indices this worker offers (default: all); 'none' for CPU only",
+    )
     s.add_argument("--workdir")
     s.add_argument("--max-tasks", type=int)
     s.add_argument("--idle-exit", type=float, metavar="SECONDS")
@@ -866,6 +891,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--python", help="interpreter used for workloads (default: this one)")
     s.add_argument("--advertise-address", help="address peers use for distributed rendezvous")
     s.add_argument("--concurrency", type=int, help="tasks to run at once (default: one per GPU)")
+    s.add_argument(
+        "--gpus",
+        metavar="0,1|none",
+        help="GPU indices this worker offers (default: all); 'none' for CPU only",
+    )
     s.add_argument("--workdir")
     s.add_argument("--max-tasks", type=int)
     s.add_argument(

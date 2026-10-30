@@ -38,6 +38,21 @@ def finetune(...): ...
 
 `ResourceRequest(min_cuda_compute_capability="8.0")` restricts jobs to Ampere or newer.
 
+## Several GPUs, one or more workers
+
+A worker offers all of its machine's GPUs and runs one single-GPU job per GPU at a time,
+reserving each job's GPUs and setting `CUDA_VISIBLE_DEVICES` (with `CUDA_DEVICE_ORDER=PCI_BUS_ID`,
+so the indices match `nvidia-smi`). One worker per machine is usually right.
+
+To split a machine between workers, for example separate queues or Python environments, give
+each worker its own GPUs with `--gpus`, so no GPU is offered twice:
+
+```bash
+gpulayer join URL --token T --name box-a --gpus 0,1
+gpulayer join URL --token T --name box-b --gpus 2,3
+gpulayer join URL --token T --name box-cpu --gpus none --concurrency 8   # CPU jobs only
+```
+
 ## Validation status
 
 Validated on a Tesla T4 (GCP `n1-standard-8`, driver 580, torch 2.15 with CUDA 13.2):

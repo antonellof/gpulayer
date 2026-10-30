@@ -352,6 +352,9 @@ class WorkerAgent:
                 ]
             )
             env["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in indices)
+            # Number GPUs like nvidia-smi does (the indices above); CUDA's default order is
+            # fastest first, which picks a different GPU on machines with mixed models.
+            env.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
         elif spec.resources.accelerator == Accelerator.CPU:
             env["CUDA_VISIBLE_DEVICES"] = ""  # CPU jobs must not grab a GPU by accident
         if isinstance(spec.workload, DistributedJob):

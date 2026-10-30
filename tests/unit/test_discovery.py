@@ -119,3 +119,46 @@ def test_rocm_is_detection_only():
     )
     dev = caps.devices(Accelerator.ROCM)[0]
     assert dev.execution_supported is False
+
+
+def _four_gpus(monkeypatch, **kw):
+    monkeypatch.setattr("gpulayer.gpu.discovery.apple_silicon", lambda: False)
+    row = "NVIDIA L4, 23034, 8.9, 550.54"
+    out = "".join(f"{i}, {row}\n" for i in range(4))
+    return detect_capabilities(
+        runner=runner_for({"nvidia-smi": (0, out)}),
+        torch_probe=lambda: TorchProbe(torch_version="2.4.0", cuda_available=True),
+        **kw,
+    )
+
+
+def test_gpus_splits_a_machine_between_workers(monkeypatch):
+    """Two workers on one machine offer disjoint GPUs and get one slot per GPU they offer."""
+    a = _four_gpus(monkeypatch, gpus=[0, 1])
+    b = _four_gpus(monkeypatch, gpus=[2, 3])
+    assert [d.index for d in a.devices(Accelerator.CUDA)] == [0, 1]
+    assert [d.index for d in b.devices(Accelerator.CUDA)] == [2, 3]
+    assert a.max_concurrent_tasks == 2 and b.max_concurrent_tasks == 2
+    assert _four_gpus(monkeypatch).max_concurrent_tasks == 4
+
+
+def test_gpus_none_offers_cpu_only(monkeypatch):
+    caps = _four_gpus(monkeypatch, gpus=[])
+    assert caps.devices(Accelerator.CUDA) == [] and "GPUs not offered" in caps.notes
+
+
+def test_gpus_rejects_unknown_index(monkeypatch):
+    import pytest
+
+    with pytest.raises(ValueError, match=r"GPU index \[7\] not found"):
+        _four_gpus(monkeypatch, gpus=[0, 7])
+
+
+def test_gpus_cli_parsing():
+    import pytest
+
+    from gpulayer.cli.main import _gpus
+
+    assert _gpus(None) is None and _gpus("none") == [] and _gpus("1, 0,1") == [0, 1]
+    with pytest.raises(SystemExit):
+        _gpus("first")

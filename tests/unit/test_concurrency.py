@@ -89,3 +89,22 @@ def test_store_adds_devices_column_to_old_databases(tmp_path):
     SqliteStore(path).close()
     cols = {r[1] for r in sqlite3.connect(path).execute("PRAGMA table_info(tasks)")}
     assert "devices" in cols
+
+
+def test_cuda_job_environment_pins_reserved_gpus_in_pci_order(cp, tmp_path):
+    from gpulayer.worker.agent import WorkerAgent
+    from gpulayer.worker.channel import EmbeddedChannel
+
+    caps = make_caps(accelerators=[cuda_device(i) for i in range(4)], max_concurrent_tasks=4)
+    ch = EmbeddedChannel.register(cp, "big", caps)
+    cp.submit(gpu_job())
+    cp.submit(gpu_job(2))
+    first = cp.acquire_task(ch.worker_id)
+    cp.start_task(ch.worker_id, first.task_id)
+    second = cp.acquire_task(ch.worker_id)
+    agent = WorkerAgent(ch, caps, tmp_path)
+    env1, _ = agent._environment(first, tmp_path)
+    env2, _ = agent._environment(second, tmp_path)
+    assert env1["CUDA_VISIBLE_DEVICES"] == "0" and env2["CUDA_VISIBLE_DEVICES"] == "1,2"
+    # nvidia-smi indices only match CUDA's numbering in PCI bus order.
+    assert env1["CUDA_DEVICE_ORDER"] == env2["CUDA_DEVICE_ORDER"] == "PCI_BUS_ID"

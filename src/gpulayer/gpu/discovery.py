@@ -22,7 +22,7 @@ import shutil
 import socket
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -262,8 +262,14 @@ def detect_capabilities(
     runner: CommandRunner = run_command,
     torch_probe: Callable[[], TorchProbe] | None = None,
     max_concurrent_tasks: int | None = None,
+    gpus: Sequence[int] | None = None,
 ) -> WorkerCapabilities:
-    """``max_concurrent_tasks`` defaults to one task per usable discrete GPU (at least 1)."""
+    """``max_concurrent_tasks`` defaults to one task per usable discrete GPU (at least 1).
+
+    ``gpus`` limits the worker to those discrete GPU indices (as ``nvidia-smi`` numbers them);
+    an empty list offers none. Use it to split one machine's GPUs between workers, so that two
+    workers never offer the same GPU.
+    """
     notes: list[str] = []
     tp = torch_probe() if torch_probe else probe_torch(runner=runner)
 
@@ -314,6 +320,19 @@ def detect_capabilities(
     if rocm:
         accelerators.extend(rocm)
         notes.append("AMD ROCm device detected; ROCm execution is not supported yet")
+
+    if gpus is not None:
+        discrete = (Accelerator.CUDA, Accelerator.ROCM)
+        present = {d.index for d in accelerators if d.accelerator in discrete}
+        unknown = sorted(set(gpus) - present)
+        if unknown:
+            raise ValueError(
+                f"GPU index {unknown} not found on this machine (found: {sorted(present)})"
+            )
+        accelerators = [
+            d for d in accelerators if d.accelerator not in discrete or d.index in set(gpus)
+        ]
+        notes.append(f"limited to GPUs {sorted(gpus)}" if gpus else "GPUs not offered")
 
     frameworks: dict[str, str] = {}
     for dist, version in tp.packages.items():
