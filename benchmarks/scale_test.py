@@ -105,8 +105,12 @@ def names():
 def run_batch(label, specs, *, threads=16):
     """Submit with a few threads (as a real client would), then wait for every job."""
     t0 = time.time()
-    with ThreadPoolExecutor(threads) as ex:
-        jobs = list(ex.map(c.submit, specs))
+    if os.environ.get("SCALE_BATCH") == "1":
+        jobs = c.submit_batch(specs)  # POST /v1/jobs/batch, 500 per request
+        label += "_batch"
+    else:
+        with ThreadPoolExecutor(threads) as ex:
+            jobs = list(ex.map(c.submit, specs))
     submitted = time.time() - t0
     states = list(ThreadPoolExecutor(threads).map(lambda j: j.wait(3600), jobs))
     wall = time.time() - t0
