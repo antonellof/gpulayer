@@ -1,4 +1,4 @@
-"""Generate docs/assets/where-gpulayer-sits-{light,dark}.svg.
+"""Generate docs/assets/architecture-{light,dark}.svg.
 
     python scripts/make_diagram.py      (needs site/node_modules for the simple-icons paths)
 
@@ -215,14 +215,14 @@ def render(theme: str) -> str:
     body = "".join(parts)
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" '
-        f'height="{H}" role="img" aria-label="Where GPUlayer sits: your workloads go through '
+        f'height="{H}" role="img" aria-label="GPUlayer architecture: your workloads go through '
         f'GPUlayer to the machines you can reach">{body}</svg>\n'
     )
 
 
 def main() -> None:
     for theme in THEMES:
-        path = OUT / f"where-gpulayer-sits-{theme}.svg"
+        path = OUT / f"architecture-{theme}.svg"
         path.write_text(render(theme))
         print(path.relative_to(ROOT))
 

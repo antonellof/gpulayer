@@ -27,13 +27,32 @@ trainer.fit(model, train_loader)                                         # PyTor
 > and multi-machine runs are implemented but not validated yet, and automatic cloud
 > provisioning is simulated. See [Status and roadmap](project/status.md).
 
-## Where GPUlayer sits
+## Architecture
 
-![Your workloads go through GPUlayer to the machines you can reach](assets/where-gpulayer-sits-light.svg)
+![Your workloads go through GPUlayer to the machines you can reach](assets/architecture-light.svg)
 
-Frameworks decide how a computation runs on the hardware they are given. GPUlayer decides which
-hardware runs it, gets the code and data there, starts it, and returns the results. It works
-under any framework, and adds a deeper integration for PyTorch training.
+GPUlayer has three parts:
+
+- **Clients** submit work: the `gpulayer` CLI, the Python SDK (`@gl.remote`, `gl.Client`), the
+  PyTorch `Trainer` and `launch()`, and the [MCP server](guides/ai-agents.md) for AI agents. A
+  job states what it needs (accelerator, GPU count and memory, frameworks), not which machine
+  to use.
+- **The control plane** keeps the job queue, picks a worker for each job and records the
+  reason when no worker fits ([Scheduling](architecture/scheduling.md)). It stores code
+  bundles, inputs, outputs and logs, and checks tokens. For work on one machine it runs inside
+  your process; for several machines it runs as a server (`gpulayer up`).
+- **Workers**, one per machine, report their GPUs and installed frameworks, ask the control
+  plane for tasks, run them as normal processes (through `torchrun` for
+  [distributed jobs](architecture/distributed.md)), stream logs back and upload outputs.
+  Workers open every connection themselves, so they can sit behind NAT. A cloud VM is a
+  worker that joined with `gpulayer join`.
+
+A job goes from `queued` to `scheduled` when a worker fits, then `running`, and ends as
+`succeeded`, `failed`, `cancelled` or `timed_out`. Frameworks still decide how a computation
+runs on the hardware they are given; GPUlayer decides which hardware runs it. It works under
+any framework, and adds a deeper integration for PyTorch training. The
+[Architecture overview](architecture/overview.md) covers the components, data model and request
+flow in detail.
 
 ## What you can do with it
 

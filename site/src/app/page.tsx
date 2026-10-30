@@ -318,7 +318,7 @@ export default function Home() {
                 both variants are present and CSS shows the matching one. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/docs-assets/where-gpulayer-sits-light.svg"
+              src="/docs-assets/architecture-light.svg"
               alt="Your workloads (commands, Python functions, PyTorch training, rendering) go through GPUlayer to the machines you can reach: this machine, servers that joined, cloud VMs."
               className="w-full rounded-2xl border border-border dark:hidden"
               width={980}
@@ -326,7 +326,7 @@ export default function Home() {
             />
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/docs-assets/where-gpulayer-sits-dark.svg"
+              src="/docs-assets/architecture-dark.svg"
               alt=""
               aria-hidden
               className="hidden w-full rounded-2xl border border-border dark:block"

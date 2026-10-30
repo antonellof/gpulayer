@@ -8,7 +8,7 @@
   <a href="#quickstart">Quickstart</a> ·
   <a href="#for-ai-and-coding-agents">AI agents</a> ·
   <a href="#why-gpulayer">Why GPUlayer</a> ·
-  <a href="#where-gpulayer-sits">Where it sits</a> ·
+  <a href="#architecture">Architecture</a> ·
   <a href="https://www.gpulayer.dev/docs/">Docs</a> ·
   <a href="examples">Examples</a> ·
   <a href="CHANGELOG.md">Changelog</a>
@@ -95,14 +95,29 @@ On one machine with one GPU, running your code directly is simpler. GPUlayer run
 finish (long-running services are planned) and is not a sandbox for untrusted code. More in
 [Why GPUlayer](https://www.gpulayer.dev/docs/get-started/why-gpulayer/).
 
-## Where GPUlayer sits
+## Architecture
 
-![Your workloads go through GPUlayer to the machines you can reach](docs/assets/where-gpulayer-sits-light.svg#gh-light-mode-only)
-![Your workloads go through GPUlayer to the machines you can reach](docs/assets/where-gpulayer-sits-dark.svg#gh-dark-mode-only)
+![Your workloads go through GPUlayer to the machines you can reach](docs/assets/architecture-light.svg#gh-light-mode-only)
+![Your workloads go through GPUlayer to the machines you can reach](docs/assets/architecture-dark.svg#gh-dark-mode-only)
 
-Frameworks such as PyTorch, JAX, MLX and CuPy decide how a computation uses the hardware they
-are given. GPUlayer decides which hardware runs it, gets code and data there, starts it, and
-returns the results.
+GPUlayer has three parts:
+
+- **Clients** submit work: the `gpulayer` CLI, the Python SDK (`@gl.remote`, `gl.Client`), the
+  PyTorch `Trainer` and `launch()`, and the MCP server for AI agents. A job states what it
+  needs (accelerator, GPU count and memory, frameworks), not which machine to use.
+- **The control plane** keeps the job queue, picks a worker for each job and records the
+  reason when no worker fits. It stores code bundles, inputs, outputs and logs, and checks
+  tokens. For work on one machine it runs inside your process; for several machines it runs
+  as a server (`gpulayer up`).
+- **Workers**, one per machine, report their GPUs and installed frameworks, ask the control
+  plane for tasks, run them as normal processes (through `torchrun` for distributed jobs),
+  stream logs back and upload outputs. Workers open every connection themselves, so they can
+  sit behind NAT. A cloud VM is a worker that joined with `gpulayer join`.
+
+A job goes from `queued` to `scheduled` when a worker fits, then `running`, and ends as
+`succeeded`, `failed`, `cancelled` or `timed_out`. Frameworks such as PyTorch, JAX, MLX and
+CuPy still decide how the computation uses the GPU; GPUlayer decides which GPU runs it. More in
+[Architecture overview](docs/architecture/overview.md).
 
 ## Development
 
