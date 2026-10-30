@@ -128,3 +128,36 @@ def test_remote_worker_process_executes_job(server, tmp_path):
     finally:
         out = worker.communicate(timeout=90)[0]
     assert worker.returncode == 0, out
+
+
+def test_client_reuses_one_connection_per_thread(server, monkeypatch):
+    from gpulayer.api import server as server_mod
+
+    srv, client_token, _ = server
+    accepted = []
+    setup = server_mod._RequestHandler.setup
+
+    def counting_setup(self):
+        accepted.append(self.client_address)
+        setup(self)
+
+    monkeypatch.setattr(server_mod._RequestHandler, "setup", counting_setup)
+    t = HttpTransport(srv.url, client_token)
+    for _ in range(20):
+        t.request("GET", "/v1/jobs?limit=1")
+    assert len(accepted) == 1
+
+
+def test_client_replaces_a_connection_the_server_closed(server, monkeypatch):
+    from gpulayer.api import server as server_mod
+
+    srv, client_token, _ = server
+    monkeypatch.setattr(server_mod._RequestHandler, "timeout", 0.2)  # idle connections close
+    t = HttpTransport(srv.url, client_token)
+    t.request("GET", "/v1/jobs?limit=1")
+    time.sleep(0.6)  # the server has closed the kept-open connection by now
+    assert t.request("GET", "/v1/jobs?limit=1") == []
+    sub = t.request("POST", "/v1/jobs", gl.command(["true"]).model_dump(mode="json"))
+    time.sleep(0.6)
+    jobs = t.request("GET", "/v1/jobs?limit=10")
+    assert [j["job_id"] for j in jobs] == [sub["job_id"]]  # the retried request ran once

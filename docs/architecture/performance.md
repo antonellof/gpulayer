@@ -35,7 +35,26 @@ Starting the Python interpreter takes about 30 ms on the same machine, so almost
 remaining time for a single job is the job's own start-up.
 
 These are single-machine numbers. Over HTTP, add one network round trip for each of acquire,
-start, logs and finish. Multi-machine numbers will be published once they are measured.
+start, logs and finish.
+
+## HTTP API
+
+Clients and remote workers keep one connection open per thread, so a request costs one round
+trip, not a new TCP and TLS handshake. The server sets `TCP_NODELAY`, without which Linux held
+every response for about 40 ms (Nagle's algorithm waiting for a delayed ACK), and runs TLS
+handshakes in each connection's thread instead of the accept loop. Idle connections close after
+120 seconds and clients reconnect transparently.
+
+`benchmarks/http_requests.py` times `GET /v1/jobs` over TLS on loopback:
+
+| | Linux (GCP e2-standard-8) before | after | macOS (M2 Pro) before | after |
+|---|---|---|---|---|
+| one request, p50 | 43.0 ms | 0.60 ms | 1.04 ms | 0.24 ms |
+| one thread | 23 req/s | 1555 req/s | 869 req/s | 4114 req/s |
+| 8 threads | 112 req/s | 853 req/s | 1355 req/s | 2781 req/s |
+
+On two GCP VMs (a server with two workers on one, a third worker on the other; 15 slots),
+500 jobs of 0.02 s each took 64.4 s before (7.8 jobs/s) and 9.0 s after (55.6 jobs/s).
 
 ## Distributed job start-up
 

@@ -3,7 +3,9 @@
 import pytest
 
 import gpulayer as gl
+from gpulayer.contracts import Accelerator
 from gpulayer.errors import ValidationFailed
+from gpulayer.gpu.discovery import detect_capabilities
 from gpulayer.sdk.remote import _function_ref
 
 pytestmark = pytest.mark.integration
@@ -29,8 +31,9 @@ def test_run_map_and_options(client):
     assert f.ref == "remote_pkg.funcs:add"
     assert f.run(2, b=40, stream_logs=False) == 42
     assert f.map([(1, 1), (2, 2), (3, 3)]) == [2, 4, 6]
-    with pytest.raises(gl.RemoteError, match="cuda"):
-        f.options(accelerator="cuda").run(1)
+    if not detect_capabilities().devices(Accelerator.CUDA):
+        with pytest.raises(gl.RemoteError, match="cuda"):
+            f.options(accelerator="cuda").run(1)
 
 
 def test_remote_failure_raises(client):

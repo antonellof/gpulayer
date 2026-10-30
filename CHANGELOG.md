@@ -20,6 +20,13 @@ before 1.0, minor versions may change public APIs, with migration notes here.
   Migration: workers and the server must both be upgraded to run `direct` jobs. v0.1.0
   workers report only `torchrun` and are not chosen for them; a v0.1.0 server rejects the
   new value, so submit with `launcher="torchrun"` there.
+- Faster HTTP API: clients and workers keep their connection open, and the server sets
+  `TCP_NODELAY` and runs TLS handshakes per connection. On Linux a request dropped from 43 ms
+  to 0.6 ms, and 500 small jobs over two machines ran 7.1x faster (7.8 to 55.6 jobs/s).
+- Validated on NVIDIA: a Tesla T4 on GCP (CUDA detection, CUDA jobs, Trainer in fp32, bf16,
+  fp16 and with `torch.compile`, GPU reservation), and on two machines over a real network
+  (distributed jobs across both, fail-fast, hundreds of jobs). `scripts/validate_gpu.sh`
+  repeats the single-machine part on any NVIDIA machine.
 
 ## 0.1.0 (2026-10-29)
 

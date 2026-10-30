@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import http.client
 import json
+import socket
 import ssl
 import threading
 from collections.abc import Sequence
@@ -72,15 +73,20 @@ class HttpTransport:
                 self._ctx.minimum_version = ssl.TLSVersion.TLSv1_2
             else:
                 self._ctx = ssl.create_default_context(cafile=ca_file)
+        # One kept-open connection per thread: no TCP and TLS handshake per request, and
+        # threads (worker slots, log shipping) never share a connection.
+        self._local = threading.local()
 
     def _connect(self) -> http.client.HTTPConnection:
         host, port = self._parsed.hostname or "", self._parsed.port
         if self._ctx is None:
             conn = http.client.HTTPConnection(host, port, timeout=self.timeout)
             conn.connect()
+            _nodelay(conn)
             return conn
         tls = http.client.HTTPSConnection(host, port, timeout=self.timeout, context=self._ctx)
         tls.connect()
+        _nodelay(tls)
         if self.fingerprint:
             der = tls.sock.getpeercert(binary_form=True) if tls.sock else None
             if not der or "sha256:" + hashlib.sha256(der).hexdigest() != self.fingerprint:
@@ -110,15 +116,34 @@ class HttpTransport:
         if body is not None:
             data = json.dumps(body).encode()
             hdrs["Content-Type"] = "application/json"
-        conn = self._connect()
-        try:
-            conn.request(
-                method, (self._parsed.path.rstrip("/") or "") + path, body=data, headers=hdrs
-            )
-            resp = conn.getresponse()
-            content = resp.read()
-        finally:
+        url = (self._parsed.path.rstrip("/") or "") + path
+        conn: http.client.HTTPConnection | None = getattr(self._local, "conn", None)
+        reused = conn is not None
+        while True:
+            if conn is None:
+                conn = self._connect()
+            try:
+                conn.request(method, url, body=data, headers=hdrs)
+                resp = conn.getresponse()
+                content = resp.read()
+                break
+            except _STALE as e:
+                # A kept-open connection the server has since closed (idle timeout, restart)
+                # fails before the request reaches the handler: retry once on a new one.
+                conn.close()
+                self._local.conn = conn = None
+                if not reused:
+                    raise ConnectionError(f"control plane connection failed: {e}") from e
+                reused = False
+            except BaseException:
+                conn.close()
+                self._local.conn = None
+                raise
+        if resp.will_close:
             conn.close()
+            self._local.conn = None
+        else:
+            self._local.conn = conn
         if resp.status >= 400:
             try:
                 err = json.loads(content)["error"]
@@ -131,6 +156,20 @@ class HttpTransport:
         if ctype.startswith("text/plain"):
             return content.decode()
         return json.loads(content) if content else None
+
+
+_STALE = (
+    http.client.RemoteDisconnected,
+    http.client.CannotSendRequest,
+    ConnectionResetError,
+    BrokenPipeError,
+    ssl.SSLEOFError,
+)
+
+
+def _nodelay(conn: http.client.HTTPConnection) -> None:
+    if conn.sock is not None:
+        conn.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 
 
 def normalize_fingerprint(fp: str) -> str:

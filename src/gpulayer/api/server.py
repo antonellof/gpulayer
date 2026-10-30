@@ -11,6 +11,7 @@ import ipaddress
 import json
 import logging
 import re
+import socket
 import ssl
 import threading
 import time
@@ -115,7 +116,11 @@ class ControlPlaneServer:
             ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             ctx.minimum_version = ssl.TLSVersion.TLSv1_2
             ctx.load_cert_chain(tls_cert, tls_key)
-            self.httpd.socket = ctx.wrap_socket(self.httpd.socket, server_side=True)
+            # The handshake runs in each connection's own thread (_RequestHandler.setup), not
+            # in the accept loop, so one slow client cannot hold up the others.
+            self.httpd.socket = ctx.wrap_socket(
+                self.httpd.socket, server_side=True, do_handshake_on_connect=False
+            )
         self._stop = threading.Event()
         self._reconcile_interval = reconcile_interval
         self._threads: list[threading.Thread] = []
@@ -464,6 +469,26 @@ def _encode(value: Any) -> Any:
 class _RequestHandler(BaseHTTPRequestHandler):
     server_version = "GPUlayer"
     protocol_version = "HTTP/1.1"
+    # Connections stay open between requests (clients reuse them); an idle one is closed after
+    # this many seconds. Longer than the longest long poll (MAX_LONG_POLL).
+    timeout = 120
+
+    def setup(self) -> None:
+        super().setup()
+        # Headers and body go out as separate writes; without TCP_NODELAY, Nagle's algorithm
+        # holds the body until the client's delayed ACK, about 40 ms per request on Linux.
+        self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        self._handshake_failed = False
+        if isinstance(self.connection, ssl.SSLSocket):
+            try:
+                self.connection.do_handshake()
+            except (ssl.SSLError, OSError) as e:  # not TLS, wrong client, closed early
+                log.debug("TLS handshake with %s failed: %s", self.client_address[0], e)
+                self._handshake_failed = True
+
+    def handle(self) -> None:
+        if not self._handshake_failed:
+            super().handle()
 
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
         log.debug("%s %s", self.address_string(), format % args)  # never logs headers/tokens
