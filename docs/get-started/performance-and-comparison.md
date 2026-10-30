@@ -91,11 +91,67 @@ held each response for about 40 ms (Nagle's algorithm with delayed ACKs). After 
 | One request on Linux, p50 (`benchmarks/http_requests.py`) | 43.0 ms | 0.60 ms |
 | 500 tiny jobs over two machines | 7.8 jobs/s | 55.6 jobs/s |
 
+## One training job on more machines
+
+The same training job (a CNN on 32,768 images, 2 epochs, global batch 256 split across all
+processes) on 1, 2, 4 and 8 GCP `n1-standard-4` machines, 4 processes per machine, gloo over
+the network. GPUlayer runs it with one `Trainer(num_nodes=N, devices=4)` call submitted to the
+server; Lightning runs `Trainer(num_nodes=N, devices=4, strategy="ddp")` started with
+torchrun on each machine, as its documentation describes.
+
+![One training job on more machines: GPUlayer and PyTorch Lightning](../assets/perf/strong-scaling-light.svg)
+
+| Machines | Processes | GPUlayer | Lightning | GPUlayer speedup | Lightning speedup | Final loss (GPUlayer, Lightning) |
+|---|---|---|---|---|---|---|
+| 1 | 4 | 134.0 s | 147.1 s | 1.00x | 1.00x | 2.207, 2.204 |
+| 2 | 8 | 82.5 s | 85.1 s | 1.62x | 1.73x | 2.210, 2.211 |
+| 4 | 16 | 53.4 s | 53.5 s | 2.51x | 2.75x | 2.217, 2.212 |
+| 8 | 32 | 39.9 s | 42.8 s | 3.36x | 3.44x | 2.227, 2.230 |
+
+- Eight machines train the job 3.4x faster than one, for both trainers.
+- GPUlayer finished first at 1, 2 and 8 machines (9% sooner on one, 7% on eight) and the
+  two tied at 4. Lightning's speedup ratios are slightly higher because its one-machine time
+  was slower.
+- The losses agree, so both did the same training.
+- With only 2 epochs, fixed costs (start-up, `import torch`, process-group setup) and
+  gradient exchange over gloo on CPUs take a growing share as the training time falls; longer
+  training would scale closer to linear. GPUs with NCCL were not measured.
+
+Method: wall time from start until the last process exits, median of two runs, one run at a
+time. Scripts: `benchmarks/lightning_comparison/scaling.py` and `scaling_run.py`; log in
+`benchmarks/results/2026-10-30-gcp-fleet/`.
+
+## Thirty machines
+
+One server and 30 workers (`n1-standard-4`, 4 slots each, 120 slots), 23 in Belgium
+(`europe-west1`) and 7 in the Netherlands (`europe-west4`), created with
+`benchmarks/cloud/gcp.sh` and tested with `benchmarks/scale_test.py`.
+
+| Test | Result |
+|---|---|
+| 5,000 tiny jobs, 2,000 data shards, 480 training runs | all succeeded, spread over all 30 workers |
+| Distributed job on 8 machines x 2 processes | correct; 4.3 s (direct launcher), 6.9 s (torchrun) |
+| Distributed job on 16 machines x 2 processes | correct; 5.4 s (direct launcher), 8.1 s (torchrun) |
+| One process fails in an 8-machine job | every machine stopped within 4.9 s |
+| Worker processes killed on 3 machines during 600 jobs | 9 jobs retried on other machines, 0 failed |
+
+Running these found three control-plane bottlenecks, now fixed: every submit re-scheduled the
+whole queue (44 ms per submit at 2,000 queued, now 0.5 ms and flat), idle worker slots
+re-checked the database five times a second, and each change woke every waiting slot.
+
+![Submitting thousands of jobs to 30 workers](../assets/perf/fleet-throughput-light.svg)
+
+The training sweep finished 2.3x sooner. Bursts of very short jobs did not get faster:
+submission stays at about 25 jobs per second because the server is one Python process and
+uses one CPU core at 100% (measured with `top`; each job makes about ten API requests). That is
+the next bottleneck (ADR-0016, roadmap item 6). Jobs that run longer than a few seconds are
+not affected.
+
 ## What has not been measured
 
 - More than one GPU per machine, NCCL across machines, and FSDP: the cloud project used had a
   quota of one GPU.
-- More than two machines, and long-running training at scale.
+- Training that runs for hours, and more than 30 machines.
 - AMD GPUs.
 
 ## Run the benchmarks yourself

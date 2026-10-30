@@ -1,0 +1,17 @@
+WORKERS 30 online on 30 hosts, 120 slots
+CHECK workers PASS 30 {'europe-west1-b': 23, 'europe-west4-a': 7}
+RESULT burst_5000_tiny: 5000 jobs, 0 failed, 0 retried, submit 142.5s, wall 166.3s, 30.1 jobs/s, task time 0.0s, 30 workers used (min 144, max 182 jobs each)
+CHECK burst PASS
+RESULT shards_2000: 2000 jobs, 0 failed, 0 retried, submit 73.1s, wall 100.9s, 19.8 jobs/s, task time 1069.7s, 30 workers used (min 52, max 73 jobs each)
+CHECK shards PASS median task 0.53s
+RESULT sweep_480_trainings: 480 jobs, 0 failed, 0 retried, submit 78.4s, wall 102.4s, 4.7 jobs/s, task time 1287.3s, 30 workers used (min 15, max 18 jobs each)
+CHECK sweep PASS best lr 0.068075 loss 0.0009, diverged 1
+CHECK distributed-8x2-direct PASS world=16 hosts=8 4.27s 
+CHECK distributed-8x2-torchrun PASS world=16 hosts=8 6.87s 
+CHECK distributed-16x2-direct PASS world=32 hosts=16 5.43s 
+CHECK distributed-16x2-torchrun PASS world=32 hosts=16 8.06s 
+CHECK rank-failure-stops-8-machines PASS {'failed': 6, 'cancelled': 2} 4.9s
+KILLED worker processes on ['gl-w13', 'gl-w07', 'gl-w22']
+RESULT worker_loss_600_shards_3_killed: 600 jobs, 0 failed, 9 retried, submit 26.1s, wall 39.9s, 15.1 jobs/s, task time 645.6s, 30 workers used (min 7, max 26 jobs each)
+CHECK worker-loss PASS 9 jobs retried after their worker was lost, 0 failed
+SUMMARY all passed

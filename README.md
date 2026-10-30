@@ -20,7 +20,7 @@ it (this one, remote servers, clusters, data centers, cloud VMs, or several at o
 it there and brings back logs, outputs and results. PyTorch gets a deeper integration on top.
 Documentation: [gpulayer.dev/docs](https://www.gpulayer.dev/docs/).
 
-> **v0.2.0.** Tested on CPU, Apple Silicon (PyTorch MPS and MLX) and an
+> **v0.3.0.** Tested on CPU, Apple Silicon (PyTorch MPS and MLX) and an
 > NVIDIA Tesla T4, and across two machines on Google Cloud. Several GPUs per machine and NCCL
 > across machines are implemented but not validated yet; cloud provisioning is simulated. See
 > [Status and roadmap](https://github.com/antonellof/gpulayer/blob/main/docs/project/status.md).
@@ -109,7 +109,10 @@ optimizer:
 
 - GPUlayer's Trainer is 1.3 to 1.4x faster per step on small models and the same on a
   compute-bound CNN, and starts about 0.6 s sooner.
-- Distributed jobs start 1.1 to 2.3 s faster than through torchrun.
+- One training job on 8 machines runs 3.4x faster than on one, and GPUlayer finishes it 7%
+  sooner than Lightning under torchrun (39.9 s vs 42.8 s; 9% sooner on one machine).
+- Distributed jobs start 1.1 to 2.3 s faster than through torchrun; tested on up to 16
+  machines (32 processes) and 30 workers across two GCP regions.
 - Across two machines: a distributed job spanning both, fail-fast in 2.7 s, and 55.6 small
   jobs per second.
 

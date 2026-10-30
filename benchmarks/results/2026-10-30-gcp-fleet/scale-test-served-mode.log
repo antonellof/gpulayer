@@ -1,0 +1,9 @@
+WORKERS 30 online on 30 hosts, 120 slots
+CHECK workers PASS 30 {'europe-west1-b': 23, 'europe-west4-a': 7}
+RESULT burst_5000_tiny: 5000 jobs, 0 failed, 0 retried, submit 181.7s, wall 191.0s, 26.2 jobs/s, task time 0.0s, 30 workers used (min 132, max 209 jobs each)
+CHECK burst PASS
+RESULT shards_2000: 2000 jobs, 0 failed, 0 retried, submit 78.2s, wall 82.3s, 24.3 jobs/s, task time 1067.3s, 30 workers used (min 43, max 85 jobs each)
+CHECK shards PASS median task 0.52s
+RESULT sweep_480_trainings: 480 jobs, 0 failed, 0 retried, submit 9.1s, wall 45.0s, 10.7 jobs/s, task time 1581.3s, 30 workers used (min 12, max 18 jobs each)
+CHECK sweep PASS best lr 0.068075 loss 0.0010, diverged 1
+SUMMARY all passed

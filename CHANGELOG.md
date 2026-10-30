@@ -3,7 +3,32 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
-## Unreleased
+## 0.3.0 (2026-10-30)
+
+First release on PyPI (`pip install gpulayer`), under the Apache-2.0 licence. Tested on 30
+machines in two GCP regions, with a multi-machine training comparison against PyTorch
+Lightning.
+
+### Scale and speed
+
+- Scheduling no longer slows down as the queue grows: a submit costs 0.5 ms at 2,000 queued
+  jobs instead of 44 ms (`benchmarks/submit_queue.py`).
+- Behind `gpulayer up`, idle workers wait until something changes instead of re-checking
+  every 0.2 s, and a change wakes only the workers or job waiters it concerns. On 30 workers
+  a 480-run training sweep finished in 45 s instead of 102 s.
+- SQLite runs with `synchronous=NORMAL` (WAL): commits no longer wait for the disk (2.25 ms
+  to 0.02 ms on a GCP standard disk). Consistent after a crash; a power loss can roll back
+  the last commits.
+- The Trainer does less work per step (0.60 to 0.585 ms on a small CPU model; a plain
+  PyTorch loop is 0.55).
+- Validated on 30 workers in two regions: distributed jobs on up to 16 machines (32
+  processes), fail-fast across 8 machines in 4.9 s, retries after killing workers mid-run.
+  One training job on 8 machines ran 3.4x faster than on one, and 7% sooner than PyTorch
+  Lightning under torchrun (benchmarks/results/2026-10-30-gcp-fleet).
+- Known limit: bursts of very short jobs reach about 25 jobs/s, bounded by the server using
+  one CPU core (ADR-0016, item 6).
+
+### Features and fixes
 
 - `--gpus 0,1|none` on `gpulayer up`, `join` and `worker start`: a worker offers only those
   GPUs, so several workers on one machine no longer offer the same GPU (the known issue in
@@ -16,6 +41,13 @@ before 1.0, minor versions may change public APIs, with migration notes here.
   `LearningRateMonitor` callback records each epoch's learning rate.
 - `val_check_interval` (batches or a fraction of the epoch) and `metrics.csv` next to
   `metrics.json`, with step, mid-epoch validation and epoch rows.
+- A launched training run returns its metrics even with checkpointing off (`metrics.json` is
+  written every epoch).
+- Apache-2.0 licence (ADR-0012), PyPI package metadata, and a trusted-publishing release
+  workflow (`.github/workflows/publish.yml`).
+- Benchmarks: `benchmarks/cloud/gcp.sh` builds an image and starts a server plus a fleet of
+  workers; `benchmarks/scale_test.py`; `benchmarks/lightning_comparison/scaling_run.py` and
+  `multinode.py` compare multi-machine training with PyTorch Lightning.
 
 ## 0.2.0 (2026-10-30)
 

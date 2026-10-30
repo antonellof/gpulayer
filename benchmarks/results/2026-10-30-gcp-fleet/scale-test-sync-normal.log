@@ -1,0 +1,7 @@
+WORKERS 30 online on 30 hosts, 120 slots
+CHECK workers PASS 30 {'europe-west1-b': 23, 'europe-west4-a': 7}
+RESULT burst_5000_tiny: 5000 jobs, 0 failed, 0 retried, submit 180.4s, wall 190.0s, 26.3 jobs/s, task time 0.0s, 30 workers used (min 137, max 212 jobs each)
+CHECK burst PASS
+RESULT shards_2000: 2000 jobs, 0 failed, 0 retried, submit 77.5s, wall 81.7s, 24.5 jobs/s, task time 1071.5s, 30 workers used (min 42, max 82 jobs each)
+CHECK shards PASS median task 0.52s
+SUMMARY all passed

@@ -96,6 +96,11 @@ class SqliteStore:
         self._owner: int | None = None
         with self._lock:
             self._conn.execute("PRAGMA journal_mode=WAL")
+            # With WAL, NORMAL syncs at checkpoints instead of on every commit. The database
+            # stays consistent after a process or OS crash; after a power loss the last
+            # commits may be rolled back. On a GCP standard persistent disk a commit took
+            # 2.25 ms with FULL and 0.02 ms with NORMAL, and a job makes about 8 commits.
+            self._conn.execute("PRAGMA synchronous=NORMAL")
             self._conn.execute("PRAGMA busy_timeout=30000")
             self._conn.executescript(_SCHEMA)
             # Additive column migrations (older databases keep working, older code ignores them).

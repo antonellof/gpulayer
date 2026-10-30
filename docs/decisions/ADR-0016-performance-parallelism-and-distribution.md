@@ -132,6 +132,11 @@ can hold at most one server thread per open request; the failed-login limiter st
    imports is unsafe on macOS and with CUDA initialised, so it is not planned yet.
 5. **Sharded data parallelism (FSDP)** for models larger than one GPU, and a `torch.compile`
    option, validated on CUDA hardware.
-6. **Async server** if long-poll thread counts become the limit.
+6. **Server CPU.** Measured on 30 GCP workers (2026-10-30): after fixing queue-length
+   scheduling, idle polling and wake-all signalling, bursts of very short jobs stay at about
+   25 jobs/s because the server process uses one core at 100% (the GIL; about ten API
+   requests per job). Next: batch endpoints (submit many jobs, acquire several tasks, finish
+   with outputs in one request), cheaper per-request validation, then an async or
+   multi-process server.
 
 Validating items 3 and 5, and any multi-node claim, requires NVIDIA hardware.
