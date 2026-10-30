@@ -75,6 +75,10 @@
           "title": "Kubernetes"
         },
         {
+          "slug": "guides/services",
+          "title": "Long-running services"
+        },
+        {
           "slug": "guides/self-hosting",
           "title": "Run a server (gpulayer up)"
         },

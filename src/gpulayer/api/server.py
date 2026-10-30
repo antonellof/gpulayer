@@ -299,6 +299,14 @@ class ControlPlaneServer:
                     q.wid, q.params["tid"], str(q.json()["addr"]), int(q.json()["port"])
                 ),
             ),
+            (
+                "POST",
+                r"/v1/worker/tasks/(?P<tid>[\w-]+)/endpoint",
+                "worker",
+                lambda q: cp.report_endpoint(
+                    q.wid, q.params["tid"], q.json().get("endpoint") or None
+                ),
+            ),
             ("POST", r"/v1/worker/tasks/(?P<tid>[\w-]+)/logs", "worker", self._logs),
             (
                 "POST",

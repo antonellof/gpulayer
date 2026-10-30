@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY, job_id TEXT NOT NULL, attempt INTEGER NOT NULL,
   node_rank INTEGER NOT NULL DEFAULT 0, worker_id TEXT, state TEXT NOT NULL,
   exit_code INTEGER, error TEXT, lease_expires_at TEXT, started_at TEXT, finished_at TEXT,
-  outcome TEXT, cancel_requested INTEGER NOT NULL DEFAULT 0, deadline TEXT, devices TEXT
+  outcome TEXT, cancel_requested INTEGER NOT NULL DEFAULT 0, deadline TEXT, devices TEXT,
+  endpoint TEXT
 );
 CREATE INDEX IF NOT EXISTS tasks_job ON tasks(job_id);
 CREATE INDEX IF NOT EXISTS tasks_worker ON tasks(worker_id, state);
@@ -108,6 +109,8 @@ class SqliteStore:
             cols = {r[1] for r in self._conn.execute("PRAGMA table_info(tasks)")}
             if "devices" not in cols:
                 self._conn.execute("ALTER TABLE tasks ADD COLUMN devices TEXT")
+            if "endpoint" not in cols:
+                self._conn.execute("ALTER TABLE tasks ADD COLUMN endpoint TEXT")
             log_cols = {r[1] for r in self._conn.execute("PRAGMA table_info(logs)")}
             if "rank" not in log_cols:
                 self._conn.execute("ALTER TABLE logs ADD COLUMN rank INTEGER")

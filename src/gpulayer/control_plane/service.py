@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import secrets
 import threading
 import time
@@ -288,6 +289,7 @@ class ControlPlane:
             lease_expires_at=parse_ts(r["lease_expires_at"]),
             started_at=parse_ts(r["started_at"]),
             finished_at=parse_ts(r["finished_at"]),
+            endpoint=r["endpoint"] if "endpoint" in r.keys() else None,  # noqa: SIM118 (Row)
         )
 
     def job_result(self, job_id: str) -> JobResult:
@@ -857,6 +859,24 @@ class ControlPlane:
             )
         return info
 
+    def report_endpoint(self, worker_id: str, task_id: str, endpoint: str | None) -> None:
+        """A service replica is accepting connections at ``endpoint`` (host:port), or no
+        longer is (None, while it restarts)."""
+        task = self._owned_task(worker_id, task_id)
+        if endpoint is not None and not re.fullmatch(r"[\w.\-:\[\]]{1,255}:\d{1,5}", endpoint):
+            raise ValidationFailed(f"endpoint must look like host:port, got {endpoint!r}")
+        with self.store.tx() as c:
+            c.execute("UPDATE tasks SET endpoint=? WHERE id=?", (endpoint, task_id))
+            if endpoint:
+                self.store.add_event(
+                    "task.endpoint",
+                    f"replica {task['node_rank']} serving at {endpoint}",
+                    job_id=task["job_id"],
+                    task_id=task_id,
+                    worker_id=worker_id,
+                )
+        self.signal(f"job:{task['job_id']}")
+
     def start_task(self, worker_id: str, task_id: str) -> None:
         task = self._owned_task(worker_id, task_id)
         state = TaskState(task["state"])
@@ -975,7 +995,8 @@ class ControlPlane:
             spec = JobSpec.model_validate_json(row["spec"])
             tasks = self._tasks(job_id, row["attempts"])
             states = [t.state for t in tasks]
-            distributed = spec.workload_type.value == "distributed"
+            # A distributed group or a set of service replicas stands or falls together.
+            distributed = spec.workload_type.value in ("distributed", "service")
 
             bad = [
                 t
@@ -1019,7 +1040,7 @@ class ControlPlane:
         reason_map = {TaskState.LOST: "worker_lost", TaskState.FAILED: "failed"}
         failed = [t for t in tasks if t.state in reason_map]
         if (
-            spec.workload_type.value == "independent"
+            spec.workload_type.value in ("independent", "service")
             and failed
             and reason_map[failed[0].state] in retry.retry_on
             and row["attempts"] < retry.max_attempts

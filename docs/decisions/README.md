@@ -35,7 +35,7 @@ proposed. Each ADR says which part is which.
 | [0017](ADR-0017-distribution-and-installation.md) | Distribution: install script, Docker images, then packages | Accepted (milestone 2) | `curl ... install.sh | sh` into a private virtualenv, one Docker image for server and workers (CPU or CUDA base); GHCR images and PyPI after the licence decision. |
 | [0016](ADR-0016-performance-parallelism-and-distribution.md) | Speed, parallelism and job distribution as primary goals | Accepted (milestone 2) | No fixed sleeps on hot paths (long-poll dispatch and job waits), no per-step device syncs, measured changes, and a roadmap for concurrent tasks per worker and topology-aware placement. |
 | [0018](ADR-0018-trainer-scope.md) | Trainer scope relative to PyTorch Lightning | Accepted (milestone 2) | Adopt Lightning's names for the features most scripts need, keep the per-step path lean, leave the ecosystem (loggers, DeepSpeed) to `launch()`. |
-| [0019](ADR-0019-long-running-services.md) | Long-running services | Proposed | `ServiceJob`: replicas that stay up, `$PORT` and reported endpoints, restarts on the worker, re-placement on worker loss; no ingress yet. |
+| [0019](ADR-0019-long-running-services.md) | Long-running services | Accepted (first slice) | `ServiceJob`: replicas that stay up, `$PORT` and reported endpoints, restarts on the worker, re-placement on worker loss; no ingress yet. |
 
 ## Template
 

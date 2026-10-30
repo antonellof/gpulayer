@@ -1,6 +1,6 @@
 # ADR-0019: Long-running services
 
-- **Status:** Proposed (implementation in progress)
+- **Status:** Accepted (first slice implemented)
 - **Date:** 2026-10-30
 
 ## Context

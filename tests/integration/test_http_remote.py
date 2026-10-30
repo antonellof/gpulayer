@@ -180,3 +180,26 @@ def test_batch_submit_over_http(server, tmp_path):
         t.request("POST", "/v1/jobs/batch", {"jobs": []})
     with pytest.raises(Unauthorized):
         HttpTransport(srv.url, join_token).request("POST", "/v1/jobs/batch", {"jobs": []})
+
+
+def test_service_endpoint_reported_over_http(server):
+    from gpulayer.contracts import WorkerCapabilities
+
+    srv, client_token, join_token = server
+    caps = WorkerCapabilities(
+        hostname="h",
+        os="linux",
+        cpu_arch="x86_64",
+        cpu_cores=1,
+        python_version="3.12.0",
+        origin="existing",
+    )
+    ch = HttpWorkerChannel.register(srv.url, join_token, "w", caps)
+    c = gl.Client(url=srv.url, token=client_token)
+    job = c.submit(gl.service(["serve"], target="remote"))
+    a = ch.acquire()
+    ch.start(a.task_id)
+    ch.report_endpoint(a.task_id, "10.1.2.3:8123")
+    assert job.endpoints() == ["10.1.2.3:8123"]
+    ch.report_endpoint(a.task_id, None)
+    assert job.endpoints() == []

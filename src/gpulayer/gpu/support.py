@@ -18,7 +18,8 @@ class BackendSupport:
     note: str
 
     def level(self, workload: WorkloadType) -> SupportLevel:
-        return self.independent if workload == WorkloadType.INDEPENDENT else self.distributed
+        # A service replica runs like an independent job; only groups need the distributed path.
+        return self.distributed if workload == WorkloadType.DISTRIBUTED else self.independent
 
 
 SUPPORT: dict[Accelerator, BackendSupport] = {

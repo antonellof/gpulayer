@@ -1,6 +1,6 @@
 #!/bin/sh
 # Check a GPUlayer install on Kubernetes: workers joined, a job runs on a worker pod, and a
-# distributed job spans two worker pods.
+# distributed job spans two worker pods, and a service answers on its reported endpoint.
 #
 #   sh deploy/kubernetes/smoke-test.sh NAMESPACE RELEASE
 set -eu
@@ -31,4 +31,12 @@ assert t.item() == w * (w + 1) / 2
 dist.destroy_process_group()
 PY
 gpulayer submit --target remote --distributed --source /tmp/d --entrypoint d.py --nodes 2 --procs-per-node 1'
+echo "== a long-running service on a worker pod, reached from the server pod"
+# shellcheck disable=SC2016  # $PORT expands on the worker
+out=$(run gpulayer submit --target remote --service -- sh -c 'exec python -m http.server "$PORT"')
+job=$(echo "$out" | head -1)
+endpoint=$(echo "$out" | sed -n 2p)
+[ -n "$endpoint" ] || { echo "no endpoint: $out"; exit 1; }
+run python -c "import urllib.request; print(urllib.request.urlopen('http://$endpoint/', timeout=10).status)"
+run gpulayer job cancel "$job"
 echo "== ok"

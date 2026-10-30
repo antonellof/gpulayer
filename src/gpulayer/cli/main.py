@@ -35,6 +35,7 @@ from gpulayer.contracts import (
     ResourceRequest,
     RetryPolicy,
     SecretRef,
+    ServiceJob,
     WorkerOrigin,
 )
 from gpulayer.errors import GpuLayerError
@@ -590,12 +591,23 @@ def build_spec(args: argparse.Namespace, client: Client) -> JobSpec:
         spec = JobSpec.model_validate_json(Path(args.file).read_text())
         return spec
     source = client.package(args.source) if args.source else None
-    if args.distributed:
+    if args.service:
+        if not args.command:
+            raise SystemExit("error: --service needs a command after --")
+        workload: Any = ServiceJob(
+            command=args.command,
+            source=source,
+            replicas=args.replicas,
+            port=not args.no_port,
+            restart=args.restart,
+            max_restarts=args.max_restarts,
+        )
+    elif args.distributed:
         if not args.entrypoint:
             raise SystemExit("error: --distributed requires --entrypoint SCRIPT")
         if source is None:
             raise SystemExit("error: --distributed requires --source DIR")
-        workload: Any = DistributedJob(
+        workload = DistributedJob(
             entrypoint=args.entrypoint,
             args=args.command,
             source=source,
@@ -678,6 +690,18 @@ def cmd_submit(args: argparse.Namespace) -> int:
         if args.detach:
             print(job.id)
             return 0
+        if args.service and args.url:
+            # The service keeps running on the server's workers: report where, and return.
+            endpoints = job.endpoints(wait=120)
+            print(job.id)
+            for e in endpoints:
+                print(e)
+            if not endpoints:
+                print(
+                    f"no replica is listening yet; see `gpulayer job status {job.id}`",
+                    file=sys.stderr,
+                )
+            return 0
         try:
             for line in job.follow_logs():
                 stream = sys.stderr if line.stream != "stdout" else sys.stdout
@@ -728,6 +752,7 @@ def cmd_job_status(args: argparse.Namespace) -> int:
             f"task      {t.task_id} attempt={t.attempt} node={t.node_rank} worker={t.worker_id} "
             f"{t.state.value}"
             + (f" exit={t.exit_code}" if t.exit_code is not None else "")
+            + (f" endpoint={t.endpoint}" if t.endpoint else "")
             + (f" ({t.error})" if t.error else "")
         )
     return 0
@@ -992,6 +1017,15 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--input", action="append", metavar="FILE[:DEST]")
     s.add_argument("--function", metavar="MODULE:FUNC")
     s.add_argument("--arg", action="append", metavar="JSON", help="function argument (JSON)")
+    s.add_argument(
+        "--service",
+        action="store_true",
+        help="a long-running service (ADR-0019): keeps running, gets $PORT, restarts on exit",
+    )
+    s.add_argument("--replicas", type=int, default=1, help="service replicas (distinct workers)")
+    s.add_argument("--restart", choices=["always", "on_failure"], default="always")
+    s.add_argument("--max-restarts", type=int, default=None)
+    s.add_argument("--no-port", action="store_true", help="do not assign $PORT to the service")
     s.add_argument(
         "--distributed",
         action="store_true",

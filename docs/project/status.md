@@ -17,6 +17,7 @@ Updated 2026-10-29 at the end of the first iteration.
 | Apple MPS, independent jobs | hardware-validated |
 | NVIDIA CUDA execution | hardware-validated on a Tesla T4 (single GPU) |
 | AMD ROCm | detection only |
+| Long-running services (ADR-0019): replicas, `$PORT`, endpoints, restarts | tested on a local worker and on Kubernetes (kind); no load balancer |
 | Cloud provisioning through provider adapters | Google Cloud: validated with a CPU VM (create, join, run, delete); other clouds: none yet; `FakeProvider` for tests |
 | Documentation site (`site/`) | builds as a static export |
 

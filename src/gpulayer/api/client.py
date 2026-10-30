@@ -341,6 +341,9 @@ class HttpWorkerChannel:
     def start(self, task_id: str) -> None:
         self.t.request("POST", f"/v1/worker/tasks/{task_id}/start", {})
 
+    def report_endpoint(self, task_id: str, endpoint: str | None) -> None:
+        self.t.request("POST", f"/v1/worker/tasks/{task_id}/endpoint", {"endpoint": endpoint})
+
     def publish_rendezvous(self, task_id: str, addr: str, port: int) -> RendezvousInfo:
         return RendezvousInfo.model_validate(
             self.t.request(

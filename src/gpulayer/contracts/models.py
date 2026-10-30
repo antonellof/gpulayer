@@ -40,6 +40,7 @@ class ExecutionTarget(str, Enum):
 class WorkloadType(str, Enum):
     INDEPENDENT = "independent"
     DISTRIBUTED = "distributed"
+    SERVICE = "service"
 
 
 class Accelerator(str, Enum):
@@ -427,7 +428,26 @@ class DistributedJob(_Model):
         return self.num_workers * self.procs_per_worker
 
 
-Workload = Annotated[CommandJob | FunctionJob | DistributedJob, Field(discriminator="kind")]
+class ServiceJob(_Model):
+    """A command that keeps running (an inference server, a notebook): ADR-0019.
+
+    ``replicas`` copies run on distinct workers. With ``port`` each gets a free TCP port in
+    ``$PORT`` and reports ``<worker address>:<port>`` once it accepts connections. A replica
+    that exits is restarted on its worker (``restart``), up to ``max_restarts`` times.
+    """
+
+    kind: Literal["service"] = "service"
+    command: list[str] = Field(min_length=1)
+    source: ArtifactReference | None = None
+    replicas: int = Field(1, ge=1, le=64)
+    port: bool = True
+    restart: Literal["always", "on_failure"] = "always"
+    max_restarts: int | None = Field(None, ge=0, description="None: no limit")
+
+
+Workload = Annotated[
+    CommandJob | FunctionJob | DistributedJob | ServiceJob, Field(discriminator="kind")
+]
 
 
 class JobSpec(_Model):
@@ -478,6 +498,12 @@ class JobSpec(_Model):
                 and w.procs_per_worker > self.resources.gpu_count
             ):
                 raise ValueError("procs_per_worker cannot exceed gpu_count per worker")
+        if isinstance(w, ServiceJob):
+            if "PORT" in self.env and w.port:
+                raise ValueError("PORT is set by the worker for services with port=True")
+            if "retry" not in self.model_fields_set:
+                # A service is placed again when a worker is lost (ADR-0019).
+                self.retry = RetryPolicy(max_attempts=10)
         names = [s.name for s in self.secrets]
         if len(names) != len(set(names)) or set(names) & set(self.env):
             raise ValueError("secret names must be unique and must not collide with env")
@@ -487,11 +513,18 @@ class JobSpec(_Model):
     def workload_type(self) -> WorkloadType:
         if isinstance(self.workload, DistributedJob):
             return WorkloadType.DISTRIBUTED
+        if isinstance(self.workload, ServiceJob):
+            return WorkloadType.SERVICE
         return WorkloadType.INDEPENDENT
 
     @property
     def num_nodes(self) -> int:
-        return self.workload.num_workers if isinstance(self.workload, DistributedJob) else 1
+        """Workers the job is placed on together: nodes of a group, or service replicas."""
+        if isinstance(self.workload, DistributedJob):
+            return self.workload.num_workers
+        if isinstance(self.workload, ServiceJob):
+            return self.workload.replicas
+        return 1
 
 
 _RESERVED_ENV = {"MASTER_ADDR", "MASTER_PORT", "RANK", "WORLD_SIZE", "LOCAL_RANK", "PYTHONPATH"}
@@ -591,6 +624,7 @@ class TaskStatus(_Model):
     lease_expires_at: datetime | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    endpoint: str | None = Field(None, description="host:port of a running service replica")
 
 
 class CostRecord(_Model):

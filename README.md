@@ -110,8 +110,8 @@ has it, wherever that machine is.
 | Many independent tasks | loops and ad hoc scripts | `fn.map([...])` across free GPUs |
 | Multi-node training | `torchrun` on every node with matching ranks and addresses | `Trainer(num_nodes=2, devices=4)` |
 
-On one machine with one GPU, running your code directly is simpler. GPUlayer runs jobs that
-finish (long-running services are planned) and is not a sandbox for untrusted code. More in
+On one machine with one GPU, running your code directly is simpler. GPUlayer runs services
+without a load balancer in front of them, and is not a sandbox for untrusted code. More in
 [Why GPUlayer](https://www.gpulayer.dev/docs/#why-gpulayer).
 
 ## Performance and comparison

@@ -66,6 +66,19 @@ class Job:
     def result(self) -> JobResult:
         return self.client._api.job_result(self.id)
 
+    def endpoints(self, wait: float = 0.0) -> list[str]:
+        """host:port of each service replica that is accepting connections. With ``wait``,
+        wait up to that many seconds for every replica to be listening."""
+        deadline = time.monotonic() + wait
+        while True:
+            st = self.status()
+            current = [t for t in st.tasks if t.attempt == st.attempts]
+            found = [t.endpoint for t in current if t.endpoint]
+            replicas = st.spec.num_nodes
+            if len(found) >= replicas or st.state.terminal or time.monotonic() >= deadline:
+                return found
+            time.sleep(0.2)
+
     def cancel(self) -> JobStatus:
         return self.client._api.cancel_job(self.id)
 

@@ -5,6 +5,12 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Long-running services (ADR-0019): `gpulayer submit --service`, `gl.service(...)` and
+  `Job.endpoints()`. A service runs `replicas` copies on distinct workers, gives each a free
+  `$PORT`, reports `host:port` once it accepts connections, restarts replicas that exit (back-off
+  1 s to 30 s, `--restart`, `--max-restarts`), is placed again after a worker loss, and stops on
+  cancel. New worker route `POST /v1/worker/tasks/{id}/endpoint` and `TaskStatus.endpoint`;
+  the `tasks.endpoint` column is added to existing databases on start. No load balancer yet.
 - Less server work per job: active-task queries use a partial index instead of scanning every
   task ever run (2.2 ms to 0.002 ms per scheduling pass at 13,000 tasks), the HTTP client
   shares kept-open connections between threads (a worker no longer opens a TLS connection per

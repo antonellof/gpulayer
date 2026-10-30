@@ -105,8 +105,9 @@ flow in detail.
 
 - **One machine, one GPU, interactive work.** Running your code directly is simpler. GPUlayer
   adds a control plane, workers and tokens you do not need.
-- **Long-running services.** An inference server that must stay up and accept traffic is not
-  supported yet; GPUlayer runs jobs that finish.
+- **Services behind a load balancer.** GPUlayer keeps
+  [services](guides/services.md) running and reports their endpoints, but it has no load
+  balancer, public entry point, rolling updates or autoscaling.
 - **Untrusted users.** Workloads run as normal processes on workers, not in a sandbox. Use
   GPUlayer among people who trust each other.
 - **Validated scale today.** GPUlayer is at v0.3.0. It has been validated

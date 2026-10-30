@@ -6,11 +6,13 @@ the ``WorkerChannel`` differs.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
 import re
 import shutil
+import socket
 import sys
 import threading
 import time
@@ -27,6 +29,7 @@ from gpulayer.contracts import (
     FunctionJob,
     JobSpec,
     RendezvousInfo,
+    ServiceJob,
     TaskAssignment,
     TaskOutcome,
     TaskState,
@@ -35,7 +38,7 @@ from gpulayer.contracts import (
 from gpulayer.errors import Conflict, Forbidden, GpuLayerError, Unauthorized
 from gpulayer.runtime import dist_function_runner, function_runner, rank_launcher
 from gpulayer.runtime.distributed import direct_argv, direct_env, free_port, torchrun_argv
-from gpulayer.runtime.process import run_process
+from gpulayer.runtime.process import ProcessOutcome, run_process
 from gpulayer.worker.channel import WorkerChannel
 
 log = logging.getLogger("gpulayer.worker")
@@ -390,7 +393,7 @@ class WorkerAgent:
             cwd = str(src if source is not None else ws)
             result_file: Path | None = None
 
-            if isinstance(w, CommandJob):
+            if isinstance(w, (CommandJob, ServiceJob)):
                 argv = list(w.command)
                 if argv[0] == "python":  # documented: 'python' means the worker's interpreter
                     argv[0] = self.python
@@ -475,15 +478,18 @@ class WorkerAgent:
                     self._pgids[a.task_id] = pid
 
             try:
-                out = run_process(
-                    argv,
-                    env=env,
-                    cwd=cwd,
-                    on_line=line_sink,
-                    timeout=spec.timeout_seconds,
-                    cancel=cancel,
-                    on_start=started,
-                )
+                if isinstance(w, ServiceJob):
+                    out = self._serve(a, w, argv, env, cwd, line_sink, sink, cancel, started)
+                else:
+                    out = run_process(
+                        argv,
+                        env=env,
+                        cwd=cwd,
+                        on_line=line_sink,
+                        timeout=spec.timeout_seconds,
+                        cancel=cancel,
+                        on_start=started,
+                    )
             finally:
                 with self._cancel_lock:
                     self._pgids.pop(a.task_id, None)
@@ -538,6 +544,78 @@ class WorkerAgent:
             error=None if out.exit_code == 0 else f"exit code {out.exit_code}",
             outputs=outputs,
         )
+
+    def _serve(
+        self,
+        a: TaskAssignment,
+        w: ServiceJob,
+        argv: list[str],
+        env: dict[str, str],
+        cwd: str,
+        line_sink: Callable[[str, str], None],
+        sink: Callable[..., None],
+        cancel: threading.Event,
+        started: Callable[[int], None],
+    ) -> ProcessOutcome:
+        """Run a service replica until it is cancelled or stops for good (ADR-0019): restart
+        it when it exits, give it a free $PORT, and report its endpoint once it listens."""
+        deadline = time.monotonic() + a.spec.timeout_seconds if a.spec.timeout_seconds else None
+        restarts, delay = 0, 1.0
+        while True:
+            port = free_port() if w.port else None
+            if port is not None:
+                env["PORT"] = str(port)
+            listening = threading.Event()
+            if port is not None:
+                threading.Thread(
+                    target=self._announce, args=(a.task_id, port, listening, cancel), daemon=True
+                ).start()
+            t0 = time.monotonic()
+            out = run_process(
+                argv,
+                env=env,
+                cwd=cwd,
+                on_line=line_sink,
+                timeout=(deadline - time.monotonic()) if deadline else None,
+                cancel=cancel,
+                on_start=started,
+            )
+            listening.set()  # stops the announcer if the port never opened
+            if port is not None:
+                with contextlib.suppress(Exception):
+                    self.channel.report_endpoint(a.task_id, None)
+            if out.cancelled or out.timed_out or out.error:
+                return out
+            if w.restart == "on_failure" and out.exit_code == 0:
+                return out
+            if w.max_restarts is not None and restarts >= w.max_restarts:
+                return out
+            if time.monotonic() - t0 > 60:
+                delay = 1.0  # it ran for a while: start over with a short back-off
+            restarts += 1
+            sink(
+                "system",
+                f"service exited with code {out.exit_code}; restart {restarts} in {delay:.0f}s",
+            )
+            if cancel.wait(delay):
+                return ProcessOutcome(exit_code=out.exit_code, cancelled=True)
+            delay = min(delay * 2, 30.0)
+
+    def _announce(
+        self, task_id: str, port: int, stop: threading.Event, cancel: threading.Event
+    ) -> None:
+        """Report host:port once the replica accepts connections on its port."""
+        host = self.caps.advertise_address or socket.gethostname()
+        while not stop.is_set() and not cancel.is_set():
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=1):
+                    pass
+            except OSError:
+                stop.wait(0.2)
+                continue
+            with contextlib.suppress(Exception):
+                self.channel.report_endpoint(task_id, f"{host}:{port}")
+            return
 
     def _rendezvous(self, a: TaskAssignment) -> RendezvousInfo:
         if a.rendezvous is not None:

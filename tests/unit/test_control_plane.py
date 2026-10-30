@@ -396,3 +396,43 @@ def test_submit_many_is_all_or_nothing_and_schedules_once(cp, monkeypatch):
         cp.submit_many([cmd_spec(), bad])
     assert len(cp.list_jobs(limit=100)) == before  # nothing from the rejected batch
     assert cp.acquire_task(w) is not None
+
+
+def test_service_replicas_report_endpoints_and_are_replaced_after_worker_loss(cp, clock):
+    from gpulayer.contracts import ServiceJob
+
+    w1, w2 = reg(cp, "a"), reg(cp, "b")
+    job = cp.submit(JobSpec(workload=ServiceJob(command=["serve"], replicas=2)))
+    tasks = cp.get_job(job.job_id).tasks
+    assert sorted(t.worker_id for t in tasks) == sorted([w1, w2])  # distinct workers
+    for w in (w1, w2):
+        a = cp.acquire_task(w)
+        cp.start_task(w, a.task_id)
+        cp.report_endpoint(w, a.task_id, f"10.0.0.{w[-1]}:8000")
+    st = cp.get_job(job.job_id)
+    assert st.state == JobState.RUNNING and all(t.endpoint for t in st.tasks)
+    with pytest.raises(ValidationFailed, match="host:port"):
+        cp.report_endpoint(
+            w1, next(t.task_id for t in st.tasks if t.worker_id == w1), "not an endpoint"
+        )
+    with pytest.raises(Forbidden):
+        cp.report_endpoint(w2, next(t.task_id for t in st.tasks if t.worker_id == w1), "x:1")
+    # Worker b goes silent: its replica is lost, the other is stopped, the service is placed
+    # again (services retry on worker loss by default).
+    for _ in range(4):
+        clock.advance(8)
+        cp.heartbeat(w1)
+    cp.reconcile()
+    st = cp.get_job(job.job_id)
+    assert st.state == JobState.QUEUED  # waits for two workers again
+    assert any("retrying after worker_lost" in e.message for e in cp.events(job_id=job.job_id))
+    w3 = reg(cp, "c")
+    # Worker a stops its old replica (told so on its heartbeat) and frees its slot.
+    old = next(t for t in st.tasks if t.worker_id == w1 and t.attempt == 1)
+    cp.finish_task(w1, old.task_id, TaskOutcome(state=TaskState.CANCELLED))
+    st = cp.get_job(job.job_id)
+    assert st.state == JobState.SCHEDULED and st.attempts == 2
+    current = [t for t in st.tasks if t.attempt == 2]
+    assert sorted(t.worker_id for t in current) == sorted([w1, w3]) and not any(
+        t.endpoint for t in current
+    )

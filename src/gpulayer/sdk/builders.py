@@ -15,6 +15,7 @@ from gpulayer.contracts import (
     PlacementPolicy,
     ResourceRequest,
     SecretRef,
+    ServiceJob,
 )
 
 
@@ -45,6 +46,43 @@ def _spec(
         placement=placement,
         secrets=secrets,
         **{k: v for k, v in kw.items() if v is not None},
+    )
+
+
+def service(
+    argv: list[str],
+    *,
+    replicas: int = 1,
+    port: bool = True,
+    restart: str = "always",
+    max_restarts: int | None = None,
+    name: str = "service",
+    target: str = "local",
+    source: ArtifactReference | None = None,
+    resources: ResourceRequest | None = None,
+    placement: PlacementPolicy | None = None,
+    accelerator: str | None = None,
+    gpus: int | None = None,
+    **kw: Any,
+) -> JobSpec:
+    """A long-running service (ADR-0019): ``replicas`` copies of ``argv`` that stay up. With
+    ``port`` each gets ``$PORT``; ``Job.endpoints()`` lists where they listen."""
+    return _spec(
+        ServiceJob(
+            command=argv,
+            source=source,
+            replicas=replicas,
+            port=port,
+            restart=restart,
+            max_restarts=max_restarts,
+        ),
+        name=name,
+        target=target,
+        resources=resources,
+        placement=placement,
+        accelerator=accelerator,
+        gpus=gpus,
+        **kw,
     )
 
 

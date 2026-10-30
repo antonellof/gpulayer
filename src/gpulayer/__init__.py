@@ -9,7 +9,7 @@ from gpulayer.contracts import (
     PlacementPolicy,
     ResourceRequest,
 )
-from gpulayer.sdk.builders import command, distributed, function
+from gpulayer.sdk.builders import command, distributed, function, service
 from gpulayer.sdk.client import Client, Job
 from gpulayer.sdk.remote import RemoteError, RemoteFunction, connect, default_client, remote
 
@@ -33,6 +33,7 @@ __all__ = [
     "distributed",
     "function",
     "remote",
+    "service",
 ]
 
 
