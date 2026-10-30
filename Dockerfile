@@ -4,6 +4,7 @@
 #   docker build -t gpulayer:cuda \
 #     --build-arg BASE=nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 \
 #     --build-arg EXTRAS=pytorch-cuda .                          # NVIDIA worker with torch
+#   docker build -t gpulayer:torch-cpu --build-arg EXTRAS=torch-cpu .  # CPU worker with torch
 #
 # State lives in /data (GPULAYER_HOME). The image runs as an unprivileged user.
 ARG BASE=python:3.12-slim
@@ -24,10 +25,12 @@ RUN if ! command -v python3 >/dev/null 2>&1; then \
  && python3 -m venv /opt/gpulayer
 
 WORKDIR /src
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
 RUN if [ -z "$EXTRAS" ]; then pip install . ; \
     elif [ "$EXTRAS" = "pytorch-cuda" ]; then pip install . torch numpy ; \
+    elif [ "$EXTRAS" = "torch-cpu" ]; then pip install . numpy \
+      && pip install torch --index-url https://download.pytorch.org/whl/cpu ; \
     else pip install ".[$EXTRAS]" ; fi \
  && rm -rf /src
 

@@ -1,0 +1,49 @@
+# GPUlayer on Kubernetes. One server (StatefulSet with a volume) and pools of workers.
+# Tokens and the TLS certificate are generated on install and kept on upgrade.
+
+image:
+  repository: ghcr.io/antonellof/gpulayer
+  tag: ""            # default: the chart's appVersion
+  pullPolicy: IfNotPresent
+
+server:
+  port: 8470
+  service:
+    type: ClusterIP  # LoadBalancer or NodePort to reach it from outside the cluster
+  persistence:
+    size: 10Gi
+    storageClass: ""  # "" uses the cluster default
+  resources:
+    requests: {cpu: 500m, memory: 512Mi}
+    limits: {memory: 2Gi}
+  # Extra names for the server certificate, e.g. a LoadBalancer DNS name.
+  extraTLSNames: []
+
+# Existing Secret with keys client-token and join-token (each 32+ characters) instead of
+# generated ones.
+existingTokenSecret: ""
+
+workers:
+  cpu:
+    enabled: true
+    replicas: 2
+    concurrency: 2   # jobs at once per worker pod
+    # The "-torch" image variant has CPU PyTorch, for PyTorch and distributed jobs. Set
+    # variant: "" for the slim image, or repository/tag for your own.
+    image: {variant: torch}
+    resources:
+      requests: {cpu: "2", memory: 4Gi}
+      limits: {memory: 8Gi}
+    nodeSelector: {}
+    tolerations: []
+  gpu:
+    enabled: false
+    replicas: 1
+    gpusPerWorker: 1   # nvidia.com/gpu per worker pod; one job per GPU
+    image: {}          # a CUDA image you build: docker build --build-arg BASE=nvidia/cuda:... --build-arg EXTRAS=pytorch-cuda
+    resources:
+      requests: {cpu: "4", memory: 16Gi}
+      limits: {memory: 32Gi}
+    nodeSelector: {}
+    tolerations:
+      - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}

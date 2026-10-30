@@ -1,0 +1,86 @@
+{{- $fullname := include "gpulayer.fullname" . -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-server
+  labels: {{- include "gpulayer.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.server.service.type }}
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: server
+  ports:
+    - name: https
+      port: {{ .Values.server.port }}
+      targetPort: https
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $fullname }}-server
+  labels: {{- include "gpulayer.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  serviceName: {{ $fullname }}-server
+  replicas: 1   # one control plane: it keeps its state in SQLite on the volume
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      labels: {{- include "gpulayer.labels" . | nindent 8 }}
+        app.kubernetes.io/component: server
+    spec:
+      securityContext: {runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001}
+      containers:
+        - name: server
+          image: {{ include "gpulayer.image" (dict "root" . "img" dict) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - up
+            - --no-worker
+            - --host=0.0.0.0
+            - --port={{ .Values.server.port }}
+            - --advertise-address={{ include "gpulayer.serverHost" . }}
+            - --tls-cert=/tls/tls.crt
+            - --tls-key=/tls/tls.key
+          env:
+            - name: GPULAYER_UP_CLIENT_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ include "gpulayer.tokenSecret" . }}, key: client-token}}
+            - name: GPULAYER_UP_JOIN_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ include "gpulayer.tokenSecret" . }}, key: join-token}}
+            # For `kubectl exec ... gpulayer job list` and similar inside this pod.
+            - name: GPULAYER_URL
+              value: https://localhost:{{ .Values.server.port }}
+            - name: GPULAYER_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ include "gpulayer.tokenSecret" . }}, key: client-token}}
+            - name: GPULAYER_CA_FILE
+              value: /tls/ca.crt
+          ports:
+            - {name: https, containerPort: {{ .Values.server.port }}}
+          readinessProbe:
+            httpGet: {path: /v1/health, port: https, scheme: HTTPS}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /v1/health, port: https, scheme: HTTPS}
+            periodSeconds: 20
+            failureThreshold: 6
+          resources: {{- toYaml .Values.server.resources | nindent 12 }}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: tls, mountPath: /tls, readOnly: true}
+      volumes:
+        - name: tls
+          secret: {secretName: {{ $fullname }}-tls}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- if .Values.server.persistence.storageClass }}
+        storageClassName: {{ .Values.server.persistence.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.server.persistence.size }}

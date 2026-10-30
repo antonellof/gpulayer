@@ -49,3 +49,30 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  images:
+    # Container images for Docker and the Helm chart (deploy/kubernetes):
+    #   ghcr.io/<owner>/gpulayer:<version>        slim: server and workers without PyTorch
+    #   ghcr.io/<owner>/gpulayer:<version>-torch  CPU workers with PyTorch
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push
+        run: |
+          version=$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)
+          image=ghcr.io/$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')/gpulayer
+          docker build -t "$image:$version" -t "$image:latest" \
+            --label org.opencontainers.image.source=https://github.com/${{ github.repository }} .
+          docker build -t "$image:$version-torch" -t "$image:torch" --build-arg EXTRAS=torch-cpu \
+            --label org.opencontainers.image.source=https://github.com/${{ github.repository }} .
+          for tag in "$version" latest "$version-torch" torch; do docker push "$image:$tag"; done

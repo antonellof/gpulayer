@@ -1,0 +1,70 @@
+{{- $fullname := include "gpulayer.fullname" . -}}
+{{- range $pool := list "cpu" "gpu" }}
+{{- $w := index $.Values.workers $pool }}
+{{- if $w.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}-worker-{{ $pool }}
+  labels: {{- include "gpulayer.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: worker-{{ $pool }}
+spec:
+  replicas: {{ $w.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+      app.kubernetes.io/component: worker-{{ $pool }}
+  template:
+    metadata:
+      labels: {{- include "gpulayer.labels" $ | nindent 8 }}
+        app.kubernetes.io/component: worker-{{ $pool }}
+    spec:
+      securityContext: {runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001}
+      containers:
+        - name: worker
+          image: {{ include "gpulayer.image" (dict "root" $ "img" $w.image) }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          args:
+            - join
+            - https://{{ include "gpulayer.serverHost" $ }}:{{ $.Values.server.port }}
+            - --name=$(POD_NAME)
+            # The pod IP: distributed jobs rendezvous on it, pod to pod.
+            - --advertise-address=$(POD_IP)
+            - --label=pool={{ $pool }}
+            {{- if eq $pool "gpu" }}
+            - --concurrency={{ $w.gpusPerWorker }}
+            {{- else }}
+            - --concurrency={{ $w.concurrency }}
+            {{- end }}
+          env:
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - name: POD_IP
+              valueFrom: {fieldRef: {fieldPath: status.podIP}}
+            - name: GPULAYER_JOIN_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ include "gpulayer.tokenSecret" $ }}, key: join-token}}
+            - name: GPULAYER_CA_FILE
+              value: /tls/ca.crt
+          resources:
+            {{- $res := deepCopy $w.resources }}
+            {{- if eq $pool "gpu" }}
+            {{- $_ := set $res "limits" (merge (dict "nvidia.com/gpu" $w.gpusPerWorker) ($res.limits | default dict)) }}
+            {{- end }}
+            {{- toYaml $res | nindent 12 }}
+          volumeMounts:
+            - {name: work, mountPath: /data}
+            - {name: tls, mountPath: /tls, readOnly: true}
+      volumes:
+        - name: work
+          emptyDir: {}
+        - name: tls
+          secret: {secretName: {{ $fullname }}-tls, items: [{key: ca.crt, path: ca.crt}]}
+      {{- with $w.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $w.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
+{{- end }}

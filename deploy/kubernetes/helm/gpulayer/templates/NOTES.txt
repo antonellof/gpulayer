@@ -1,0 +1,17 @@
+GPUlayer is starting in namespace {{ .Release.Namespace }}.
+
+Server (inside the cluster): https://{{ include "gpulayer.serverHost" . }}:{{ .Values.server.port }}
+
+Run commands inside the server pod (URL, token and CA are already set there):
+  kubectl -n {{ .Release.Namespace }} exec -it {{ include "gpulayer.fullname" . }}-server-0 -- gpulayer resources list
+  kubectl -n {{ .Release.Namespace }} exec -it {{ include "gpulayer.fullname" . }}-server-0 -- gpulayer submit --target remote -- python -c "print('hello')"
+
+Use it from your laptop:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "gpulayer.fullname" . }}-server {{ .Values.server.port }}
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "gpulayer.fullname" . }}-tls -o jsonpath='{.data.ca\.crt}' | base64 -d > gpulayer-ca.crt
+  export GPULAYER_URL=https://localhost:{{ .Values.server.port }} GPULAYER_CA_FILE=$PWD/gpulayer-ca.crt
+  export GPULAYER_TOKEN=$(kubectl -n {{ .Release.Namespace }} get secret {{ include "gpulayer.tokenSecret" . }} -o jsonpath='{.data.client-token}' | base64 -d)
+  open https://localhost:{{ .Values.server.port }}/ui/   # dashboard; sign in with $GPULAYER_TOKEN
+
+Machines outside the cluster can join too, if they reach the server
+(server.service.type=LoadBalancer and server.extraTLSNames): gpulayer join <url> --ca-file gpulayer-ca.crt

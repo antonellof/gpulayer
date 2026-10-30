@@ -28,9 +28,16 @@ blocks publishing packages and images for others to use.
    to PyPI with trusted publishing (OpenID Connect, no API token) when a GitHub release is
    published, from the `pypi` environment. `pip install gpulayer` and
    `uv tool install gpulayer` work.
-4. **Later:**
-   - publish images to GitHub Container Registry from CI (`ghcr.io/antonellof/gpulayer`,
-     tags per release, `:cuda` variant), with SBOM and signatures;
+4. **Container images and Kubernetes (done, 2026-10-30):** the release workflow pushes
+   `ghcr.io/antonellof/gpulayer:<version>` (slim) and `:<version>-torch` (CPU PyTorch). A Helm
+   chart (`deploy/kubernetes/helm/gpulayer`) runs the server as a StatefulSet with a volume
+   and CPU and GPU worker pools as Deployments; tokens and a CA-signed server certificate are
+   generated into Secrets and kept on upgrade, and workers verify the server with the CA. CI
+   installs it on kind and runs jobs, including a distributed job across worker pods. An
+   operator (a controller that creates workers on demand) is not needed until GPUlayer
+   provisions capacity itself.
+5. **Later:**
+   - a `:cuda` image variant, SBOM and image signatures;
    - switch the install script to the released package;
    - consider a Homebrew formula for macOS workers.
 

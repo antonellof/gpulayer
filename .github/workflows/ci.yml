@@ -60,3 +60,39 @@ jobs:
         run: docker build -t gpulayer:ci .
       - name: Server, worker and a job across containers
         run: sh deploy/docker/smoke-test.sh gpulayer:ci
+
+  kubernetes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image (with CPU PyTorch)
+        run: docker build -t gpulayer:ci --build-arg EXTRAS=torch-cpu .
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: gpulayer
+      - name: Install the Helm chart
+        run: |
+          helm lint deploy/kubernetes/helm/gpulayer
+          kind load docker-image gpulayer:ci --name gpulayer
+          helm install t deploy/kubernetes/helm/gpulayer --namespace gl --create-namespace \
+            --set image.repository=gpulayer --set image.tag=ci --set image.pullPolicy=Never \
+            --set workers.cpu.image.variant= \
+            --set workers.cpu.resources.requests.cpu=250m \
+            --set workers.cpu.resources.requests.memory=512Mi \
+            --set server.resources.requests.cpu=100m \
+            --wait --timeout 300s
+      - name: Jobs and a distributed job across worker pods
+        run: sh deploy/kubernetes/smoke-test.sh gl t
+      - name: Upgrade keeps tokens; server restart keeps state
+        run: |
+          before=$(kubectl -n gl get secret t-gpulayer-tokens -o jsonpath='{.data.join-token}')
+          helm upgrade t deploy/kubernetes/helm/gpulayer -n gl --reuse-values --wait --timeout 300s
+          test "$before" = "$(kubectl -n gl get secret t-gpulayer-tokens -o jsonpath='{.data.join-token}')"
+          kubectl -n gl delete pod t-gpulayer-server-0
+          kubectl -n gl wait --for=condition=ready pod/t-gpulayer-server-0 --timeout=180s
+          sh deploy/kubernetes/smoke-test.sh gl t
+          test "$(kubectl -n gl exec t-gpulayer-server-0 -- gpulayer job list | grep -c succeeded)" -ge 4
+      - name: Logs on failure
+        if: failure()
+        run: kubectl -n gl get pods -o wide; kubectl -n gl logs -l app.kubernetes.io/instance=t --all-containers --tail=100

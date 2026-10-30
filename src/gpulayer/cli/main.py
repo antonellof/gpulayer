@@ -13,6 +13,7 @@ import os
 import signal
 import sys
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -133,10 +134,24 @@ def cmd_server_start(args: argparse.Namespace) -> int:
 
 
 def _up_tokens(home: Path) -> tuple[str, str]:
-    """Client and join tokens for `gpulayer up`, kept in a 0600 file so restarts reuse them."""
+    """Client and join tokens for `gpulayer up`, kept in a 0600 file so restarts reuse them.
+
+    GPULAYER_UP_CLIENT_TOKEN and GPULAYER_UP_JOIN_TOKEN set them instead (for example from a
+    Kubernetes Secret), so workers can be configured before the server first starts."""
     import secrets
 
     path = home / "up-tokens.json"
+    given = os.environ.get("GPULAYER_UP_CLIENT_TOKEN"), os.environ.get("GPULAYER_UP_JOIN_TOKEN")
+    if any(given):
+        client, join = given
+        if not (client and join) or min(len(client), len(join)) < 32:
+            raise SystemExit(
+                "error: set both GPULAYER_UP_CLIENT_TOKEN and GPULAYER_UP_JOIN_TOKEN, "
+                "each at least 32 characters"
+            )
+        path.write_text(json.dumps({"client_token": client, "join_token": join}))
+        os.chmod(path, 0o600)
+        return client, join
     if path.exists():
         data = json.loads(path.read_text())
         return data["client_token"], data["join_token"]
@@ -259,6 +274,24 @@ Tokens are kept in {home / "up-tokens.json"}. Press Ctrl+C to stop.
     server.shutdown()
     print("stopped")
     return 0
+
+
+def _register_when_reachable(register: Callable[[], Any], url: str, wait: float = 600.0) -> Any:
+    """Register, retrying while the server cannot be reached (it may still be starting, for
+    example in Kubernetes). A rejected token or certificate fails at once."""
+    import time
+
+    deadline = time.monotonic() + wait
+    delay = 1.0
+    while True:
+        try:
+            return register()
+        except ConnectionError as e:  # refused, reset, or closed: nothing answered yet
+            if time.monotonic() + delay > deadline:
+                raise
+            print(f"waiting for the server at {url} ({e})", file=sys.stderr, flush=True)
+            time.sleep(delay)
+            delay = min(delay * 2, 10.0)
 
 
 def _gpus(value: str | None) -> list[int] | None:
@@ -429,13 +462,16 @@ def cmd_worker_start(args: argparse.Namespace) -> int:
             max_concurrent_tasks=getattr(args, "concurrency", None),
             gpus=_gpus(getattr(args, "gpus", None)),
         )
-        channel: Any = HttpWorkerChannel.register(
+        channel: Any = _register_when_reachable(
+            lambda: HttpWorkerChannel.register(
+                args.url,
+                join,
+                args.name or caps.hostname,
+                caps,
+                ca_file=args.ca_file,
+                fingerprint=args.fingerprint,
+            ),
             args.url,
-            join,
-            args.name or caps.hostname,
-            caps,
-            ca_file=args.ca_file,
-            fingerprint=args.fingerprint,
         )
     else:
         from gpulayer.worker.channel import EmbeddedChannel
@@ -765,7 +801,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="remote control plane URL (default $GPULAYER_URL; unset = embedded)",
     )
     p.add_argument("--token", default=None, help="client token (default $GPULAYER_TOKEN)")
-    p.add_argument("--ca-file", default=None, help="CA bundle to verify a TLS control plane")
+    p.add_argument(
+        "--ca-file",
+        default=os.environ.get("GPULAYER_CA_FILE"),
+        help="CA bundle to verify a TLS control plane (default $GPULAYER_CA_FILE)",
+    )
     p.add_argument(
         "--fingerprint",
         default=os.environ.get("GPULAYER_FINGERPRINT"),

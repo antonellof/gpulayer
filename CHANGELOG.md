@@ -21,6 +21,15 @@ before 1.0, minor versions may change public APIs, with migration notes here.
   ran the trainers on different VMs, overstated GPUlayer's lead.
 - On 8 GCP workers after the server changes, 2,000 tiny jobs ran at 83 jobs/s, or 93 with
   `submit_batch`, which submits all of them in 1.1 s. The workers now set the limit.
+- Kubernetes: a Helm chart (`deploy/kubernetes/helm/gpulayer`) with the server as a
+  StatefulSet and CPU and GPU worker pools; tokens and TLS generated into Secrets and kept on
+  upgrade. Tested in CI on kind, including a distributed job across worker pods. Guide:
+  Kubernetes.
+- Releases push container images to `ghcr.io/antonellof/gpulayer` (`<version>` and
+  `<version>-torch`).
+- `gpulayer up` takes its tokens from `GPULAYER_UP_CLIENT_TOKEN` / `GPULAYER_UP_JOIN_TOKEN`;
+  `--ca-file` defaults to `$GPULAYER_CA_FILE`; `gpulayer join` waits for a server that is not
+  reachable yet instead of exiting.
 - `fit(ckpt_path=...)` resumes launched (remote) runs: the local checkpoint is uploaded with
   the job. `launch(inputs={...})` ships local files to `$GPULAYER_INPUT_DIR`.
 

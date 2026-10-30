@@ -71,6 +71,10 @@
       "title": "Guides",
       "pages": [
         {
+          "slug": "guides/kubernetes",
+          "title": "Kubernetes"
+        },
+        {
           "slug": "guides/self-hosting",
           "title": "Run a server (gpulayer up)"
         },

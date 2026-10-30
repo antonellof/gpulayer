@@ -162,3 +162,51 @@ def test_gpus_cli_parsing():
     assert _gpus(None) is None and _gpus("none") == [] and _gpus("1, 0,1") == [0, 1]
     with pytest.raises(SystemExit):
         _gpus("first")
+
+
+def test_up_tokens_can_come_from_the_environment(tmp_path, monkeypatch):
+    import json
+
+    import pytest
+
+    from gpulayer.cli.main import _up_tokens
+
+    client, join = "glc_" + "a" * 40, "glj_" + "b" * 40
+    monkeypatch.setenv("GPULAYER_UP_CLIENT_TOKEN", client)
+    monkeypatch.setenv("GPULAYER_UP_JOIN_TOKEN", join)
+    assert _up_tokens(tmp_path) == (client, join)
+    assert json.loads((tmp_path / "up-tokens.json").read_text())["join_token"] == join
+    monkeypatch.setenv("GPULAYER_UP_JOIN_TOKEN", "short")
+    with pytest.raises(SystemExit, match="at least 32"):
+        _up_tokens(tmp_path)
+    monkeypatch.delenv("GPULAYER_UP_JOIN_TOKEN")
+    with pytest.raises(SystemExit, match="set both"):
+        _up_tokens(tmp_path)
+
+
+def test_join_waits_for_an_unreachable_server_but_not_a_wrong_token(monkeypatch):
+    import pytest
+
+    from gpulayer.cli import main as cli
+    from gpulayer.errors import Unauthorized
+
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    calls = []
+
+    def flaky():
+        calls.append(1)
+        if len(calls) < 3:
+            raise ConnectionRefusedError("refused")
+        return "channel"
+
+    assert cli._register_when_reachable(flaky, "https://x") == "channel" and len(calls) == 3
+
+    def rejected():
+        raise Unauthorized("bad token")
+
+    with pytest.raises(Unauthorized):
+        cli._register_when_reachable(rejected, "https://x")
+    with pytest.raises(ConnectionRefusedError):
+        cli._register_when_reachable(
+            lambda: (_ for _ in ()).throw(ConnectionRefusedError()), "u", wait=0
+        )
