@@ -120,10 +120,14 @@ class ControlPlane:
         self.now = clock
         self.provisioning = ProvisioningManager(self, {p.name: p for p in providers})
         # Wakes long-polling workers and job waiters when work appears or a job changes
-        # state. Only covers this process; waiters also re-check the database periodically
-        # so changes made by another process (a CLI submit) are seen within POLL_SLICE.
-        self._changed = threading.Condition()
-        self._generation = 0
+        # state. Keyed ("worker:<id>", "job:<id>") so a change wakes only the waiters it
+        # concerns: with 100+ idle worker slots, waking all of them on every placement was a
+        # thundering herd. Only covers this process; in embedded mode waiters also re-check
+        # the database every POLL_SLICE for changes made by another process (a CLI submit).
+        self._signal_lock = threading.Lock()
+        self._conds: dict[str, threading.Condition] = {}
+        self._gens: dict[str, int] = {}
+        self._generation = 0  # bumped by signal() with no keys: wakes every waiter
 
     # ================================================================== jobs
 
@@ -185,7 +189,9 @@ class ControlPlane:
     def _set_job_state(
         self, job_id: str, new: JobState, *, error: str | None = None, message: str | None = None
     ) -> None:
-        self.signal()  # waiters re-read after this transaction commits (they share its lock)
+        # Waiters re-read after this transaction commits (they share its lock). A terminal
+        # job's key is dropped: nobody waits for it to change again.
+        self.signal(f"job:{job_id}", forget=new.terminal)
         with self.store.tx() as c:
             row = self._job_row(job_id)
             old = JobState(row["state"])
@@ -452,6 +458,7 @@ class ControlPlane:
                 ),
             )
         c.execute("UPDATE jobs SET attempts=?, rendezvous=NULL WHERE id=?", (attempt, job_id))
+        self.signal(*(f"worker:{w}" for w in decision.worker_ids))
         self._set_job_state(job_id, JobState.SCHEDULED, message=decision.summary)
 
     # ======================================================= worker registry
@@ -597,7 +604,7 @@ class ControlPlane:
                 "worker.revoked", "worker credentials revoked", worker_id=worker_id
             )
         self._lose_tasks_of(worker_id, "worker revoked")
-        self.signal()  # a long-polling acquire of this worker must see the revocation
+        self.signal(f"worker:{worker_id}")  # its long-polling acquire must see the revocation
 
     # ======================================================= task protocol
 
@@ -688,10 +695,26 @@ class ControlPlane:
 
     # ============================================================ change signal
 
-    def signal(self) -> None:
-        with self._changed:
-            self._generation += 1
-            self._changed.notify_all()
+    def signal(self, *keys: str, forget: bool = False) -> None:
+        """Wake the waiters on ``keys``, or every waiter when no key is given. ``forget``
+        drops the keys' state afterwards (their waiters then re-check once and return)."""
+        with self._signal_lock:
+            if not keys:
+                self._generation += 1
+                for cond in self._conds.values():
+                    cond.notify_all()
+            for key in keys:
+                self._gens[key] = self._gens.get(key, 0) + 1
+                waiting = self._conds.get(key)
+                if waiting is not None:
+                    waiting.notify_all()
+                if forget:
+                    self._gens.pop(key, None)
+                    self._conds.pop(key, None)
+
+    def _watch(self, key: str) -> tuple[int, int]:
+        with self._signal_lock:
+            return self._generation, self._gens.get(key, 0)
 
     def _slice(self, remaining: float) -> float:
         """How long a waiter sleeps before re-checking. In embedded mode another process (a
@@ -699,10 +722,14 @@ class ControlPlane:
         POLL_SLICE; a served control plane sees every change and signals."""
         return remaining if self.served else min(remaining, POLL_SLICE)
 
-    def _wait_for_change(self, generation: int, timeout: float) -> None:
-        with self._changed:
-            if self._generation == generation and timeout > 0:
-                self._changed.wait(timeout)
+    def _wait_for_change(self, key: str, seen: tuple[int, int], timeout: float) -> None:
+        with self._signal_lock:
+            if (self._generation, self._gens.get(key, 0)) != seen or timeout <= 0:
+                return
+            cond = self._conds.get(key)
+            if cond is None:
+                cond = self._conds[key] = threading.Condition(self._signal_lock)
+            cond.wait(timeout)
 
     def acquire_task(
         self, worker_id: str, *, wait: float = 0.0, stop: threading.Event | None = None
@@ -713,24 +740,26 @@ class ControlPlane:
         the worker, or None after ``wait`` seconds (capped at MAX_LONG_POLL).
         """
         deadline = time.monotonic() + min(max(wait, 0.0), MAX_LONG_POLL)
+        key = f"worker:{worker_id}"
         while True:
-            generation = self._generation
+            seen = self._watch(key)
             assignment = self._acquire_once(worker_id)
             remaining = deadline - time.monotonic()
             if assignment is not None or remaining <= 0 or (stop is not None and stop.is_set()):
                 return assignment
-            self._wait_for_change(generation, self._slice(remaining))
+            self._wait_for_change(key, seen, self._slice(remaining))
 
     def wait_job(self, job_id: str, timeout: float) -> JobStatus:
         """Return the job once it is terminal, or its current status after ``timeout``."""
         deadline = time.monotonic() + min(max(timeout, 0.0), MAX_LONG_POLL)
+        key = f"job:{job_id}"
         while True:
-            generation = self._generation
+            seen = self._watch(key)
             status = self.get_job(job_id)
             remaining = deadline - time.monotonic()
             if status.state.terminal or remaining <= 0:
                 return status
-            self._wait_for_change(generation, self._slice(remaining))
+            self._wait_for_change(key, seen, self._slice(remaining))
 
     def _acquire_once(self, worker_id: str) -> TaskAssignment | None:
         if self._worker_row(worker_id)["revoked"]:
@@ -788,7 +817,12 @@ class ControlPlane:
             c.execute(
                 "UPDATE jobs SET rendezvous=? WHERE id=?", (info.model_dump_json(), task["job_id"])
             )
-            self.signal()
+            # The other nodes' workers are waiting for this endpoint before they can start.
+            nodes = c.execute(
+                "SELECT DISTINCT worker_id FROM tasks WHERE job_id=? AND attempt=?",
+                (task["job_id"], task["attempt"]),
+            ).fetchall()
+            self.signal(*(f"worker:{r[0]}" for r in nodes))
             self.store.add_event(
                 "job.rendezvous",
                 f"rendezvous at {master_addr}:{master_port}",

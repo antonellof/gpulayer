@@ -342,3 +342,32 @@ def test_served_control_plane_waiters_sleep_until_signalled(cp, monkeypatch):
     th.join(5)
     assert got and got[0] is not None and _time.monotonic() - t0 < 1.0
     assert len(passes) == 1
+
+
+def test_placement_wakes_only_the_chosen_worker(cp, monkeypatch):
+    """A served control plane with many idle long-polling workers: assigning a task wakes
+    that worker's acquire, not every waiter (no thundering herd)."""
+    import threading
+    import time as _time
+
+    cp.served = True
+    workers = [reg(cp, f"w{i}") for i in range(10)]
+    checks = []
+    original = cp._acquire_once
+    monkeypatch.setattr(cp, "_acquire_once", lambda w: (checks.append(w), original(w))[1])
+    got = {}
+    threads = [
+        threading.Thread(target=lambda w=w: got.setdefault(w, cp.acquire_task(w, wait=3)))
+        for w in workers
+    ]
+    for t in threads:
+        t.start()
+    _time.sleep(0.3)
+    assert sorted(checks) == sorted(workers)  # each checked once, then sleeps
+    checks.clear()
+    cp.submit(cmd_spec())
+    _time.sleep(0.3)
+    assert len(checks) == 1  # only the worker the job was placed on woke up
+    assert got[checks[0]] is not None
+    for t in threads:
+        t.join(5)

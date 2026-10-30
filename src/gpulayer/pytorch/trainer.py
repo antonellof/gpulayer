@@ -160,6 +160,14 @@ class Trainer:
             self.callback_metrics = dict(self.history[-1]) if self.history else {}
             self.global_step = state.get("global_step", 0)
             self.current_epoch = state.get("epoch", 0)
+        else:
+            # Without checkpoints, the metrics still come back (weights do not).
+            found = sorted(result.output_dir.rglob("metrics.json"))
+            if found:
+                self.history = json.loads(found[0].read_text())
+                self.callback_metrics = dict(self.history[-1]) if self.history else {}
+                if self.history:
+                    self.current_epoch = int(self.history[-1].get("epoch", 0))
 
     # --------------------------------------------------------------- fitting
 
@@ -327,8 +335,11 @@ class Trainer:
             )
             self._say(f"epoch {epoch} done in {metrics['epoch_seconds']}s: {shown}")
             _call(self.callbacks, "on_train_epoch_end", self, model)
-            if self.enable_checkpointing and rt.is_global_zero:
-                self._save(out_dir, model, optimizer, epoch)
+            if rt.is_global_zero:
+                if self.enable_checkpointing:
+                    self.checkpoint_path = self.save_checkpoint(Path(CHECKPOINT).name)
+                # Metrics are written even without checkpoints: a remote run returns them.
+                self._write_metrics(out_dir)
             # Every rank must leave the loop together, or the next collective would hang.
             self.should_stop = rt.any(self.should_stop)
             rt.barrier()
@@ -415,13 +426,10 @@ class Trainer:
         tmp.replace(path)
         return path
 
-    def _save(
-        self, out_dir: Path, model: Module, optimizer: torch.optim.Optimizer, epoch: int
-    ) -> None:
-        path = self.save_checkpoint(Path(CHECKPOINT).name)
+    def _write_metrics(self, out_dir: Path) -> None:
+        out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "metrics.json").write_text(json.dumps(self.history, indent=2))
         self._write_csv(out_dir / "metrics.csv")
-        self.checkpoint_path = path
 
     def _write_csv(self, path: Path) -> None:
         """One row per printed step, per mid-epoch validation and per epoch (rank 0)."""

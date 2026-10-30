@@ -264,3 +264,49 @@ def test_metrics_csv_has_step_val_and_epoch_rows(tmp_path):
     assert ("step", "0", "8") in kinds and ("val", "0", "8") in kinds
     assert [k for k in kinds if k[0] == "epoch"] == [("epoch", "0", ""), ("epoch", "1", "")]
     assert {"train_loss", "val_loss"} <= set(rows[0])
+
+
+SCRIPT_NO_CKPT = """
+import torch
+from torch import nn
+from torch.utils.data import DataLoader, TensorDataset
+import gpulayer.pytorch as glt
+
+class Lin(glt.Module):
+    def __init__(self):
+        super().__init__()
+        self.lin = nn.Linear(4, 1)
+    def training_step(self, batch, batch_idx):
+        x, y = batch
+        loss = nn.functional.mse_loss(self.lin(x), y)
+        self.log("train_loss", loss)
+        return loss
+    def configure_optimizers(self):
+        return torch.optim.SGD(self.parameters(), lr=0.1)
+
+x = torch.randn(256, 4)
+t = glt.Trainer(accelerator="cpu", devices=2, max_epochs=2, enable_checkpointing=False,
+                launch_options={"quiet": True})
+t.fit(Lin(), DataLoader(TensorDataset(x, x.sum(1, keepdim=True)), batch_size=32))
+if glt.is_launcher_process():
+    print("METRICS", sorted(t.callback_metrics), len(t.history))
+"""
+
+
+@pytest.mark.distributed
+def test_launched_run_without_checkpoints_returns_metrics(tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text(SCRIPT_NO_CKPT)
+    env = {**os.environ, "GPULAYER_HOME": str(tmp_path / "home")}
+    for k in ("GPULAYER_URL", "GPULAYER_JOB_ID", "LOCAL_RANK", "WORLD_SIZE", "RANK"):
+        env.pop(k, None)
+    p = subprocess.run(
+        [sys.executable, str(script)],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "METRICS ['epoch', 'epoch_seconds', 'train_loss'] 2" in p.stdout, p.stdout

@@ -117,6 +117,7 @@ trainer.fit(model, data())
 fit_s = time.perf_counter() - t_fit
 if getattr(trainer, "global_rank", 0) == 0 and getattr(trainer, "is_global_zero", True):
     loss = trainer.callback_metrics.get("loss", trainer.callback_metrics.get("loss_epoch"))
+    loss = float("nan") if loss is None else loss
     print(
         f"FIT {fit_s:.2f} LOSS {float(loss):.4f} TOTAL {time.perf_counter() - T0:.2f}", flush=True
     )
