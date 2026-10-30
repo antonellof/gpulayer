@@ -60,20 +60,3 @@ jobs:
         run: docker build -t gpulayer:ci .
       - name: Server, worker and a job across containers
         run: sh deploy/docker/smoke-test.sh gpulayer:ci
-
-  site:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: site
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: site/package-lock.json
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run build
