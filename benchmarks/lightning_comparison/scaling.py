@@ -9,6 +9,7 @@ on every node under torchrun (scaling_run.py does that). Rank 0 prints FIT secon
 fit) and the final training loss.
 """
 
+import os
 import sys
 import time
 
@@ -80,7 +81,16 @@ if fw == "gl":
         max_epochs=epochs,
         enable_checkpointing=False,
         log_every_n_steps=0,
-        launch_options={"quiet": True, "timeout_seconds": 3600},
+        launch_options={
+            "quiet": True,
+            "timeout_seconds": 3600,
+            # scaling_run.py pins the job to the machines Lightning runs on, for a fair match.
+            **(
+                {"worker_ids": os.environ["GL_WORKERS"].split(",")}
+                if os.environ.get("GL_WORKERS")
+                else {}
+            ),
+        },
     )
 else:
     import lightning as L

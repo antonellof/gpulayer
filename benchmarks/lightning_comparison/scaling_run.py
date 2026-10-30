@@ -19,7 +19,7 @@ import sys
 import time
 from pathlib import Path
 
-from multinode import SSH, workers
+from multinode import SSH, idle_workers
 
 HERE = Path(__file__).resolve().parent
 DEVICES = int(os.environ.get("DEVICES", "4"))
@@ -32,11 +32,12 @@ def loss_of(text: str) -> float:
     return float(m[-1]) if m else float("nan")
 
 
-def run_gl(n: int) -> tuple[float, float]:
+def run_gl(n: int, worker_ids: list[str]) -> tuple[float, float]:
     t0 = time.perf_counter()
     p = subprocess.run(
         [sys.executable, "scaling.py", "gl", str(n), str(DEVICES), EPOCHS],
         cwd=HERE,
+        env={**os.environ, "GL_WORKERS": ",".join(worker_ids)},
         capture_output=True,
         text=True,
     )
@@ -81,9 +82,12 @@ def main() -> None:
     )
     base: dict[str, float] = {}
     for n in nodes:
-        ips = workers(n)
-        gl_runs = [run_gl(n) for _ in range(REPEAT)]
-        pl_runs = [run_pl(ips) for _ in range(REPEAT)]
+        ws = idle_workers(n)  # the same machines for both trainers
+        ips = [w.capabilities.advertise_address for w in ws]
+        gl_runs, pl_runs = [], []
+        for _ in range(REPEAT):  # interleaved, so drift affects both equally
+            gl_runs.append(run_gl(n, [w.worker_id for w in ws]))
+            pl_runs.append(run_pl(ips))
         g = statistics.median(t for t, _ in gl_runs)
         p = statistics.median(t for t, _ in pl_runs)
         base.setdefault("gl", g)

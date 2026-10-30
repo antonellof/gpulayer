@@ -40,7 +40,7 @@ SHORT, LONG, REPEAT = 100, 600, 3
 CASES = os.environ.get("MN_CASES", "ddp-nodes ddp-nodes-big").split()
 
 
-def workers(n: int) -> list[str]:
+def idle_workers(n: int) -> list:
     c = gl.Client(
         url=os.environ["GPULAYER_URL"],
         token=os.environ["GPULAYER_TOKEN"],
@@ -49,7 +49,11 @@ def workers(n: int) -> list[str]:
     ws = sorted((w for w in c.workers() if w.state.value == "idle"), key=lambda w: w.name)
     if len(ws) < n:
         raise SystemExit(f"need {n} idle workers, have {len(ws)}")
-    return [w.capabilities.advertise_address for w in ws[:n]]
+    return ws[:n]
+
+
+def workers(n: int) -> list[str]:
+    return [w.capabilities.advertise_address for w in idle_workers(n)]
 
 
 def run_gl(case: str, steps: int, n: int) -> float:
