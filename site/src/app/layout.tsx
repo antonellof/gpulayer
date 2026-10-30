@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { GeistSans } from "geist/font/sans";
 import { JetBrains_Mono } from "next/font/google";
 import { THEME_SCRIPT } from "@/components/site/theme-toggle";
-import { OG_IMAGE, SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/site";
+import { GA_ID, OG_IMAGE, SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/site";
 import "./globals.css";
 
 const code = JetBrains_Mono({ subsets: ["latin"], variable: "--font-code", display: "swap" });
@@ -53,7 +54,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>
-      <body className="min-h-screen bg-background font-sans">{children}</body>
+      <body className="min-h-screen bg-background font-sans">
+        {children}
+        {/* Google Analytics (gtag.js), loaded after the page is interactive. */}
+        <Script src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} strategy="afterInteractive" />
+        <Script id="gtag-init" strategy="afterInteractive">
+          {`window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', '${GA_ID}');`}
+        </Script>
+      </body>
     </html>
   );
 }

@@ -13,3 +13,6 @@ export const OG_IMAGE = {
   height: 630,
   alt: "GPUlayer: run any workload on every GPU and CPU you can reach",
 };
+
+// Google Analytics 4 measurement id for www.gpulayer.dev.
+export const GA_ID = "G-WE1BJY7J3N";
