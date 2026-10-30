@@ -5,6 +5,8 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+## 0.4.0 (2026-10-30)
+
 - Long-running services (ADR-0019): `gpulayer submit --service`, `gl.service(...)` and
   `Job.endpoints()`. A service runs `replicas` copies on distinct workers, gives each a free
   `$PORT`, reports `host:port` once it accepts connections, restarts replicas that exit (back-off

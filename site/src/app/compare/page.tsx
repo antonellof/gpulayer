@@ -279,7 +279,7 @@ const BEHIND = [
   "A small PyTorch Trainer: FSDP is experimental (CPU-tested), and there is no DeepSpeed or logger integration, unlike PyTorch Lightning.",
   "Multi-node training runs at the same speed as PyTorch Lightning under torchrun (within 2% on 1 to 8 machines). GPUlayer is faster at start-up and per step on small models, and it starts all the nodes for you.",
   "Distributed jobs support PyTorch process groups only; no JAX multi-host or MPI launcher yet.",
-  "v0.3.0: validated on one NVIDIA GPU and two machines; several GPUs per machine and NCCL across machines are not validated yet. Not a sandbox for untrusted users.",
+  "v0.4.0: validated on one NVIDIA GPU and on up to 30 machines; several GPUs per machine and NCCL across machines are not validated yet. Not a sandbox for untrusted users.",
 ];
 
 const FITS = [

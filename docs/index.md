@@ -22,7 +22,7 @@ trainer = glt.Trainer(accelerator="cuda", devices=4, num_nodes=2, target="remote
 trainer.fit(model, train_loader)                                         # PyTorch integration
 ```
 
-> **Status: v0.3.0.** Local execution, scheduling, the server and worker
+> **Status: v0.4.0.** Local execution, scheduling, the server and worker
 > protocol, and distributed jobs are implemented and tested on CPU and Apple Silicon, and
 > validated on an NVIDIA Tesla T4 and across two machines on Google Cloud. Several GPUs per
 > machine and NCCL across machines are not validated yet, and automatic cloud provisioning
@@ -110,7 +110,7 @@ flow in detail.
   balancer, public entry point, rolling updates or autoscaling.
 - **Untrusted users.** Workloads run as normal processes on workers, not in a sandbox. Use
   GPUlayer among people who trust each other.
-- **Validated scale today.** GPUlayer is at v0.3.0. It has been validated
+- **Validated scale today.** GPUlayer is at v0.4.0. It has been validated
   on one NVIDIA GPU and on two machines; several GPUs per machine and NCCL across machines are
   not validated yet, distributed jobs support PyTorch only, and automatic cloud provisioning covers Google Cloud only. Cloud VMs you start yourself can join
   with `gpulayer join`.
