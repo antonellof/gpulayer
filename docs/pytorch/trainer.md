@@ -64,6 +64,8 @@ dicts of tensors, before calling your step.
 | Argument | Default | Meaning |
 |---|---|---|
 | `max_epochs` | `1` | number of epochs |
+| `max_steps` | `None` | stop after this many optimizer steps, even mid-epoch |
+| `check_val_every_n_epoch` | `1` | validate every N epochs (and always after the last one) |
 | `accelerator` | `"auto"` | `"cpu"`, `"cuda"`, `"mps"` or `"auto"` (the device granted to the job, else CUDA, then MPS, then CPU) |
 | `devices` | `1` | processes per node; with CUDA, one GPU per process |
 | `num_nodes` | `1` | number of workers for a distributed run |
@@ -170,16 +172,21 @@ trainer.fit(model, train_loader, val_loader,
 A checkpoint holds `state_dict`, `optimizer`, `epoch`, `global_step` and `history`.
 `ckpt_path` restores the optimizer and continues from the next epoch.
 
-## Validation only
+## Validate, test and predict
 
 ```python
 metrics = trainer.validate(model, val_loader)   # {"val_loss": ..., "val_acc": ...}
+metrics = trainer.test(model, test_loader)      # runs Module.test_step: {"test_acc": ...}
+outputs = trainer.predict(model, loader)        # one output per batch, on the CPU
 ```
 
-`validate` runs in the current process.
+`predict` calls `Module.predict_step(batch, batch_idx)`, which by default returns
+`self(batch)` (or `self(batch[0])` for an `(inputs, targets)` batch). All three run in the
+current process, without gradients and with the Trainer's precision.
 
 ## What the Trainer does not do yet
 
-Logger integrations, learning-rate monitoring and strategies other than DDP (such as FSDP) are
-not implemented. If you need them, keep your existing training code and run it with
+Logger integrations, learning-rate monitoring, keeping the best N checkpoints, and strategies
+other than DDP (such as FSDP) are not implemented. [ADR-0018](../decisions/ADR-0018-trainer-scope.md)
+lists what is planned. If you need them now, keep your existing training code and run it with
 [`launch()`](launch.md).

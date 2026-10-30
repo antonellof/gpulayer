@@ -180,3 +180,43 @@ def test_gradient_accumulation_matches_one_large_batch(tmp_path):
     for a, b in zip(small.parameters(), large.parameters(), strict=True):
         assert torch.allclose(a, b, atol=1e-6)
     assert isinstance(t_small.callback_metrics["train_loss"], float)
+
+
+def test_max_steps_stops_mid_epoch(tmp_path):
+    train, val = loaders()  # 16 batches per epoch
+    trainer = glt.Trainer(accelerator="cpu", max_epochs=10, max_steps=20, default_root_dir=tmp_path)
+    trainer.fit(Lin(), train, val)
+    assert trainer.global_step == 20 and trainer.current_epoch == 1
+    assert "val_loss" in trainer.history[-1]  # the last epoch is always validated
+    with pytest.raises(ValidationFailed, match="max_steps"):
+        glt.Trainer(max_steps=0)
+
+
+def test_check_val_every_n_epoch(tmp_path):
+    train, val = loaders()
+    trainer = glt.Trainer(
+        accelerator="cpu", max_epochs=5, check_val_every_n_epoch=2, default_root_dir=tmp_path
+    )
+    trainer.fit(Lin(), train, val)
+    validated = [h["epoch"] for h in trainer.history if "val_loss" in h]
+    assert validated == [1, 3, 4]  # every 2nd epoch, plus the last
+
+
+class LinWithTest(Lin):
+    def test_step(self, batch, batch_idx):
+        x, y = batch
+        self.log("test_mse", nn.functional.mse_loss(self(x), y))
+
+
+def test_test_and_predict_after_fit(tmp_path):
+    train, val = loaders()
+    trainer = glt.Trainer(accelerator="cpu", max_epochs=5, default_root_dir=tmp_path)
+    model = LinWithTest()
+    trainer.fit(model, train, val)
+    metrics = trainer.test(model, val)
+    assert set(metrics) == {"test_mse"} and metrics["test_mse"] < 0.1
+    assert trainer.callback_metrics["test_mse"] == metrics["test_mse"]
+    preds = trainer.predict(model, val)  # default predict_step: self(batch[0])
+    assert len(preds) == 8 and preds[0].shape == (64, 1) and preds[0].device.type == "cpu"
+    with pytest.raises(NotImplementedError, match="test_step"):
+        trainer.test(Lin(), val)

@@ -10,6 +10,8 @@ before 1.0, minor versions may change public APIs, with migration notes here.
   0.2.0). `--gpus none` makes a CPU-only worker on a GPU machine.
 - CUDA jobs get `CUDA_DEVICE_ORDER=PCI_BUS_ID`, so `CUDA_VISIBLE_DEVICES` selects the GPUs
   that were reserved (`nvidia-smi` numbering) on machines with mixed GPU models.
+- Trainer: `max_steps`, `check_val_every_n_epoch`, `trainer.test()` with `Module.test_step`
+  and `trainer.predict()` with `Module.predict_step` (ADR-0018).
 
 ## 0.2.0 (2026-10-30)
 

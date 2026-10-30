@@ -12,8 +12,9 @@ from torch import nn
 class Module(nn.Module):
     """Subclass and implement ``training_step`` and ``configure_optimizers``.
 
-    ``validation_step`` is optional. Call ``self.log(name, value)`` in either step; the
-    Trainer averages logged values per epoch across steps and ranks.
+    ``validation_step``, ``test_step`` and ``predict_step`` are optional. Call
+    ``self.log(name, value)`` in any step; the Trainer averages logged values per epoch across
+    steps and ranks.
     """
 
     def __init__(self) -> None:
@@ -26,6 +27,15 @@ class Module(nn.Module):
 
     def validation_step(self, batch: Any, batch_idx: int) -> Any:
         return None
+
+    def test_step(self, batch: Any, batch_idx: int) -> Any:
+        raise NotImplementedError("implement test_step(batch, batch_idx) to use Trainer.test")
+
+    def predict_step(self, batch: Any, batch_idx: int) -> Any:
+        """Default: ``self(batch)``, or ``self(batch[0])`` for an ``(inputs, ...)`` batch."""
+        if isinstance(batch, (list, tuple)):
+            return self(batch[0])
+        return self(batch)
 
     def configure_optimizers(self) -> Any:
         """Return an optimizer, ``(optimizer, scheduler)`` or

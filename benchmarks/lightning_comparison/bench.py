@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader, TensorDataset  # noqa: E402
 
 CASES = {
     # name: (model kind, batch, accelerator, devices, precision)
+    "mlp-cpu": ("mlp-small", 64, "cpu", 1, "32"),
     "mlp-fp32": ("mlp", 256, "cuda", 1, "32"),
     "mlp-fp16": ("mlp", 256, "cuda", 1, "16-mixed"),
     "cnn-fp16": ("cnn", 128, "cuda", 1, "16-mixed"),

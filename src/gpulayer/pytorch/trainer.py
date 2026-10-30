@@ -38,6 +38,8 @@ class Trainer:
         self,
         *,
         max_epochs: int = 1,
+        max_steps: int | None = None,
+        check_val_every_n_epoch: int = 1,
         accelerator: str = "auto",
         devices: int = 1,
         num_nodes: int = 1,
@@ -53,11 +55,19 @@ class Trainer:
         launch_options: dict[str, Any] | None = None,
         callbacks: list[Callback] | None = None,
     ) -> None:
-        if devices < 1 or num_nodes < 1 or max_epochs < 1 or accumulate_grad_batches < 1:
+        if (
+            min(devices, num_nodes, max_epochs, accumulate_grad_batches, check_val_every_n_epoch)
+            < 1
+        ):
             raise ValidationFailed(
-                "devices, num_nodes, max_epochs and accumulate_grad_batches must be >= 1"
+                "devices, num_nodes, max_epochs, accumulate_grad_batches and "
+                "check_val_every_n_epoch must be >= 1"
             )
+        if max_steps is not None and max_steps < 1:
+            raise ValidationFailed("max_steps must be >= 1 (or None for no limit)")
         self.max_epochs = max_epochs
+        self.max_steps = max_steps
+        self.check_val_every_n_epoch = check_val_every_n_epoch
         self.accelerator = accelerator
         self.devices = devices
         self.num_nodes = num_nodes
@@ -247,6 +257,8 @@ class Trainer:
                     if scheduler is not None and interval == "step":
                         scheduler.step()
                     self.global_step += 1
+                    if self.max_steps is not None and self.global_step >= self.max_steps:
+                        self.should_stop = True
                 logs = model._gl_step_logs or {"train_loss": loss.detach().float()}
                 for k, v in logs.items():
                     sums[k] = sums[k] + v
@@ -262,10 +274,15 @@ class Trainer:
                 ):
                     shown = " ".join(f"{k}={float(v):.4f}" for k, v in logs.items())
                     self._say(f"epoch {epoch} step {self.global_step} {shown}")
+                if self.max_steps is not None and self.global_step >= self.max_steps:
+                    break  # same step count on every rank, so no extra synchronisation
             if scheduler is not None and interval == "epoch":
                 scheduler.step()
             metrics = {k: rt.mean(float(v) / max(count, 1)) for k, v in sums.items()}
-            if val is not None:
+            last = epoch + 1 == self.max_epochs or (
+                self.max_steps is not None and self.global_step >= self.max_steps
+            )
+            if val is not None and ((epoch + 1) % self.check_val_every_n_epoch == 0 or last):
                 metrics.update(self._evaluate(rt, model, val))
             metrics["epoch"] = epoch
             metrics["epoch_seconds"] = round(time.perf_counter() - t0, 3)
@@ -285,8 +302,11 @@ class Trainer:
                 break
         _call(self.callbacks, "on_fit_end", self, model)
 
-    def _evaluate(self, rt: Runtime, model: Module, loader: DataLoader) -> dict[str, float]:
+    def _evaluate(
+        self, rt: Runtime, model: Module, loader: DataLoader, step: str = "validation_step"
+    ) -> dict[str, float]:
         model.eval()
+        step_fn = getattr(model, step)
         sums: dict[str, Any] = defaultdict(float)
         count = 0
         with torch.no_grad(), rt.autocast():
@@ -294,7 +314,7 @@ class Trainer:
                 if self.limit_val_batches is not None and batch_idx >= self.limit_val_batches:
                     break
                 model._gl_step_logs = {}
-                model.validation_step(rt.to_device(batch), batch_idx)
+                step_fn(rt.to_device(batch), batch_idx)
                 for k, v in model._gl_step_logs.items():
                     sums[k] = sums[k] + v
                 count += 1
@@ -303,11 +323,38 @@ class Trainer:
 
     def validate(self, model: Module, dataloaders: DataLoader) -> dict[str, float]:
         """Run ``validation_step`` over ``dataloaders`` in this process."""
+        return self._run_eval(model, dataloaders, "validation_step")
+
+    def test(self, model: Module, dataloaders: DataLoader) -> dict[str, float]:
+        """Run ``test_step`` over ``dataloaders`` in this process and return the averaged logs,
+        e.g. ``{"test_acc": 0.93}``."""
+        return self._run_eval(model, dataloaders, "test_step")
+
+    def predict(self, model: Module, dataloaders: DataLoader) -> list[Any]:
+        """Run ``predict_step`` over ``dataloaders`` in this process (no gradients) and return
+        one output per batch, moved to the CPU."""
+        rt = Runtime(self.accelerator, self.precision).setup()
+        self.runtime = rt
+        out: list[Any] = []
+        try:
+            model.to(rt.device)
+            model.eval()
+            with torch.no_grad(), rt.autocast():
+                loader = rt.dataloader(dataloaders, shuffle=False)
+                for batch_idx, batch in enumerate(loader):
+                    out.append(_to_cpu(model.predict_step(rt.to_device(batch), batch_idx)))
+            return out
+        finally:
+            rt.teardown()
+
+    def _run_eval(self, model: Module, dataloaders: DataLoader, step: str) -> dict[str, float]:
         rt = Runtime(self.accelerator, self.precision).setup()
         self.runtime = rt
         try:
             model.to(rt.device)
-            return self._evaluate(rt, model, rt.dataloader(dataloaders, shuffle=False))
+            metrics = self._evaluate(rt, model, rt.dataloader(dataloaders, shuffle=False), step)
+            self.callback_metrics.update(metrics)
+            return metrics
         finally:
             rt.teardown()
 
@@ -340,6 +387,16 @@ class Trainer:
         path = self.save_checkpoint(Path(CHECKPOINT).name)
         (out_dir / "metrics.json").write_text(json.dumps(self.history, indent=2))
         self.checkpoint_path = path
+
+
+def _to_cpu(value: Any) -> Any:
+    if isinstance(value, torch.Tensor):
+        return value.detach().cpu()
+    if isinstance(value, (list, tuple)):
+        return type(value)(_to_cpu(v) for v in value)
+    if isinstance(value, dict):
+        return {k: _to_cpu(v) for k, v in value.items()}
+    return value
 
 
 def _run_name() -> str:
