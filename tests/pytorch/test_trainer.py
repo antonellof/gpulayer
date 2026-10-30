@@ -220,3 +220,47 @@ def test_test_and_predict_after_fit(tmp_path):
     assert len(preds) == 8 and preds[0].shape == (64, 1) and preds[0].device.type == "cpu"
     with pytest.raises(NotImplementedError, match="test_step"):
         trainer.test(Lin(), val)
+
+
+def test_val_check_interval_validates_within_epochs(tmp_path):
+    train, val = loaders()  # 16 batches per epoch
+    t = glt.Trainer(
+        accelerator="cpu", max_epochs=2, val_check_interval=4, default_root_dir=tmp_path
+    )
+    t.fit(Lin(), train, val)
+    # Batches 4, 8 and 12 of each epoch; batch 16 is the end-of-epoch validation.
+    assert [(v["epoch"], v["step"]) for v in t.val_history] == [
+        (0, 4),
+        (0, 8),
+        (0, 12),
+        (1, 20),
+        (1, 24),
+        (1, 28),
+    ]
+    t2 = glt.Trainer(
+        accelerator="cpu", max_epochs=1, val_check_interval=0.5, default_root_dir=tmp_path
+    )
+    t2.fit(Lin(), train, val)
+    assert [v["step"] for v in t2.val_history] == [8]
+    for bad in (0, 1.5, -2):
+        with pytest.raises(ValidationFailed, match="val_check_interval"):
+            glt.Trainer(val_check_interval=bad)
+
+
+def test_metrics_csv_has_step_val_and_epoch_rows(tmp_path):
+    import csv
+
+    train, val = loaders()
+    t = glt.Trainer(
+        accelerator="cpu",
+        max_epochs=2,
+        log_every_n_steps=8,
+        val_check_interval=8,
+        default_root_dir=tmp_path,
+    )
+    t.fit(Lin(), train, val)
+    rows = list(csv.DictReader((t.checkpoint_path.parents[1] / "metrics.csv").open()))
+    kinds = [(r["kind"], r["epoch"], r["step"]) for r in rows]
+    assert ("step", "0", "8") in kinds and ("val", "0", "8") in kinds
+    assert [k for k in kinds if k[0] == "epoch"] == [("epoch", "0", ""), ("epoch", "1", "")]
+    assert {"train_loss", "val_loss"} <= set(rows[0])

@@ -66,6 +66,7 @@ dicts of tensors, before calling your step.
 | `max_epochs` | `1` | number of epochs |
 | `max_steps` | `None` | stop after this many optimizer steps, even mid-epoch |
 | `check_val_every_n_epoch` | `1` | validate every N epochs (and always after the last one) |
+| `val_check_interval` | `None` | also validate within an epoch: every N batches (int) or every fraction of the epoch (float, e.g. `0.25`); results go to `trainer.val_history` |
 | `accelerator` | `"auto"` | `"cpu"`, `"cuda"`, `"mps"` or `"auto"` (the device granted to the job, else CUDA, then MPS, then CPU) |
 | `devices` | `1` | processes per node; with CUDA, one GPU per process |
 | `num_nodes` | `1` | number of workers for a distributed run |
@@ -161,8 +162,9 @@ if glt.is_launcher_process():
 
 ## Checkpoints and resuming
 
-With checkpointing on, global rank 0 writes `checkpoints/last.ckpt` and `metrics.json` after
-every epoch. Inside a job they go to `$GPULAYER_OUTPUT_DIR` and come back as artifacts
+With checkpointing on, global rank 0 writes `checkpoints/last.ckpt`, `metrics.json` and
+`metrics.csv` after every epoch. `metrics.csv` has a row per printed step (every
+`log_every_n_steps`), per validation within an epoch and per epoch, with a `kind` column. Inside a job they go to `$GPULAYER_OUTPUT_DIR` and come back as artifacts
 (`gpulayer_runs/<job-id>/...`); in-process they go to `gpulayer_runs/<directory>-<script>/`,
 for example `gpulayer_runs/my_project-train/` for `my_project/train.py`.
 
@@ -190,7 +192,6 @@ current process, without gradients and with the Trainer's precision.
 
 ## What the Trainer does not do yet
 
-Logger integrations, validation within an epoch, and strategies
-other than DDP (such as FSDP) are not implemented. [ADR-0018](../decisions/ADR-0018-trainer-scope.md)
+Logger integrations and strategies other than DDP (such as FSDP) are not implemented. [ADR-0018](../decisions/ADR-0018-trainer-scope.md)
 lists what is planned. If you need them now, keep your existing training code and run it with
 [`launch()`](launch.md).

@@ -14,6 +14,7 @@ local ``model`` and ``callback_metrics`` / ``history`` hold the remote metrics.
 
 from __future__ import annotations
 
+import csv
 import json
 import time
 from collections import defaultdict
@@ -40,6 +41,7 @@ class Trainer:
         max_epochs: int = 1,
         max_steps: int | None = None,
         check_val_every_n_epoch: int = 1,
+        val_check_interval: int | float | None = None,
         accelerator: str = "auto",
         devices: int = 1,
         num_nodes: int = 1,
@@ -68,6 +70,15 @@ class Trainer:
         self.max_epochs = max_epochs
         self.max_steps = max_steps
         self.check_val_every_n_epoch = check_val_every_n_epoch
+        if val_check_interval is not None and (
+            val_check_interval <= 0
+            or (isinstance(val_check_interval, float) and val_check_interval > 1.0)
+        ):
+            raise ValidationFailed(
+                "val_check_interval must be a number of batches (int >= 1) or a fraction of "
+                "the epoch (0 < float <= 1)"
+            )
+        self.val_check_interval = val_check_interval
         self.accelerator = accelerator
         self.devices = devices
         self.num_nodes = num_nodes
@@ -83,6 +94,10 @@ class Trainer:
         self.launch_options = launch_options or {}
         self.callback_metrics: dict[str, float] = {}
         self.history: list[dict[str, float]] = []
+        # Validation results within epochs (val_check_interval), with their step and epoch.
+        self.val_history: list[dict[str, float]] = []
+        # Step rows for metrics.csv, taken when the step log line is printed.
+        self._step_rows: list[dict[str, float]] = []
         self.global_step = 0
         self.current_epoch = 0
         self.launch_result: LaunchResult | None = None
@@ -237,6 +252,7 @@ class Trainer:
             n_batches = len(train) if hasattr(train, "__len__") else None
             if self.limit_train_batches is not None:
                 n_batches = min(n_batches or self.limit_train_batches, self.limit_train_batches)
+            val_every = self._val_every(n_batches) if val is not None else None
             for batch_idx, batch in enumerate(train):
                 if self.limit_train_batches is not None and batch_idx >= self.limit_train_batches:
                     break
@@ -272,8 +288,20 @@ class Trainer:
                     and self.log_every_n_steps
                     and self.global_step % self.log_every_n_steps == 0
                 ):
-                    shown = " ".join(f"{k}={float(v):.4f}" for k, v in logs.items())
+                    values = {k: float(v) for k, v in logs.items()}
+                    shown = " ".join(f"{k}={v:.4f}" for k, v in values.items())
                     self._say(f"epoch {epoch} step {self.global_step} {shown}")
+                    self._step_rows.append({"epoch": epoch, "step": self.global_step, **values})
+                if (
+                    val_every
+                    and (batch_idx + 1) % val_every == 0
+                    and (n_batches is None or batch_idx + 1 < n_batches)
+                ):
+                    # Same batch index on every rank, so the collectives inside line up.
+                    assert val is not None
+                    mid = self._evaluate(rt, model, val)
+                    self.val_history.append({"epoch": epoch, "step": self.global_step, **mid})
+                    self.callback_metrics.update(mid)
                 if self.max_steps is not None and self.global_step >= self.max_steps:
                     break  # same step count on every rank, so no extra synchronisation
             if scheduler is not None and interval == "epoch":
@@ -386,7 +414,33 @@ class Trainer:
     ) -> None:
         path = self.save_checkpoint(Path(CHECKPOINT).name)
         (out_dir / "metrics.json").write_text(json.dumps(self.history, indent=2))
+        self._write_csv(out_dir / "metrics.csv")
         self.checkpoint_path = path
+
+    def _write_csv(self, path: Path) -> None:
+        """One row per printed step, per mid-epoch validation and per epoch (rank 0)."""
+        rows = [{"kind": "step", **r} for r in self._step_rows]
+        rows += [{"kind": "val", **r} for r in self.val_history]
+        rows += [{"kind": "epoch", **r} for r in self.history]
+        rows.sort(key=lambda r: (r.get("epoch", 0), r.get("step", float("inf"))))
+        columns = ["kind", "epoch", "step"]
+        for r in rows:
+            columns += [k for k in r if k not in columns]
+        with path.open("w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=columns)
+            w.writeheader()
+            w.writerows(rows)
+
+    def _val_every(self, n_batches: int | None) -> int | None:
+        """Batches between validations within an epoch, or None for end of epoch only."""
+        v = self.val_check_interval
+        if v is None:
+            return None
+        if isinstance(v, float):
+            if n_batches is None:
+                raise ValidationFailed("a fractional val_check_interval needs a sized loader")
+            return max(1, int(n_batches * v)) if v < 1.0 else None
+        return v
 
 
 def _to_cpu(value: Any) -> Any:

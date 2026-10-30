@@ -25,9 +25,9 @@ and fast without making users leave it for common needs.
 2. **Adopt what most training scripts need**, in this order:
    - done: the four loops, step limits, validation interval, gradient clipping and
      accumulation, mixed precision, schedulers per step or epoch, callbacks, early stopping,
-     the best N checkpoints (`save_top_k`), a learning-rate monitor, resume from a checkpoint;
-   - planned: a metrics file per step (CSV), validation within an epoch
-     (`val_check_interval`);
+     the best N checkpoints (`save_top_k`), a learning-rate monitor, validation within an
+     epoch (`val_check_interval`), `metrics.csv` (step rows taken only where the step log line
+     already reads the values), resume from a checkpoint;
    - planned, needs hardware first: FSDP for models that do not fit one GPU, validated on
      several CUDA GPUs before it is documented.
 3. **Do not adopt** logger integrations (TensorBoard, W&B, MLflow), DeepSpeed, model
