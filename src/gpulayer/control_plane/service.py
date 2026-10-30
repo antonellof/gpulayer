@@ -84,6 +84,7 @@ class ControlPlaneConfig:
     lease_ttl_seconds: float = 20.0
     timeout_grace_seconds: float = 30.0
     public_url: str | None = None  # given to provisioned workers for bootstrap
+    tls_fingerprint: str | None = None  # of a self-signed server certificate, for bootstrap
     provisioning_retry_seconds: float = 30.0  # back-off after a retryable capacity error
 
 

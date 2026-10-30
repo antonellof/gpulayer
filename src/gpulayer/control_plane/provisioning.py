@@ -199,6 +199,7 @@ class ProvisioningManager:
             )
         bootstrap = WorkerBootstrap(
             control_plane_url=self.cp.config.public_url,
+            tls_fingerprint=self.cp.config.tls_fingerprint,
             instance_ref=ref,
             join_token=token,
             labels={RESERVED_LABEL: job_id},

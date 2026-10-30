@@ -41,6 +41,8 @@ examples = [
   "numpy>=1.20",
   "mlx>=0.10; sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
+# Google Cloud provider adapter (gpulayer up --providers ...).
+gcp = ["google-auth>=2.20", "requests>=2.28"]
 dev = ["pytest>=7.4", "ruff>=0.4", "mypy>=1.8", "prometheus-client>=0.20"]
 
 [project.scripts]

@@ -66,6 +66,9 @@ class WorkerBootstrap(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     control_plane_url: str | None
+    tls_fingerprint: str | None = Field(
+        None, description="sha256 fingerprint of a self-signed server certificate, to pin it"
+    )
     instance_ref: str
     join_token: str = Field(repr=False)
     labels: dict[str, str] = Field(default_factory=dict)

@@ -185,6 +185,7 @@ def cmd_up(args: argparse.Namespace) -> int:
     from gpulayer.api.tls import certificate_fingerprint, ensure_self_signed
     from gpulayer.control_plane.service import ControlPlaneConfig
     from gpulayer.gpu.discovery import default_advertise_address, detect_capabilities
+    from gpulayer.providers.config import load_providers
     from gpulayer.sdk.client import _python_runner
     from gpulayer.sdk.home import gpulayer_home, open_control_plane
     from gpulayer.worker.agent import WorkerAgent
@@ -200,7 +201,8 @@ def cmd_up(args: argparse.Namespace) -> int:
         cert, key = str(cert_path), str(key_path)
         fingerprint = certificate_fingerprint(cert_path)
     advertise = args.advertise_address or ("127.0.0.1" if loopback else default_advertise_address())
-    cp = open_control_plane(home)
+    providers = load_providers(Path(args.providers)) if args.providers else []
+    cp = open_control_plane(home, providers=providers)
     server = ControlPlaneServer(
         cp,
         creds,
@@ -212,7 +214,7 @@ def cmd_up(args: argparse.Namespace) -> int:
     )
     port = server.httpd.server_address[1]
     url = f"{'https' if cert else 'http'}://{advertise}:{port}"
-    cp.config = ControlPlaneConfig(public_url=url)
+    cp.config = ControlPlaneConfig(public_url=url, tls_fingerprint=fingerprint)
     server.start()
 
     agent = None
@@ -462,6 +464,13 @@ def cmd_worker_start(args: argparse.Namespace) -> int:
             max_concurrent_tasks=getattr(args, "concurrency", None),
             gpus=_gpus(getattr(args, "gpus", None)),
         )
+        instance_ref = getattr(args, "instance_ref", None)
+        if instance_ref:
+            # A machine a provider adapter created: it authenticates with the single-use
+            # instance token from its bootstrap (passed as the join token) and this reference.
+            caps = caps.model_copy(
+                update={"origin": WorkerOrigin.PROVIDER, "instance_id": instance_ref}
+            )
         channel: Any = _register_when_reachable(
             lambda: HttpWorkerChannel.register(
                 args.url,
@@ -820,6 +829,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--advertise-address", help="address other machines use to reach this one")
     s.add_argument("--no-worker", action="store_true", help="do not run jobs on this machine")
     s.add_argument(
+        "--providers",
+        metavar="FILE",
+        help="JSON file of provider adapters that may create workers (see Cloud providers)",
+    )
+    s.add_argument(
         "--gpus",
         metavar="0,1|none",
         help="GPU indices this worker offers (default: all); 'none' for CPU only",
@@ -856,6 +870,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--label", action="append", metavar="KEY=VALUE")
     s.add_argument("--python", help="interpreter used for jobs (default: this one)")
     s.add_argument("--advertise-address", help="address peers use for distributed rendezvous")
+    s.add_argument(
+        "--instance-ref",
+        help="set by a provider adapter's boot script: join as that provisioned instance, "
+        "with --token being its single-use instance token",
+    )
     s.add_argument("--concurrency", type=int, help="tasks to run at once (default: one per GPU)")
     s.add_argument(
         "--gpus",
