@@ -73,11 +73,17 @@ dicts of tensors, before calling your step.
 | `strategy` | `"ddp"` | `"ddp"`, or `"fsdp"` (experimental) to shard parameters, gradients and optimizer state across processes, for models too large to replicate; see [FSDP](#fsdp-experimental) |
 | `precision` | `"32-true"` | `"32-true"`, `"bf16-mixed"` (CUDA, CPU) or `"16-mixed"` (CUDA, with a gradient scaler) |
 | `target` | `None` | `None` runs here when possible; `"local"`, `"remote"` or `"cloud"` always submits a job |
-| `gradient_clip_val` | `None` | clip the gradient norm to this value |
+| `gradient_clip_val` | `None` | clip gradients to this value |
+| `gradient_clip_algorithm` | `"norm"` | `"norm"` clips the total gradient norm; `"value"` clips each gradient value to `[-v, v]` |
+| `gradient_sync` | `"auto"` | with gloo and several processes per machine, sum gradients inside each machine before crossing the network (ADR-0020); `"flat"` or `"two_level"` to choose |
 | `accumulate_grad_batches` | `1` | apply the optimizer every N batches; DDP exchanges gradients only on those steps |
 | `callbacks` | `[]` | `Callback` objects, see [Callbacks](#callbacks) |
 | `log_every_n_steps` | `50` | print logged values every N steps (`0` turns it off) |
 | `limit_train_batches`, `limit_val_batches` | `None` | stop an epoch after N batches |
+| `num_sanity_val_steps` | `2` | run N validation batches before training, so a broken `validation_step` fails at once (skipped when resuming; `0` turns it off) |
+| `fast_dev_run` | `False` | `True` or N: one epoch of N training and N validation batches, no checkpoints, to check the whole pipeline quickly |
+| `max_time` | `None` | stop after this many seconds of training; checked every step in one process, at the end of each epoch when distributed (so all processes stop together) |
+| `deterministic` | `False` | use deterministic algorithms (with `seed_everything(n)`, runs repeat exactly; usually slower) |
 | `enable_checkpointing` | `True` | save `checkpoints/last.ckpt` after every epoch |
 | `default_root_dir` | `"gpulayer_runs"` | where local checkpoints and downloaded job outputs go |
 | `launch_options` | `{}` | extra arguments for [`launch()`](launch.md), for example `{"env": {...}, "timeout_seconds": 3600}` |

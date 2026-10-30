@@ -51,10 +51,15 @@ class Trainer:
         gradient_sync: str = "auto",
         target: str | None = None,
         gradient_clip_val: float | None = None,
+        gradient_clip_algorithm: str = "norm",
         accumulate_grad_batches: int = 1,
         log_every_n_steps: int = 50,
         limit_train_batches: int | None = None,
         limit_val_batches: int | None = None,
+        num_sanity_val_steps: int = 2,
+        fast_dev_run: bool | int = False,
+        max_time: float | None = None,
+        deterministic: bool = False,
         enable_checkpointing: bool = True,
         default_root_dir: str | Path = "gpulayer_runs",
         launch_options: dict[str, Any] | None = None,
@@ -70,6 +75,27 @@ class Trainer:
             )
         if max_steps is not None and max_steps < 1:
             raise ValidationFailed("max_steps must be >= 1 (or None for no limit)")
+        if gradient_clip_algorithm not in ("norm", "value"):
+            raise ValidationFailed(
+                "gradient_clip_algorithm must be 'norm' or 'value', "
+                f"got {gradient_clip_algorithm!r}"
+            )
+        if num_sanity_val_steps < 0 or (max_time is not None and max_time <= 0):
+            raise ValidationFailed("num_sanity_val_steps must be >= 0 and max_time > 0")
+        if fast_dev_run:
+            # A quick end-to-end check: n training and n validation batches, one epoch, no
+            # checkpoints. True means 1.
+            n = 1 if fast_dev_run is True else int(fast_dev_run)
+            if n < 1:
+                raise ValidationFailed("fast_dev_run must be True or a number of batches >= 1")
+            max_epochs, max_steps, enable_checkpointing = 1, None, False
+            limit_train_batches, limit_val_batches, num_sanity_val_steps = n, n, 0
+            log_every_n_steps = 1
+        self.gradient_clip_algorithm = gradient_clip_algorithm
+        self.num_sanity_val_steps = num_sanity_val_steps
+        self.fast_dev_run = bool(fast_dev_run)
+        self.max_time = max_time
+        self.deterministic = deterministic
         if gradient_sync not in GRADIENT_SYNC:
             raise ValidationFailed(
                 f"gradient_sync must be one of {GRADIENT_SYNC}, got {gradient_sync!r}"
@@ -209,6 +235,12 @@ class Trainer:
             self._launch(model, ckpt_path)
             _call(self.callbacks, "on_fit_end", self, model)
             return
+        if self.deterministic:
+            # Same results on every run (with seed_everything), at some speed cost. cuBLAS
+            # reads its setting when CUDA starts, so set it first.
+            os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+            torch.use_deterministic_algorithms(True)
+            torch.backends.cudnn.benchmark = False
         rt = Runtime(self.accelerator, self.precision, self.gradient_sync).setup()
         self.runtime = rt
         try:
@@ -292,6 +324,18 @@ class Trainer:
         )
 
         _call(self.callbacks, "on_fit_start", self, model)
+        fit_t0 = time.perf_counter()
+        if val is not None and self.num_sanity_val_steps and not ckpt_path:
+            # Run a few validation batches first, so a broken validation_step fails now and
+            # not after the first training epoch. Results are discarded.
+            limit, self.limit_val_batches = (
+                self.limit_val_batches,
+                min(self.limit_val_batches or self.num_sanity_val_steps, self.num_sanity_val_steps),
+            )
+            try:
+                self._evaluate(rt, model, val)
+            finally:
+                self.limit_val_batches = limit
         for epoch in range(start_epoch, self.max_epochs):
             self.current_epoch = epoch
             _call(self.callbacks, "on_train_epoch_start", self, model)
@@ -323,13 +367,25 @@ class Trainer:
                         raise ValidationFailed("training_step must return the loss tensor")
                     rt.backward(loss / accumulate if accumulate > 1 else loss)
                 if apply:
-                    rt.step(optimizer, model.parameters(), self.gradient_clip_val)
+                    rt.step(
+                        optimizer,
+                        model.parameters(),
+                        self.gradient_clip_val,
+                        self.gradient_clip_algorithm,
+                    )
                     optimizer.zero_grad(set_to_none=True)
                     if scheduler is not None and interval == "step":
                         scheduler.step()
                     self.global_step += 1
                     if self.max_steps is not None and self.global_step >= self.max_steps:
                         self.should_stop = True
+                    if (
+                        self.max_time is not None
+                        and not rt.distributed  # ranks agree on stopping at the epoch end
+                        and time.perf_counter() - fit_t0 >= self.max_time
+                    ):
+                        self.should_stop = True
+                        break
                 logs = model._gl_step_logs or {"train_loss": loss.detach().float()}
                 for k, v in logs.items():
                     logged[k].append(v)
@@ -384,6 +440,9 @@ class Trainer:
             if rt.is_global_zero:
                 # Metrics are written even without checkpoints: a remote run returns them.
                 self._write_metrics(out_dir)
+            if self.max_time is not None and time.perf_counter() - fit_t0 >= self.max_time:
+                self.should_stop = True
+                self._say(f"[gpulayer] max_time of {self.max_time:g}s reached")
             # Every rank must leave the loop together, or the next collective would hang.
             self.should_stop = rt.any(self.should_stop)
             rt.barrier()

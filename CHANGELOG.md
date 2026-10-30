@@ -5,6 +5,10 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Trainer: `num_sanity_val_steps` (default 2, as in Lightning: a broken `validation_step`
+  fails before training), `fast_dev_run`, `max_time`, `gradient_clip_algorithm="value"` and
+  `deterministic`. Per-step time unchanged (about 102 us/step for a small MLP on one CPU
+  thread, before and after).
 - Examples run on an Apple M2 Pro: the Blender example now fails the job when the requested GPU
   device is missing (Blender exited 0 on a script error), the ffmpeg example uses VideoToolbox
   on a Mac and works with macOS `date`, and the inference service also uses MPS.

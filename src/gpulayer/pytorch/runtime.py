@@ -324,17 +324,24 @@ class Runtime:
             loss.backward()
 
     def step(
-        self, optimizer: torch.optim.Optimizer, params: Any = None, clip_val: float | None = None
+        self,
+        optimizer: torch.optim.Optimizer,
+        params: Any = None,
+        clip_val: float | None = None,
+        clip_algorithm: str = "norm",
     ) -> None:
+        """Optimizer step, clipping gradients first: by total norm, or each value to
+        [-clip_val, clip_val] with ``clip_algorithm="value"``."""
+        clip = nn.utils.clip_grad_value_ if clip_algorithm == "value" else nn.utils.clip_grad_norm_
         if self.scaler is not None:
             if clip_val:
                 self.scaler.unscale_(optimizer)
-                nn.utils.clip_grad_norm_(params, clip_val)
+                clip(params, clip_val)
             self.scaler.step(optimizer)
             self.scaler.update()
         else:
             if clip_val:
-                nn.utils.clip_grad_norm_(params, clip_val)
+                clip(params, clip_val)
             optimizer.step()
 
     # ------------------------------------------------------------- reductions

@@ -27,7 +27,8 @@ and fast without making users leave it for common needs.
      accumulation, mixed precision, schedulers per step or epoch, callbacks, early stopping,
      the best N checkpoints (`save_top_k`), a learning-rate monitor, validation within an
      epoch (`val_check_interval`), `metrics.csv` (step rows taken only where the step log line
-     already reads the values), resume from a checkpoint;
+     already reads the values), resume from a checkpoint, `num_sanity_val_steps`,
+     `fast_dev_run`, `max_time`, `gradient_clip_algorithm` and `deterministic`;
    - experimental: `strategy="fsdp"` (FSDP2, per-submodule sharding, full-state
      checkpoints), tested on CPU processes where it trains identically to DDP; it stays
      experimental until validated on several CUDA GPUs.

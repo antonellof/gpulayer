@@ -3,6 +3,7 @@
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -314,6 +315,7 @@ def test_launched_run_without_checkpoints_returns_metrics(tmp_path):
 
 SCRIPT_FSDP = """
 import sys
+import time
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
@@ -401,3 +403,75 @@ def test_fsdp_strategy_shards_trains_saves_and_resumes(tmp_path):
     out2 = run("5", ckpt)  # resume a sharded run from the full checkpoint
     second = next(line for line in out2.splitlines() if line.startswith("LOSS")).split()[1:]
     assert second[2] == "5" and float(second[1]) <= float(last) * 1.5
+
+
+def test_fast_dev_run_and_sanity_check(tmp_path):
+    train, val = loaders()
+    t = glt.Trainer(accelerator="cpu", fast_dev_run=2, max_epochs=9, default_root_dir=tmp_path)
+    t.fit(Lin(), train, val)
+    assert t.global_step == 2 and len(t.history) == 1 and t.checkpoint_path is None
+
+    class BrokenVal(Lin):
+        def validation_step(self, batch, batch_idx):
+            raise RuntimeError("bug in validation_step")
+
+    t = glt.Trainer(accelerator="cpu", max_epochs=3, default_root_dir=tmp_path)
+    with pytest.raises(RuntimeError, match="bug in validation_step"):
+        t.fit(BrokenVal(), train, val)
+    assert t.global_step == 0  # failed before the first training step
+    t = glt.Trainer(
+        accelerator="cpu", max_epochs=1, num_sanity_val_steps=0, default_root_dir=tmp_path
+    )
+    with pytest.raises(RuntimeError, match="bug in validation_step"):
+        t.fit(BrokenVal(), train, val)
+    assert t.global_step == 16  # without the check, a whole epoch ran first
+
+
+def test_max_time_clip_value_and_deterministic(tmp_path):
+    train, val = loaders()
+    t = glt.Trainer(
+        accelerator="cpu",
+        max_epochs=1000,
+        max_time=0.3,
+        default_root_dir=tmp_path,
+        enable_checkpointing=False,
+    )
+    t0 = time.perf_counter()
+    t.fit(Lin(), train)
+    assert time.perf_counter() - t0 < 5 and len(t.history) < 1000
+
+    class Spy(Lin):
+        def configure_optimizers(self):
+            return torch.optim.SGD(self.parameters(), lr=0.0)  # gradients stay visible
+
+    m = Spy()
+    t = glt.Trainer(
+        accelerator="cpu",
+        max_steps=1,
+        gradient_clip_val=0.01,
+        gradient_clip_algorithm="value",
+        enable_checkpointing=False,
+        default_root_dir=tmp_path,
+    )
+    t.fit(m, train)
+    assert all(p.grad is None or p.grad.abs().max() <= 0.01 + 1e-7 for p in m.parameters())
+    with pytest.raises(ValidationFailed, match="gradient_clip_algorithm"):
+        glt.Trainer(gradient_clip_algorithm="l1")
+
+    def run():
+        glt.seed_everything(7)
+        tr, _ = loaders()
+        mod = Lin()
+        glt.Trainer(
+            accelerator="cpu",
+            max_epochs=2,
+            deterministic=True,
+            enable_checkpointing=False,
+            default_root_dir=tmp_path,
+        ).fit(mod, tr)
+        return torch.cat([p.detach().flatten() for p in mod.parameters()])
+
+    try:
+        assert torch.equal(run(), run())
+    finally:
+        torch.use_deterministic_algorithms(False)
