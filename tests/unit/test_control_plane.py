@@ -319,3 +319,26 @@ def test_full_cluster_submit_only_evaluates_new_jobs_and_keeps_fifo(cp):
     cp.schedule_pending()
     assert cp.get_job(jobs[2].job_id).state == JobState.SCHEDULED
     assert all(cp.get_job(j.job_id).state == JobState.QUEUED for j in jobs[3:])
+
+
+def test_served_control_plane_waiters_sleep_until_signalled(cp, monkeypatch):
+    """Behind a server, an idle long-polling worker does no scheduling work while it waits,
+    and wakes as soon as a job is submitted."""
+    import threading
+    import time as _time
+
+    w = reg(cp)
+    cp.served = True
+    passes = []
+    original = cp.schedule_pending
+    monkeypatch.setattr(cp, "schedule_pending", lambda: (passes.append(1), original())[1])
+    got = []
+    th = threading.Thread(target=lambda: got.append(cp.acquire_task(w, wait=5)))
+    th.start()
+    _time.sleep(0.6)  # three POLL_SLICEs: an embedded control plane would have re-checked
+    assert passes == []
+    t0 = _time.monotonic()
+    cp.submit(cmd_spec())  # schedules once and signals the waiter
+    th.join(5)
+    assert got and got[0] is not None and _time.monotonic() - t0 < 1.0
+    assert len(passes) == 1

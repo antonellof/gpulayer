@@ -101,6 +101,7 @@ class ControlPlaneServer:
         reconcile_interval: float = 1.0,
     ) -> None:
         self.cp = cp
+        cp.served = True  # the reconcile loop below does the work requests used to repeat
         self.creds = credentials
         self.limiter = FailureLimiter()
         if not tls_cert and not _is_loopback(host) and not allow_insecure_remote:

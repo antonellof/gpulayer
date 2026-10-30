@@ -110,6 +110,11 @@ class ControlPlane:
         # Job specs never change after submission; parsing them on every scheduling pass
         # cost O(queue) per submit. Entries leave when the job leaves the queue.
         self._specs: dict[str, JobSpec] = {}
+        # Set by ControlPlaneServer, which runs reconcile() and schedule_pending() in a loop
+        # and through which every change passes. Requests then skip that work, and waiters
+        # sleep until signalled instead of re-checking every POLL_SLICE: with 100+ idle worker
+        # slots long-polling, the re-checks were hundreds of scheduling passes per second.
+        self.served = False
         self.artifacts = artifacts
         self.config = config or ControlPlaneConfig()
         self.now = clock
@@ -202,7 +207,8 @@ class ControlPlane:
             self._finalize(job_id)
 
     def get_job(self, job_id: str) -> JobStatus:
-        self.reconcile()
+        if not self.served:
+            self.reconcile()
         row = self._job_row(job_id)
         spec = JobSpec.model_validate_json(row["spec"])
         return JobStatus(
@@ -506,7 +512,8 @@ class ControlPlane:
         return row
 
     def list_workers(self) -> list[WorkerStatus]:
-        self.reconcile()
+        if not self.served:
+            self.reconcile()
         running: dict[str, list[str]] = {}
         for r in self.store.query(
             "SELECT id, worker_id FROM tasks WHERE state IN (?,?)", ACTIVE_TASK_STATES
@@ -590,6 +597,7 @@ class ControlPlane:
                 "worker.revoked", "worker credentials revoked", worker_id=worker_id
             )
         self._lose_tasks_of(worker_id, "worker revoked")
+        self.signal()  # a long-polling acquire of this worker must see the revocation
 
     # ======================================================= task protocol
 
@@ -685,6 +693,12 @@ class ControlPlane:
             self._generation += 1
             self._changed.notify_all()
 
+    def _slice(self, remaining: float) -> float:
+        """How long a waiter sleeps before re-checking. In embedded mode another process (a
+        CLI submit) may change the database without signalling, so re-check every
+        POLL_SLICE; a served control plane sees every change and signals."""
+        return remaining if self.served else min(remaining, POLL_SLICE)
+
     def _wait_for_change(self, generation: int, timeout: float) -> None:
         with self._changed:
             if self._generation == generation and timeout > 0:
@@ -705,7 +719,7 @@ class ControlPlane:
             remaining = deadline - time.monotonic()
             if assignment is not None or remaining <= 0 or (stop is not None and stop.is_set()):
                 return assignment
-            self._wait_for_change(generation, min(remaining, POLL_SLICE))
+            self._wait_for_change(generation, self._slice(remaining))
 
     def wait_job(self, job_id: str, timeout: float) -> JobStatus:
         """Return the job once it is terminal, or its current status after ``timeout``."""
@@ -716,13 +730,14 @@ class ControlPlane:
             remaining = deadline - time.monotonic()
             if status.state.terminal or remaining <= 0:
                 return status
-            self._wait_for_change(generation, min(remaining, POLL_SLICE))
+            self._wait_for_change(generation, self._slice(remaining))
 
     def _acquire_once(self, worker_id: str) -> TaskAssignment | None:
         if self._worker_row(worker_id)["revoked"]:
             raise Forbidden("worker has been revoked")
-        self.reconcile()
-        self.schedule_pending()
+        if not self.served:
+            self.reconcile()
+            self.schedule_pending()
         rows = self.store.query(
             "SELECT t.*, j.spec, j.rendezvous FROM tasks t JOIN jobs j ON j.id=t.job_id "
             "WHERE t.worker_id=? AND t.state=? ORDER BY j.created_at, t.node_rank",

@@ -1,6 +1,6 @@
 """Generate the performance charts in docs/assets/perf/ from a benchmark summary.
 
-    python scripts/make_perf_charts.py [benchmarks/results/2026-10-30-gcp/summary.json]
+    python scripts/make_perf_charts.py [summary.json ...]   (default: the 2026-10-30 runs)
 
 Writes <name>-light.svg and <name>-dark.svg for each chart. Grouped horizontal bars: GPUlayer
 in blue, the baseline in orange (a palette validated for colour-vision deficiency in both
@@ -17,7 +17,10 @@ from xml.sax.saxutils import escape
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs" / "assets" / "perf"
-DEFAULT = ROOT / "benchmarks" / "results" / "2026-10-30-gcp" / "summary.json"
+DEFAULT = [
+    ROOT / "benchmarks" / "results" / "2026-10-30-gcp" / "summary.json",
+    ROOT / "benchmarks" / "results" / "2026-10-30-gcp-fleet" / "summary.json",
+]
 
 THEMES = {
     "light": {
@@ -128,6 +131,40 @@ def grouped(
 
 
 def charts(d: dict) -> dict[str, dict]:
+    out = _base_charts(d) if "training_vs_lightning" in d else {}
+    if "strong_scaling" in d:
+        sc = d["strong_scaling"]
+        out["strong-scaling"] = dict(
+            title="One training job on more machines: GPUlayer and PyTorch Lightning",
+            subtitle=sc["subtitle"],
+            series=("GPUlayer Trainer(num_nodes=N)", "Lightning under torchrun"),
+            rows=[
+                (
+                    f"{r['nodes']} machine{'s' if r['nodes'] > 1 else ''}, {r['procs']} processes",
+                    r["gpulayer_s"],
+                    r["lightning_s"],
+                )
+                for r in sc["rows"]
+            ],
+            unit="seconds to train",
+            fmt="{:.1f} s",
+            note="lower is better",
+        )
+    if "submit" in d:
+        sb = d["submit"]
+        out["fleet-throughput"] = dict(
+            title="Submitting thousands of jobs to 30 workers",
+            subtitle=sb["subtitle"],
+            series=("After the scheduling fix", "Before"),
+            rows=[(r["name"], r["after_s"], r["before_s"]) for r in sb["rows"]],
+            unit="seconds, submit until every job finished",
+            fmt="{:.1f} s",
+            note="lower is better",
+        )
+    return out
+
+
+def _base_charts(d: dict) -> dict[str, dict]:
     tr = d["training_vs_lightning"]["cases"]
     ds = d["distributed_startup"]["rows"]
     mm = d["multi_machine"]["workloads"]
@@ -174,8 +211,10 @@ def charts(d: dict) -> dict[str, dict]:
 
 
 def main() -> None:
-    src = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT
-    d = json.loads(src.read_text())
+    sources = [Path(a) for a in sys.argv[1:]] or DEFAULT
+    d: dict = {}
+    for src in sources:
+        d.update(json.loads(src.read_text()))
     OUT.mkdir(parents=True, exist_ok=True)
     for name, spec in charts(d).items():
         for theme in THEMES:
