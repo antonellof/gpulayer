@@ -28,8 +28,9 @@ and fast without making users leave it for common needs.
      the best N checkpoints (`save_top_k`), a learning-rate monitor, validation within an
      epoch (`val_check_interval`), `metrics.csv` (step rows taken only where the step log line
      already reads the values), resume from a checkpoint;
-   - planned, needs hardware first: FSDP for models that do not fit one GPU, validated on
-     several CUDA GPUs before it is documented.
+   - experimental: `strategy="fsdp"` (FSDP2, per-submodule sharding, full-state
+     checkpoints), tested on CPU processes where it trains identically to DDP; it stays
+     experimental until validated on several CUDA GPUs.
 3. **Do not adopt** logger integrations (TensorBoard, W&B, MLflow), DeepSpeed, model
    summaries, progress bars beyond the printed log line, tuners, or plugins. Users who need
    them keep their Lightning or custom script and run it with `launch()`, which gives it the

@@ -13,6 +13,11 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 - `POST /v1/jobs/batch` and `Client.submit_batch`: many jobs in one request, one transaction
   and one scheduling pass (all or none); server CPU per job 5.6-6.2 to 4.1 ms.
 - Site: sitemap.xml, robots.txt, canonical URLs, link previews and structured data.
+- `Trainer(strategy="fsdp")` (experimental): FSDP2 sharding of parameters, gradients and
+  optimizer state, full-state checkpoints; on CPU it trains exactly like DDP. Not yet run on
+  CUDA GPUs.
+- `fit(ckpt_path=...)` resumes launched (remote) runs: the local checkpoint is uploaded with
+  the job. `launch(inputs={...})` ships local files to `$GPULAYER_INPUT_DIR`.
 
 ## 0.3.0 (2026-10-30)
 

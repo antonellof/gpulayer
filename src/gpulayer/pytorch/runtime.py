@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +63,25 @@ def seed_everything(seed: int) -> None:
 
 
 _NOOP = contextlib.nullcontext()
+
+
+def _fsdp_modules(model: nn.Module) -> list[Any]:
+    try:
+        from torch.distributed.fsdp import FSDPModule
+    except ImportError:  # torch without FSDP2
+        return []
+    return [m for m in model.modules() if isinstance(m, FSDPModule)]
+
+
+@contextlib.contextmanager
+def _fsdp_no_sync(modules: list[Any]) -> Iterator[None]:
+    for m in modules:
+        m.set_requires_gradient_sync(False, recurse=False)
+    try:
+        yield
+    finally:
+        for m in modules:
+            m.set_requires_gradient_sync(True, recurse=False)
 
 
 class Runtime:
@@ -159,17 +179,86 @@ class Runtime:
             drop_last=loader.drop_last,
         )
 
+    def shard(self, model: nn.Module) -> nn.Module:
+        """FSDP (experimental): shard the parameters of every submodule that owns them across
+        all ranks, so each rank holds about 1/world_size of the model, and make ``model`` the
+        FSDP root. Call ``model`` (its forward) every step, so the root's hooks run and the
+        submodules release their gathered parameters after their forward. Call this before
+        creating the optimizer. A no-op in a single process."""
+        model.to(self.device)
+        if not self.distributed:
+            return model
+        if next(model.parameters(recurse=False), None) is not None:
+            raise ValidationFailed(
+                "strategy='fsdp' shards submodules; move parameters the model owns directly "
+                "(nn.Parameter attributes) into a submodule such as nn.Linear"
+            )
+        from torch.distributed.device_mesh import init_device_mesh
+        from torch.distributed.fsdp import fully_shard
+
+        # An explicit mesh: without one, FSDP picks the accelerator device itself.
+        mesh = init_device_mesh(self.device.type, (self.world_size,))
+        # Children before parents (reverse of pre-order), each module that owns parameters.
+        for m in reversed(list(model.modules())[1:]):
+            if next(m.parameters(recurse=False), None) is not None:
+                fully_shard(m, mesh=mesh)
+        fully_shard(model, mesh=mesh)  # the root: owns no parameters, runs every step
+        return model
+
     def no_sync(
         self, model: nn.Module, enabled: bool = True
     ) -> contextlib.AbstractContextManager[Any]:
-        """Skip DDP's gradient all-reduce for this backward (gradient accumulation)."""
+        """Skip the gradient exchange for this backward (gradient accumulation), with DDP or
+        FSDP."""
         if not (enabled and self.distributed):
             return _NOOP  # called every step: no import or allocation on the common path
         from torch.nn.parallel import DistributedDataParallel as DDP
 
         if isinstance(model, DDP):
             return model.no_sync()
-        return _NOOP
+        sharded = _fsdp_modules(model)
+        return _fsdp_no_sync(sharded) if sharded else _NOOP
+
+    def full_state(
+        self, model: nn.Module, optimizer: torch.optim.Optimizer
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Unsharded model and optimizer state on the CPU. With FSDP this is a collective:
+        call it on every rank."""
+        if not _fsdp_modules(model):
+            return model.state_dict(), optimizer.state_dict()
+        from torch.distributed.checkpoint.state_dict import (
+            StateDictOptions,
+            get_model_state_dict,
+            get_optimizer_state_dict,
+        )
+
+        opts = StateDictOptions(full_state_dict=True, cpu_offload=True)
+        return (
+            get_model_state_dict(model, options=opts),
+            get_optimizer_state_dict(model, optimizer, options=opts),
+        )
+
+    def load_full_state(
+        self,
+        model: nn.Module,
+        optimizer: torch.optim.Optimizer,
+        model_state: dict[str, Any],
+        optim_state: dict[str, Any],
+    ) -> None:
+        """Load an unsharded checkpoint into a (possibly sharded) model and optimizer."""
+        if not _fsdp_modules(model):
+            model.load_state_dict(model_state)
+            optimizer.load_state_dict(optim_state)
+            return
+        from torch.distributed.checkpoint.state_dict import (
+            StateDictOptions,
+            set_model_state_dict,
+            set_optimizer_state_dict,
+        )
+
+        opts = StateDictOptions(full_state_dict=True)
+        set_model_state_dict(model, model_state, options=opts)
+        set_optimizer_state_dict(model, optimizer, optim_state, options=opts)
 
     def to_device(self, batch: Any) -> Any:
         if self.device.type == "cpu":

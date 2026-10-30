@@ -70,6 +70,7 @@ dicts of tensors, before calling your step.
 | `accelerator` | `"auto"` | `"cpu"`, `"cuda"`, `"mps"` or `"auto"` (the device granted to the job, else CUDA, then MPS, then CPU) |
 | `devices` | `1` | processes per node; with CUDA, one GPU per process |
 | `num_nodes` | `1` | number of workers for a distributed run |
+| `strategy` | `"ddp"` | `"ddp"`, or `"fsdp"` (experimental) to shard parameters, gradients and optimizer state across processes, for models too large to replicate; see [FSDP](#fsdp-experimental) |
 | `precision` | `"32-true"` | `"32-true"`, `"bf16-mixed"` (CUDA, CPU) or `"16-mixed"` (CUDA, with a gradient scaler) |
 | `target` | `None` | `None` runs here when possible; `"local"`, `"remote"` or `"cloud"` always submits a job |
 | `gradient_clip_val` | `None` | clip the gradient norm to this value |
@@ -176,7 +177,30 @@ trainer.fit(model, train_loader, val_loader,
 ```
 
 A checkpoint holds `state_dict`, `optimizer`, `epoch`, `global_step` and `history`.
-`ckpt_path` restores the optimizer and continues from the next epoch.
+`ckpt_path` restores the optimizer and continues from the next epoch. When `fit` launches
+training on workers, a local `ckpt_path` is uploaded with the job, so resuming works the same
+way remotely.
+
+## FSDP (experimental)
+
+`strategy="fsdp"` shards each submodule that owns parameters (for example every `nn.Linear`)
+across the processes with PyTorch's FSDP2 (`fully_shard`), so each process holds about
+1/N of the parameters, gradients and optimizer state. Each layer's parameters are gathered
+only while it runs.
+
+```python
+trainer = glt.Trainer(accelerator="cuda", devices=8, num_nodes=2, strategy="fsdp",
+                      precision="bf16-mixed")
+```
+
+- The Module's parameters must live in submodules, not as `nn.Parameter` attributes of the
+  Module itself.
+- Checkpoints are gathered into a full, unsharded state dict, so `load_from_checkpoint` and
+  `ckpt_path` work as with DDP.
+- Precision `32-true` and `bf16-mixed`; `16-mixed` is rejected for now.
+- Tested with two CPU processes (gloo): FSDP trains exactly like DDP (identical losses), each
+  process holds a part of the model, and a run resumes from its checkpoint. It has not been
+  run on CUDA GPUs yet.
 
 ## Validate, test and predict
 
@@ -192,6 +216,6 @@ current process, without gradients and with the Trainer's precision.
 
 ## What the Trainer does not do yet
 
-Logger integrations and strategies other than DDP (such as FSDP) are not implemented. [ADR-0018](../decisions/ADR-0018-trainer-scope.md)
+Logger integrations, DeepSpeed, and FSDP on CUDA hardware (it is experimental and CPU-tested) are not available. [ADR-0018](../decisions/ADR-0018-trainer-scope.md)
 lists what is planned. If you need them now, keep your existing training code and run it with
 [`launch()`](launch.md).

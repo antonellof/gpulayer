@@ -276,7 +276,7 @@ const PERF_ROWS: { case: string; gl: number; pl: number; glOver: number; plOver:
 const BEHIND = [
   "No real cloud provisioning or autoscaling yet (simulated adapter only); SkyPilot, dstack and Ray already do this.",
   "No long-running services yet; dstack, Ray Serve, Modal and Kubernetes handle them.",
-  "A small PyTorch Trainer: no FSDP, DeepSpeed or logger integrations, unlike PyTorch Lightning.",
+  "A small PyTorch Trainer: FSDP is experimental (CPU-tested), and there is no DeepSpeed or logger integration, unlike PyTorch Lightning.",
   "Measured with the torchrun launcher, distributed jobs started about a second slower than PyTorch Lightning's DDP on one machine. The direct launcher, now the default, removes about 1.1 s; the comparison has not been re-run.",
   "Distributed jobs support PyTorch process groups only; no JAX multi-host or MPI launcher yet.",
   "v0.3.0: validated on one NVIDIA GPU and two machines; several GPUs per machine and NCCL across machines are not validated yet. Not a sandbox for untrusted users.",

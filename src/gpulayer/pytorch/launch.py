@@ -22,6 +22,7 @@ from gpulayer.contracts import (
     Accelerator,
     CommandJob,
     DistributedJob,
+    InputArtifact,
     JobSpec,
     JobState,
     JobStatus,
@@ -68,6 +69,7 @@ def launch(
     argv: list[str] | None = None,
     frameworks: dict[str, str] | None = None,
     env: dict[str, str] | None = None,
+    inputs: dict[str, str | Path] | None = None,
     timeout_seconds: float | None = None,
     name: str | None = None,
     output_dir: str | Path | None = None,
@@ -75,7 +77,10 @@ def launch(
     quiet: bool = False,
     **placement: Any,
 ) -> LaunchResult | None:
-    """Submit this script as a GPUlayer job, or return ``None`` when already inside one."""
+    """Submit this script as a GPUlayer job, or return ``None`` when already inside one.
+
+    ``inputs`` maps a path under ``$GPULAYER_INPUT_DIR`` in the job to a local file, which is
+    uploaded and placed there on every node (for example a checkpoint to resume from)."""
     if not is_launcher_process():
         return None
     if accelerator == "auto":
@@ -124,6 +129,10 @@ def launch(
             target=target, on_unschedulable=placement.pop("on_unschedulable", "fail"), **placement
         ),
         env=env or {},
+        inputs=[
+            InputArtifact(artifact=c.upload(Path(local)), path=dest)
+            for dest, local in (inputs or {}).items()
+        ],
         timeout_seconds=timeout_seconds,
     )
     job = c.submit(spec)

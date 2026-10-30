@@ -310,3 +310,94 @@ def test_launched_run_without_checkpoints_returns_metrics(tmp_path):
     )
     assert p.returncode == 0, p.stdout + p.stderr
     assert "METRICS ['epoch', 'epoch_seconds', 'train_loss'] 2" in p.stdout, p.stdout
+
+
+SCRIPT_FSDP = """
+import sys
+import torch
+from torch import nn
+from torch.utils.data import DataLoader, TensorDataset
+import gpulayer.pytorch as glt
+
+class Net(glt.Module):
+    def __init__(self):
+        super().__init__()
+        self.net = nn.Sequential(nn.Linear(8, 64), nn.ReLU(), nn.Linear(64, 1))
+    def training_step(self, batch, batch_idx):
+        x, y = batch
+        loss = nn.functional.mse_loss(self.net(x), y)
+        self.log("train_loss", loss)
+        return loss
+    def configure_optimizers(self):
+        # Called after sharding, before any forward: each rank holds only its shard.
+        local = sum(p.to_local().numel() if hasattr(p, "to_local") else p.numel()
+                    for p in self.parameters())
+        total = sum(p.numel() for p in self.parameters())
+        if self.trainer.runtime.distributed:
+            print(f"SHARD rank={self.trainer.runtime.global_rank} local={local} total={total}",
+                  flush=True)
+        return torch.optim.Adam(self.parameters(), lr=0.01)
+
+torch.manual_seed(0)
+x = torch.randn(512, 8)
+y = x @ torch.arange(1.0, 9.0).unsqueeze(1)
+loader = DataLoader(TensorDataset(x, y), batch_size=32, shuffle=True)
+epochs = int(sys.argv[1])
+resume = sys.argv[2] if len(sys.argv) > 2 else None
+t = glt.Trainer(accelerator="cpu", devices=2, strategy="fsdp", max_epochs=epochs,
+                launch_options={"quiet": False})
+model = Net()
+t.fit(model, loader, ckpt_path=resume)
+if glt.is_launcher_process():
+    print("LOSS", t.history[0]["train_loss"], t.history[-1]["train_loss"], len(t.history))
+    print("CKPT", t.checkpoint_path)
+    restored = Net.load_from_checkpoint(t.checkpoint_path)
+    with torch.no_grad():
+        print("RESTORED", nn.functional.mse_loss(restored.net(x), y).item())
+"""
+
+
+@pytest.mark.distributed
+def test_fsdp_strategy_shards_trains_saves_and_resumes(tmp_path):
+    script = tmp_path / "fsdp.py"
+    script.write_text(SCRIPT_FSDP)
+    scripts = [script]
+    env = {**os.environ, "GPULAYER_HOME": str(tmp_path / "home")}
+    for k in ("GPULAYER_URL", "GPULAYER_JOB_ID", "LOCAL_RANK", "WORLD_SIZE", "RANK"):
+        env.pop(k, None)
+
+    def run(*args):
+        p = subprocess.run(
+            [sys.executable, str(scripts[-1]), *args],
+            cwd=tmp_path,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        assert p.returncode == 0, p.stdout[-3000:] + p.stderr[-3000:]
+        return p.stdout
+
+    def value(out, key):
+        return next(line for line in out.splitlines() if line.startswith(key)).split()[1:]
+
+    out = run("3")
+    shards = sorted(line for line in out.splitlines() if "SHARD" in line)
+    assert len(shards) == 2, out[-2000:]
+    total = int(shards[0].split("total=")[1])
+    locals_ = [int(s.split("local=")[1].split()[0]) for s in shards]
+    assert all(n < total for n in locals_) and sum(locals_) == total  # really sharded
+    # FSDP must train exactly like DDP: same losses, same restored model.
+    ddp_script = tmp_path / "ddp.py"
+    ddp_script.write_text(SCRIPT_FSDP.replace('strategy="fsdp"', 'strategy="ddp"'))
+    scripts.append(ddp_script)
+    ddp_out = run("3")
+    scripts.pop()
+    assert value(out, "LOSS") == value(ddp_out, "LOSS")
+    assert value(out, "RESTORED") == pytest.approx(value(ddp_out, "RESTORED"))
+    first, last, epochs = value(out, "LOSS")
+    assert float(last) < float(first) and epochs == "3"
+    ckpt = next(line for line in out.splitlines() if line.startswith("CKPT")).split()[1]
+    out2 = run("5", ckpt)  # resume a sharded run from the full checkpoint
+    second = next(line for line in out2.splitlines() if line.startswith("LOSS")).split()[1:]
+    assert second[2] == "5" and float(second[1]) <= float(last) * 1.5

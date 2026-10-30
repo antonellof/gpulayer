@@ -19,6 +19,9 @@ Run it as usual (`python train.py --lr 0.01`). In your terminal, `launch()`:
 4. downloads everything the job wrote to `$GPULAYER_OUTPUT_DIR` into `gpulayer_runs/<job-id>/`;
 5. exits with the job's exit code.
 
+`launch(inputs={"data/train.bin": "/local/train.bin"})` uploads local files and places them
+under `$GPULAYER_INPUT_DIR` on every node.
+
 On the worker, `launch()` sees that it is already inside a job and returns at once, so the rest
 of the script runs there with the usual torchrun environment (`RANK`, `WORLD_SIZE`,
 `LOCAL_RANK`, `MASTER_ADDR`, `MASTER_PORT`). Any training code that reads that environment

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -45,6 +46,7 @@ class Trainer:
         accelerator: str = "auto",
         devices: int = 1,
         num_nodes: int = 1,
+        strategy: str = "ddp",
         precision: str = "32-true",
         target: str | None = None,
         gradient_clip_val: float | None = None,
@@ -67,6 +69,14 @@ class Trainer:
             )
         if max_steps is not None and max_steps < 1:
             raise ValidationFailed("max_steps must be >= 1 (or None for no limit)")
+        if strategy not in ("ddp", "fsdp"):
+            raise ValidationFailed(f"strategy must be 'ddp' or 'fsdp', got {strategy!r}")
+        if strategy == "fsdp" and precision == "16-mixed":
+            raise ValidationFailed(
+                "strategy='fsdp' supports precision '32-true' and 'bf16-mixed' (16-mixed needs a "
+                "sharded gradient scaler that has not been validated yet)"
+            )
+        self.strategy = strategy
         self.max_epochs = max_epochs
         self.max_steps = max_steps
         self.check_val_every_n_epoch = check_val_every_n_epoch
@@ -122,8 +132,15 @@ class Trainer:
     def is_global_zero(self) -> bool:
         return self.runtime.is_global_zero if self.runtime else True
 
-    def _launch(self, model: Module) -> None:
+    def _launch(self, model: Module, ckpt_path: str | Path | None = None) -> None:
         options = dict(self.launch_options)
+        if ckpt_path is not None:
+            # The checkpoint is on this machine: ship it with the job as an input; the copy of
+            # this script on the workers finds it there (see _resume_path).
+            local = Path(ckpt_path)
+            if not local.is_file():
+                raise ValidationFailed(f"checkpoint not found: {local}")
+            options["inputs"] = {**options.get("inputs", {}), RESUME_INPUT: local}
         client = options.pop("client", None) or default_client()
         target = self.target or default_target(client)
         accel = self.accelerator
@@ -183,13 +200,13 @@ class Trainer:
         if self.will_launch:
             # Training runs on workers (the callbacks run there); here only on_fit_end runs,
             # so callbacks can pick up what came back (e.g. ModelCheckpoint's best file).
-            self._launch(model)
+            self._launch(model, ckpt_path)
             _call(self.callbacks, "on_fit_end", self, model)
             return
         rt = Runtime(self.accelerator, self.precision).setup()
         self.runtime = rt
         try:
-            self._fit_loop(rt, model, train_dataloaders, val_dataloaders, ckpt_path)
+            self._fit_loop(rt, model, train_dataloaders, val_dataloaders, _resume_path(ckpt_path))
         finally:
             rt.teardown()
         if is_launcher_process():
@@ -223,20 +240,36 @@ class Trainer:
     ) -> None:
         model.trainer = self
         model.to(rt.device)
+        fsdp = self.strategy == "fsdp" and rt.distributed
+        sharded: torch.nn.Module | None = None
+        if fsdp:
+            # Shard before the optimizer, which must see the sharded parameters. The wrapper
+            # (whose forward calls training_step) is the FSDP root, called every step.
+            if next(model.parameters(recurse=False), None) is not None:
+                raise ValidationFailed(
+                    "strategy='fsdp' shards submodules; move parameters the Module owns "
+                    "directly (nn.Parameter attributes) into a submodule such as nn.Linear"
+                )
+            sharded = rt.shard(_TrainingStep(model))
         optimizer, scheduler, interval = self._optimizers(model)
         self._model, self._optimizer, self.should_stop = model, optimizer, False
         start_epoch = 0
         if ckpt_path:
-            state = torch.load(ckpt_path, map_location=rt.device, weights_only=False)
-            model.load_state_dict(state["state_dict"])
-            optimizer.load_state_dict(state["optimizer"])
+            state = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+            rt.load_full_state(model, optimizer, state["state_dict"], state["optimizer"])
             start_epoch = state["epoch"] + 1
             self.global_step = state.get("global_step", 0)
             self.history = state.get("history", [])
         # DDP only syncs gradients for calls to its forward, so wrap training_step for DDP;
-        # otherwise call it directly (one module call fewer per step).
-        ddp = rt.module(_TrainingStep(model)) if rt.distributed else model
-        step_fn = ddp if rt.distributed else model.training_step
+        # FSDP hooks into each sharded submodule instead, and a single process needs neither
+        # (one module call fewer per step).
+        step_fn: Any
+        if sharded is not None:
+            ddp, step_fn = sharded, sharded
+        elif rt.distributed:
+            ddp = step_fn = rt.module(_TrainingStep(model))
+        else:
+            ddp, step_fn = model, model.training_step
         if not rt.distributed:
             model.to(rt.device)
         train = rt.dataloader(train)
@@ -335,9 +368,12 @@ class Trainer:
             )
             self._say(f"epoch {epoch} done in {metrics['epoch_seconds']}s: {shown}")
             _call(self.callbacks, "on_train_epoch_end", self, model)
+            if self.enable_checkpointing:
+                # Every rank calls it: with FSDP, gathering the full state is a collective.
+                saved = self.save_checkpoint(Path(CHECKPOINT).name)
+                if saved is not None:
+                    self.checkpoint_path = saved
             if rt.is_global_zero:
-                if self.enable_checkpointing:
-                    self.checkpoint_path = self.save_checkpoint(Path(CHECKPOINT).name)
                 # Metrics are written even without checkpoints: a remote run returns them.
                 self._write_metrics(out_dir)
             # Every rank must leave the loop together, or the next collective would hang.
@@ -405,18 +441,26 @@ class Trainer:
 
     def save_checkpoint(self, filename: str) -> Path | None:
         """Write ``checkpoints/<filename>`` for the current epoch from rank 0 (other ranks
-        return None). Usable from callbacks during ``fit``."""
+        return None). Usable from callbacks during ``fit``. Call it on every rank: with
+        ``strategy="fsdp"`` the full state is gathered from all of them."""
         if self._out_dir is None or self._model is None or self._optimizer is None:
             raise ValidationFailed("save_checkpoint can only be called during fit")
-        if self.runtime is not None and not self.runtime.is_global_zero:
+        rt = self.runtime
+        if rt is not None and self.strategy == "fsdp" and rt.distributed:
+            model_state, optim_state = rt.full_state(self._model, self._optimizer)
+        elif rt is not None and not rt.is_global_zero:
+            return None
+        else:
+            model_state, optim_state = self._model.state_dict(), self._optimizer.state_dict()
+        if rt is not None and not rt.is_global_zero:
             return None
         path = self._out_dir / "checkpoints" / filename
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".tmp")
         torch.save(
             {
-                "state_dict": self._model.state_dict(),
-                "optimizer": self._optimizer.state_dict(),
+                "state_dict": model_state,
+                "optimizer": optim_state,
                 "epoch": self.current_epoch,
                 "global_step": self.global_step,
                 "history": self.history,
@@ -455,6 +499,18 @@ class Trainer:
                 raise ValidationFailed("a fractional val_check_interval needs a sized loader")
             return max(1, int(n_batches * v)) if v < 1.0 else None
         return v
+
+
+RESUME_INPUT = "gpulayer-resume.ckpt"
+
+
+def _resume_path(ckpt_path: str | Path | None) -> str | Path | None:
+    """Inside a job launched with ckpt_path, the checkpoint arrived as a job input."""
+    if ckpt_path is not None and "GPULAYER_INPUT_DIR" in os.environ:
+        shipped = Path(os.environ["GPULAYER_INPUT_DIR"]) / RESUME_INPUT
+        if shipped.is_file():
+            return shipped
+    return ckpt_path
 
 
 def _total(values: list[Any]) -> float:
