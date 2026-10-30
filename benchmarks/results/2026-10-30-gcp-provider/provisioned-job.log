@@ -1,0 +1,11 @@
+16:30:25 job.submitted independent job 'job' submitted, target cloud
+16:30:25 job.provisioning no workers online; requesting 1 instance(s) from gcp
+16:30:37 instance.provisioned gcp instance gpulayer-inst-87cb5697e40d (provisioning)
+16:31:23 worker.registered worker gpulayer-inst-87cb5697e40d registered (provider, 0 accelerator(s))
+16:31:23 job.scheduled placed on worker ['wkr-0f843b8dd247'] (target cloud, policy spread)
+16:31:23 job.running job scheduled -> running
+16:31:23 job.succeeded job running -> succeeded
+16:31:24 instance.terminated released instance gpulayer-inst-87cb5697e40d
+submitted job-ad5bc7e845ee (independent, target cloud)
+hello from gpulayer-inst-87cb5697e40d 3.12.16
+job-ad5bc7e845ee succeeded

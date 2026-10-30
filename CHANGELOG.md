@@ -21,6 +21,11 @@ before 1.0, minor versions may change public APIs, with migration notes here.
   ran the trainers on different VMs, overstated GPUlayer's lead.
 - On 8 GCP workers after the server changes, 2,000 tiny jobs ran at 83 jobs/s, or 93 with
   `submit_batch`, which submits all of them in 1.1 s. The workers now set the limit.
+- Google Cloud provider adapter (`gpulayer[gcp]`, `gpulayer up --providers FILE`): when no worker
+  fits a `--provider gcp` job, GPUlayer creates a Compute Engine VM from a configured offer, the
+  VM installs GPUlayer and joins with a single-use token, the job runs, and the VM is deleted.
+  Validated end to end on GCP with a CPU VM. `gpulayer join --instance-ref` for provisioned
+  machines.
 - Kubernetes: a Helm chart (`deploy/kubernetes/helm/gpulayer`) with the server as a
   StatefulSet and CPU and GPU worker pools; tokens and TLS generated into Secrets and kept on
   upgrade. Tested in CI on kind, including a distributed job across worker pods. Guide:

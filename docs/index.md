@@ -25,8 +25,8 @@ trainer.fit(model, train_loader)                                         # PyTor
 > **Status: v0.3.0.** Local execution, scheduling, the server and worker
 > protocol, and distributed jobs are implemented and tested on CPU and Apple Silicon, and
 > validated on an NVIDIA Tesla T4 and across two machines on Google Cloud. Several GPUs per
-> machine and NCCL across machines are not validated yet, and automatic cloud provisioning is
-> simulated. See [Status and roadmap](project/status.md) and
+> machine and NCCL across machines are not validated yet, and automatic cloud provisioning
+> covers Google Cloud only. See [Status and roadmap](project/status.md) and
 > [Performance and comparison](get-started/performance-and-comparison.md).
 
 ## Why GPUlayer
@@ -111,7 +111,7 @@ flow in detail.
   GPUlayer among people who trust each other.
 - **Validated scale today.** GPUlayer is at v0.3.0. It has been validated
   on one NVIDIA GPU and on two machines; several GPUs per machine and NCCL across machines are
-  not validated yet, distributed jobs support PyTorch only, and automatic cloud provisioning is simulated. Cloud VMs you start yourself can join
+  not validated yet, distributed jobs support PyTorch only, and automatic cloud provisioning covers Google Cloud only. Cloud VMs you start yourself can join
   with `gpulayer join`.
 
 Two constraints: function arguments and results must be JSON, and code ships as files (the

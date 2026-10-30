@@ -17,7 +17,7 @@ Updated 2026-10-29 at the end of the first iteration.
 | Apple MPS, independent jobs | hardware-validated |
 | NVIDIA CUDA execution | hardware-validated on a Tesla T4 (single GPU) |
 | AMD ROCm | detection only |
-| Cloud provisioning through provider adapters | simulated (`FakeProvider`); cloud VMs can join with `gpulayer join` |
+| Cloud provisioning through provider adapters | Google Cloud: validated with a CPU VM (create, join, run, delete); other clouds: none yet; `FakeProvider` for tests |
 | Documentation site (`site/`) | builds as a static export |
 
 ## Milestone 2 (in progress): PyTorch and ease of use

@@ -26,7 +26,7 @@ proposed. Each ADR says which part is which.
 | [0007](ADR-0007-distributed-launch-and-rendezvous.md) | Distributed launch and rendezvous | Accepted (milestone 1, single host); multi-machine Proposed | torchrun with static rendezvous published by the rank-0 worker; fail-fast; no distributed retry. |
 | [0008](ADR-0008-storage-and-artifact-management.md) | Storage and artifact management | Accepted (milestone 1); shared DB/object store Proposed | SQLite (WAL) metadata plus a local content-addressed artifact store behind interfaces. |
 | [0009](ADR-0009-security-and-workload-isolation.md) | Security and workload isolation | Accepted (milestone 1) for trusted single-team use | Process groups, an env allowlist and secret references with log redaction. This is not a sandbox. |
-| [0010](ADR-0010-provider-adapters-and-provisioning.md) | Provider adapters and provisioning | Accepted (interface + FakeProvider); first real provider Proposed | Offers are expressed as capability templates; provisioning flow is tested only against a simulated provider. |
+| [0010](ADR-0010-provider-adapters-and-provisioning.md) | Provider adapters and provisioning | Accepted; Google Cloud adapter validated | Offers are capability templates; Google Cloud (Compute Engine) is the first real adapter, validated end to end with a CPU VM. |
 | [0011](ADR-0011-cost-accounting-and-retry-semantics.md) | Cost accounting and retry semantics | Accepted (milestone 1) | Estimates and charges are distinct record kinds; delivery is at-least-once; retries are opt-in. |
 | [0012](ADR-0012-licensing-and-project-governance.md) | Licensing and project governance | Accepted (licence); governance Proposed | Apache-2.0; published on PyPI as `gpulayer`. Contributor terms and security policy still open. |
 | [0013](ADR-0013-website-and-documentation-stack.md) | Website and documentation stack | Proposed | Compares MkDocs-Material, Docusaurus and Astro Starlight. Undecided. |
@@ -35,6 +35,7 @@ proposed. Each ADR says which part is which.
 | [0017](ADR-0017-distribution-and-installation.md) | Distribution: install script, Docker images, then packages | Accepted (milestone 2) | `curl ... install.sh | sh` into a private virtualenv, one Docker image for server and workers (CPU or CUDA base); GHCR images and PyPI after the licence decision. |
 | [0016](ADR-0016-performance-parallelism-and-distribution.md) | Speed, parallelism and job distribution as primary goals | Accepted (milestone 2) | No fixed sleeps on hot paths (long-poll dispatch and job waits), no per-step device syncs, measured changes, and a roadmap for concurrent tasks per worker and topology-aware placement. |
 | [0018](ADR-0018-trainer-scope.md) | Trainer scope relative to PyTorch Lightning | Accepted (milestone 2) | Adopt Lightning's names for the features most scripts need, keep the per-step path lean, leave the ecosystem (loggers, DeepSpeed) to `launch()`. |
+| [0019](ADR-0019-long-running-services.md) | Long-running services | Proposed | `ServiceJob`: replicas that stay up, `$PORT` and reported endpoints, restarts on the worker, re-placement on worker loss; no ingress yet. |
 
 ## Template
 

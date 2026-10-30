@@ -41,7 +41,7 @@ const ROWS: Row[] = [
     name: "GPUlayer",
     what: "Places workloads on machines you can reach, starts them, returns logs and results",
     runsOn: "This machine, servers that join, cloud VMs that join",
-    machines: "Picks a compatible machine per job (GPU, memory, frameworks); cloud provisioning is simulated today",
+    machines: "Picks a compatible machine per job (GPU, memory, frameworks), and can create Google Cloud VMs for it",
     workloads: "Any command, Python functions with any library, distributed PyTorch on many machines",
     hosting: "Self-hosted; embedded mode needs no server",
     highlight: true,
@@ -149,8 +149,8 @@ const MATRIX: MatrixRow[] = [
   },
   {
     feature: "Provisions cloud capacity",
-    marks: ["planned", "no", "no", "yes", "yes", "yes", "yes", "partial"],
-    note: "GPUlayer: provider interface exists, only a simulated adapter",
+    marks: ["partial", "no", "no", "yes", "yes", "yes", "yes", "partial"],
+    note: "GPUlayer: creates and deletes Google Cloud VMs per job; other clouds not yet",
   },
   {
     feature: "Long-running services",
@@ -238,7 +238,7 @@ const NOTES: Note[] = [
   {
     name: "SkyPilot and dstack",
     summary:
-      "Both provision and manage cloud capacity: they choose instance types and regions, start VMs or pods, and run your commands there. dstack also runs services and dev environments and can use on-prem servers. GPUlayer's cloud provisioning exists only as a simulated adapter today. Its strengths are a lightweight join for any machine you already have, capability-aware placement with explanations, and the Python and PyTorch APIs.",
+      "Both provision and manage cloud capacity: they choose instance types and regions, start VMs or pods, and run your commands there. dstack also runs services and dev environments and can use on-prem servers. GPUlayer creates and deletes Google Cloud VMs per job; other clouds need adapters. Its strengths are a lightweight join for any machine you already have, capability-aware placement with explanations, and the Python and PyTorch APIs.",
     choose:
       "Choose SkyPilot or dstack when you mainly need cloud capacity across providers, spot recovery, or long-running services today.",
     together:
@@ -274,7 +274,7 @@ const PERF_ROWS: { case: string; gl: number; pl: number; glOver: number; plOver:
 ];
 
 const BEHIND = [
-  "No real cloud provisioning or autoscaling yet (simulated adapter only); SkyPilot, dstack and Ray already do this.",
+  "Cloud provisioning covers Google Cloud only, with no autoscaling of a standing pool; SkyPilot, dstack and Ray cover more clouds.",
   "No long-running services yet; dstack, Ray Serve, Modal and Kubernetes handle them.",
   "A small PyTorch Trainer: FSDP is experimental (CPU-tested), and there is no DeepSpeed or logger integration, unlike PyTorch Lightning.",
   "Multi-node training runs at the same speed as PyTorch Lightning under torchrun (within 2% on 1 to 8 machines). GPUlayer is faster at start-up and per step on small models, and it starts all the nodes for you.",

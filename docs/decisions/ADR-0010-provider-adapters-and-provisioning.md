@@ -1,6 +1,6 @@
 # ADR-0010: Provider adapters and provisioning
 
-- **Status:** Accepted (milestone 1) for the adapter interface and provisioning flow, **tested only against `FakeProvider` (simulated)**. The choice of a first real provider is Proposed.
+- **Status:** Accepted. Interface and provisioning flow (milestone 1); first real provider: Google Cloud Compute Engine (2026-10-30), validated end to end with a CPU VM.
 - **Date:** 2026-10-29
 
 ## Context
@@ -38,7 +38,18 @@ that its GPU runtime works.
   capacity limits, failure injection and an `on_provision` hook that plays the
   machine's boot script in tests.
 
-## Candidate evaluation criteria for the first real provider (no choice made)
+## First real provider: Google Cloud (2026-10-30)
+
+`GCPProvider` (`providers/gcp.py`, extra `gpulayer[gcp]`) calls the Compute Engine REST API
+with Application Default Credentials. Offers are configured (`gpulayer up --providers`), GPU
+specs come from a fixed table of known accelerator types, and prices only from the config. The
+instance token, reference, server URL and certificate fingerprint go in instance metadata; a
+startup script installs GPUlayer and runs `gpulayer join --instance-ref` as a systemd service.
+Inserts carry a request id, so a retried call creates nothing new; capacity and quota errors
+map to `CapacityUnavailable` and `QuotaExceeded`. Chosen first because the project had a GCP
+account and quota to validate against; the criteria below still apply to the next ones.
+
+## Evaluation criteria for providers
 
 - A documented, stable API for create/describe/terminate, with idempotency tokens.
 - Bootstrap mechanism (user-data or cloud-init) and secret delivery that keeps the
@@ -56,7 +67,9 @@ that its GPU runtime works.
 
 ## Consequences and trade-offs
 
-- **No real cloud provisioning exists.** All cloud-path tests are simulated.
+- Cloud provisioning works on Google Cloud; other clouds need adapters. Lifecycle tests still
+  use the simulated provider, and the GCP adapter has a unit test against a fake API plus one
+  live run.
 - **Known gaps:** provider calls run while the DB transaction lock is held (ADR-0001).
   There is no orphan reconciliation (scanning the provider for tagged instances we lost
   track of), and no retry on `CapacityUnavailable`. Termination failure is logged as an
