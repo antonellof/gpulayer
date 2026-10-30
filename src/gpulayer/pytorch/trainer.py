@@ -225,7 +225,12 @@ class Trainer:
             start_epoch = state["epoch"] + 1
             self.global_step = state.get("global_step", 0)
             self.history = state.get("history", [])
-        step_fn = rt.module(_TrainingStep(model))
+        # DDP only syncs gradients for calls to its forward, so wrap training_step for DDP;
+        # otherwise call it directly (one module call fewer per step).
+        ddp = rt.module(_TrainingStep(model)) if rt.distributed else model
+        step_fn = ddp if rt.distributed else model.training_step
+        if not rt.distributed:
+            model.to(rt.device)
         train = rt.dataloader(train)
         val = rt.dataloader(val, shuffle=False) if val is not None else None
         out_dir = rt.output_dir(self.default_root_dir / _run_name())
@@ -244,8 +249,9 @@ class Trainer:
             if isinstance(train.sampler, DistributedSampler):
                 train.sampler.set_epoch(epoch)
             model.train()
-            # Running sums stay on the device; see Module.log.
-            sums: dict[str, Any] = defaultdict(float)
+            # Logged values stay on the device (see Module.log) and are added up once per
+            # epoch, not with one tensor operation per step.
+            logged: dict[str, list[Any]] = defaultdict(list)
             count = 0
             t0 = time.perf_counter()
             accumulate = self.accumulate_grad_batches
@@ -261,7 +267,7 @@ class Trainer:
                 # Apply the optimizer every `accumulate` batches (and on the last one). On the
                 # other batches DDP skips its gradient all-reduce.
                 apply = (batch_idx + 1) % accumulate == 0 or batch_idx + 1 == n_batches
-                with rt.no_sync(step_fn, enabled=not apply):
+                with rt.no_sync(ddp, enabled=not apply):
                     with rt.autocast():
                         loss = step_fn(batch, batch_idx)
                     if not isinstance(loss, torch.Tensor):
@@ -277,7 +283,7 @@ class Trainer:
                         self.should_stop = True
                 logs = model._gl_step_logs or {"train_loss": loss.detach().float()}
                 for k, v in logs.items():
-                    sums[k] = sums[k] + v
+                    logged[k].append(v)
                 count += 1
                 if self.callbacks:
                     _call(
@@ -306,7 +312,7 @@ class Trainer:
                     break  # same step count on every rank, so no extra synchronisation
             if scheduler is not None and interval == "epoch":
                 scheduler.step()
-            metrics = {k: rt.mean(float(v) / max(count, 1)) for k, v in sums.items()}
+            metrics = {k: rt.mean(_total(v) / max(count, 1)) for k, v in logged.items()}
             last = epoch + 1 == self.max_epochs or (
                 self.max_steps is not None and self.global_step >= self.max_steps
             )
@@ -441,6 +447,15 @@ class Trainer:
                 raise ValidationFailed("a fractional val_check_interval needs a sized loader")
             return max(1, int(n_batches * v)) if v < 1.0 else None
         return v
+
+
+def _total(values: list[Any]) -> float:
+    """Sum of logged values: one stack and sum for tensors, a plain sum for numbers."""
+    tensors = [v for v in values if isinstance(v, torch.Tensor)]
+    total = float(sum(v for v in values if not isinstance(v, torch.Tensor)))
+    if tensors:
+        total += float(torch.stack([t.reshape(()) for t in tensors]).sum())
+    return total
 
 
 def _to_cpu(value: Any) -> Any:

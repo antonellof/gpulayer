@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import contextlib
 import os
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +59,9 @@ def seed_everything(seed: int) -> None:
         import numpy as np
 
         np.random.seed(seed)
+
+
+_NOOP = contextlib.nullcontext()
 
 
 class Runtime:
@@ -161,31 +163,35 @@ class Runtime:
         self, model: nn.Module, enabled: bool = True
     ) -> contextlib.AbstractContextManager[Any]:
         """Skip DDP's gradient all-reduce for this backward (gradient accumulation)."""
+        if not (enabled and self.distributed):
+            return _NOOP  # called every step: no import or allocation on the common path
         from torch.nn.parallel import DistributedDataParallel as DDP
 
-        if enabled and isinstance(model, DDP):
+        if isinstance(model, DDP):
             return model.no_sync()
-        return contextlib.nullcontext()
+        return _NOOP
 
     def to_device(self, batch: Any) -> Any:
+        if self.device.type == "cpu":
+            return batch  # DataLoader batches are already on the CPU
+        return self._to_device(batch)
+
+    def _to_device(self, batch: Any) -> Any:
         if isinstance(batch, torch.Tensor):
             return batch.to(self.device, non_blocking=True)
         if isinstance(batch, (list, tuple)):
-            return type(batch)(self.to_device(b) for b in batch)
+            return type(batch)(self._to_device(b) for b in batch)
         if isinstance(batch, dict):
-            return {k: self.to_device(v) for k, v in batch.items()}
+            return {k: self._to_device(v) for k, v in batch.items()}
         return batch
 
     # ------------------------------------------------------------- precision
 
-    @contextlib.contextmanager
-    def autocast(self) -> Iterator[None]:
+    def autocast(self) -> contextlib.AbstractContextManager[Any]:
         if self.precision == "32-true":
-            yield
-            return
+            return _NOOP
         dtype = torch.bfloat16 if self.precision == "bf16-mixed" else torch.float16
-        with torch.autocast(device_type=self.device.type, dtype=dtype):
-            yield
+        return torch.autocast(device_type=self.device.type, dtype=dtype)
 
     def backward(self, loss: torch.Tensor) -> None:
         if self.scaler is not None:

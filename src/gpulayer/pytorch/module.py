@@ -46,7 +46,10 @@ class Module(nn.Module):
         # Tensors stay on the device: reading them (.item()) would make the CPU wait for the
         # GPU on every step. The Trainer reads them only when it prints or ends an epoch.
         if isinstance(value, torch.Tensor):
-            self._gl_step_logs[name] = value.detach().float().mean()
+            value = value.detach()
+            if value.ndim or value.dtype != torch.float32:  # a scalar loss needs no op
+                value = value.float().mean()
+            self._gl_step_logs[name] = value
         else:
             self._gl_step_logs[name] = float(value)
 
