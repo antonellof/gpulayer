@@ -21,22 +21,36 @@ it there and brings back logs, outputs and results. PyTorch gets a deeper integr
 Documentation: [gpulayer.dev/docs](https://www.gpulayer.dev/docs/).
 
 > **v0.3.0.** Tested on CPU, Apple Silicon (PyTorch MPS and MLX) and an
-> NVIDIA Tesla T4, and across two machines on Google Cloud. Several GPUs per machine and NCCL
+> NVIDIA Tesla T4, and on up to 30 machines on Google Cloud. Several GPUs per machine and NCCL
 > across machines are implemented but not validated yet; cloud provisioning is simulated. See
 > [Status and roadmap](https://github.com/antonellof/gpulayer/blob/main/docs/project/status.md).
 
 ## Install
 
 ```bash
-pip install gpulayer                 # or: uv tool install gpulayer
-gpulayer resources detect            # what this machine can run
+pip install gpulayer
 ```
 
-Add PyTorch with `pip install 'gpulayer[torch]'`. Or use the install script
-(`curl -fsSL https://raw.githubusercontent.com/antonellof/gpulayer/main/install.sh | sh`, a private
-virtual environment), Docker (`docker build -t gpulayer .`, see [deploy/docker](https://github.com/antonellof/gpulayer/tree/main/deploy/docker)), or from
-source to run the examples (`uv pip install -e '.[dev,examples]'`).
+That's it. Check what this machine can run:
+
+```bash
+gpulayer resources detect
+```
+
+To train with PyTorch, install it too: `pip install "gpulayer[torch]"`.
+
+<details>
+<summary>Other ways to install</summary>
+
+| Method | Command |
+|---|---|
+| As a standalone CLI with [uv](https://docs.astral.sh/uv/) | `uv tool install gpulayer` |
+| Install script (own virtual environment, no sudo) | `curl -fsSL https://raw.githubusercontent.com/antonellof/gpulayer/main/install.sh \| sh` |
+| Docker | `docker build -t gpulayer .` (see [deploy/docker](https://github.com/antonellof/gpulayer/tree/main/deploy/docker)) |
+| From source, to run the examples | `git clone https://github.com/antonellof/gpulayer && cd gpulayer && pip install -e ".[dev,examples]"` |
+
 More in [Installation](https://github.com/antonellof/gpulayer/blob/main/docs/get-started/installation.md).
+</details>
 
 ## Quickstart
 
@@ -115,6 +129,9 @@ optimizer:
   machines (32 processes) and 30 workers across two GCP regions.
 - Across two machines: a distributed job spanning both, fail-fast in 2.7 s, and 55.6 small
   jobs per second.
+
+![One training job on more machines](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/perf/strong-scaling-light.svg#gh-light-mode-only)
+![One training job on more machines](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/perf/strong-scaling-dark.svg#gh-dark-mode-only)
 
 Method, all charts and raw logs:
 [Performance and comparison](https://github.com/antonellof/gpulayer/blob/main/docs/get-started/performance-and-comparison.md). Reproduce them
