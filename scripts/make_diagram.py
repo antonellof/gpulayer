@@ -11,6 +11,8 @@ import re
 from pathlib import Path
 from xml.sax.saxutils import escape
 
+from make_logo import mark
+
 ROOT = Path(__file__).resolve().parents[1]
 ICONS = ROOT / "site" / "node_modules" / "simple-icons" / "icons"
 OUT = ROOT / "docs" / "assets"
@@ -51,15 +53,6 @@ BRAND = {
     "docker": "#2496ED",
 }
 
-MARK = (
-    '<path d="M3 20.5 16 27.5 29 20.5" stroke="{c}" stroke-opacity=".4" stroke-width="2.4" '
-    'stroke-linecap="round" stroke-linejoin="round" fill="none"/>'
-    '<path d="M3 15.5 16 22.5 29 15.5" stroke="{c}" stroke-opacity=".7" stroke-width="2.4" '
-    'stroke-linecap="round" stroke-linejoin="round" fill="none"/>'
-    '<path fill="{c}" fill-rule="evenodd" d="M16 3.2 29 10.2 16 17.2 3 10.2Z '
-    'M16 7.4 21.2 10.2 16 13 10.8 10.2Z"/>'
-    '<path fill="{c}" fill-opacity=".55" d="M16 8.9 18.4 10.2 16 11.5 13.6 10.2Z"/>'
-)
 CLOUD = (
     '<path d="M17.5 19H7a4.5 4.5 0 1 1 .9-8.9A6 6 0 0 1 19.4 9.6 4.75 4.75 0 0 1 17.5 19Z" '
     'fill="none" stroke="{c}" stroke-width="1.8" stroke-linejoin="round"/>'
@@ -152,8 +145,8 @@ def render(theme: str) -> str:
     gx, gy, gw, gh = 370, 96, 250, 300
     parts.append(card(gx, gy, gw, gh, t, accent=True))
     parts.append(
-        f'<g transform="translate({gx + 24} {gy + 22}) scale(1.25)">'
-        f"{MARK.format(c=t['accent'])}</g>"
+        f'<svg x="{gx + 22}" y="{gy + 20}" width="44" height="44" viewBox="0 0 64 64">'
+        f"{mark(f'dg-{theme}')}</svg>"
     )
     parts.append(
         f'<text x="{gx + 72}" y="{gy + 50}" font-family="-apple-system, \'Segoe UI\', '
