@@ -30,13 +30,13 @@ without GPU libraries, and it must report uncertain values as uncertain instead 
   | Accelerator | Independent | Distributed |
   |---|---|---|
   | cpu | tested | tested (torchrun+gloo, one host) |
-  | cuda | implemented (mock-based detection/scheduling tests; same process path as CPU) | implemented (planning tested; NCCL never run) |
+  | cuda | hardware-validated (Tesla T4, 2026-10-30) | implemented (planning tested; NCCL never run) |
   | mps | hardware-validated (smoke test on Apple Silicon) | unsupported |
   | rocm | detection-only | unsupported |
 
   `implemented` (added to `SupportLevel` for this reason) means an executable path exists
   but has not run on the relevant hardware; it is scheduled, but never advertised as tested. `tests/hardware/test_gpu_smoke.py`
-  has a CUDA smoke test, but it has not been run on NVIDIA hardware in this repository.
+  has a CUDA smoke test; it passed on a Tesla T4 with `scripts/validate_gpu.sh` on 2026-10-30.
 - Workers get `CUDA_VISIBLE_DEVICES` restricted to the requested count. CPU jobs get an
   empty value, so they cannot grab a GPU by accident.
 

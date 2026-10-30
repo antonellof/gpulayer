@@ -155,8 +155,8 @@ const STATUS: { label: string; dot: string; items: string }[] = [
     items:
       "Local execution, SDK and CLI · scheduling · servers and workers over HTTPS (one host) · DDP, 2 nodes × 2 processes (one host) · MLX, NumPy and shell jobs",
   },
-  { label: "Hardware-validated", dot: "bg-emerald-500", items: "Apple Metal (MPS), single-process jobs" },
-  { label: "Implemented, not validated", dot: "bg-amber-500", items: "NVIDIA CUDA and NCCL · workers on separate machines" },
+  { label: "Hardware-validated", dot: "bg-emerald-500", items: "Apple Metal (MPS) · NVIDIA CUDA on one GPU (Tesla T4) · workers on separate machines" },
+  { label: "Implemented, not validated", dot: "bg-amber-500", items: "Several GPUs per machine · NCCL across machines" },
   { label: "Simulated", dot: "bg-amber-500", items: "Cloud provisioning (FakeProvider)" },
   {
     label: "Planned",
@@ -204,14 +204,14 @@ export default function Home() {
               className="inline-flex items-center gap-2 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
               <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-              v{VERSION} · tested on CPU and Apple Silicon
+              v{VERSION} · tested on CPU, Apple Silicon and NVIDIA
               <ArrowRight className="h-3 w-3" />
             </Link>
             <h1 className="mt-6 max-w-4xl text-5xl font-semibold leading-[1.02] tracking-[-0.045em] sm:text-6xl lg:text-7xl">
-              Run any workload on every GPU you can reach.
+              Run any workload on every GPU and CPU you can reach.
             </h1>
             <p className="lede mt-6 max-w-2xl sm:text-xl">
-              GPUlayer sits between your code and your GPUs: your laptop, remote servers, clusters, data
+              GPUlayer sits between your code and your GPUs and CPUs: your laptop, remote servers, clusters, data
               centers and cloud VMs. Commands, Python functions and distributed jobs go to a machine that can run them, and the
               results come back.
             </p>

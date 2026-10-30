@@ -1,0 +1,13 @@
+case       trainer   ms/step start-up s
+mlp-fp32   gl           3.93       4.83
+mlp-fp32   pl           5.41       5.39
+mlp-fp32   ratio    gl faster x1.38
+mlp-fp16   gl           5.04       5.11
+mlp-fp16   pl           6.54       5.80
+mlp-fp16   ratio    gl faster x1.30
+cnn-fp16   gl          12.18       5.19
+cnn-fp16   pl          12.27       5.74
+cnn-fp16   ratio    gl faster x1.01
+ddp-cpu-2  gl           3.39       9.25
+ddp-cpu-2  pl           7.46       9.01
+ddp-cpu-2  ratio    gl faster x2.20

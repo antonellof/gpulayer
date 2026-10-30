@@ -1,0 +1,216 @@
+
+==== hardware and software
+name, memory.total [MiB], driver_version, compute_cap
+Tesla T4, 15360 MiB, 580.178.04, 7.5
+	[4mGPU0	CPU Affinity	NUMA Affinity	GPU NUMA ID[0m
+GPU0	 X 	0-7	0		N/A
+
+Legend:
+
+  X    = Self
+  SYS  = Connection traversing PCIe as well as the SMP interconnect between NUMA nodes (e.g., QPI/UPI)
+  NODE = Connection traversing PCIe as well as the interconnect between PCIe Host Bridges within a NUMA node
+  PHB  = Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)
+  PXB  = Connection traversing multiple PCIe bridges (without traversing the PCIe Host Bridge)
+  PIX  = Connection traversing at most a single PCIe bridge
+  NV#  = Connection traversing a bonded set of # NVLinks
+Linux 6.8.0-1070-gcp x86_64
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+8
+               total        used        free      shared  buff/cache   available
+Mem:              29           0          28           0           0          28
+
+==== install
+downloading uv 0.13.6 x86_64-unknown-linux-gnu
+installing to /home/user/.local/bin
+  uv
+  uvx
+everything's installed!
+
+To add $HOME/.local/bin to your PATH, either restart your shell or run:
+
+    source $HOME/.local/bin/env (sh, bash, zsh)
+    source $HOME/.local/bin/env.fish (fish)
+torch 2.15.0+cu132 cuda 13.2 available True devices 1
+gpulayer 0.1.0
+
+==== gpulayer resources detect
+host      gpulayer-t4 (linux/x86_64), 8 cores, 29.37 GB RAM, python 3.12.16
+torch     2.15.0  distributed backends: gloo,nccl
+device    [0] cuda Tesla T4 (15.0 GB dedicated) independent=implemented distributed=implemented
+
+==== test suite
+.....s.............................................F..................s. [ 41%]
+........................................................................ [ 82%]
+.............................F                                           [100%]
+=================================== FAILURES ===================================
+___________________________ test_run_map_and_options ___________________________
+
+client = <gpulayer.sdk.client.Client object at 0x773c7a6a20c0>
+
+    def test_run_map_and_options(client):
+        from remote_pkg.funcs import add
+    
+        f = add.options(client=client)
+        assert f.ref == "remote_pkg.funcs:add"
+        assert f.run(2, b=40, stream_logs=False) == 42
+        assert f.map([(1, 1), (2, 2), (3, 3)]) == [2, 4, 6]
+>       with pytest.raises(gl.RemoteError, match="cuda"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RemoteError
+
+tests/integration/test_remote.py:32: Failed
+_____________________________ test_versions_agree ______________________________
+
+    def test_versions_agree():
+        # tomllib needs Python 3.11; the [project] version line is enough here.
+        project = re.search(r'^version = "([^"]+)"', (ROOT / "pyproject.toml").read_text(), re.M)
+        assert project
+        project = project.group(1)
+>       site = re.search(r'VERSION = "([^"]+)"', (ROOT / "site/src/lib/version.ts").read_text())
+                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_version.py:16: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../.local/share/uv/python/cpython-3.12.16-linux-x86_64-gnu/lib/python3.12/pathlib.py:1027: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/home/user/gpulayer/site/src/lib/version.ts'), mode = 'r'
+buffering = -1, encoding = 'locale', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/home/user/gpulayer/site/src/lib/version.ts'
+
+../.local/share/uv/python/cpython-3.12.16-linux-x86_64-gnu/lib/python3.12/pathlib.py:1013: FileNotFoundError
+=========================== short test summary info ============================
+FAILED tests/integration/test_remote.py::test_run_map_and_options - Failed: D...
+FAILED tests/unit/test_version.py::test_versions_agree - FileNotFoundError: [...
+2 failed, 170 passed, 2 skipped in 189.68s (0:03:09)
+FAILED: pytest -q -p no:cacheprovider
+
+==== CUDA hardware tests
+============================= test session starts ==============================
+platform linux -- Python 3.12.16, pytest-9.2.0, pluggy-1.7.0 -- /home/user/gpulayer/.venv-validate/bin/python
+rootdir: /home/user/gpulayer
+configfile: pyproject.toml
+collecting ... collected 2 items / 1 deselected / 1 selected
+
+tests/hardware/test_gpu_smoke.py::test_cuda_independent_job PASSED       [100%]
+
+======================= 1 passed, 1 deselected in 8.06s ========================
+
+==== CUDA checks
+CHECK detect-cuda PASS Tesla T4 15.0 GB cc7.5 (2.5s)
+[gpulayer] training on cuda, precision 32-true, 3 epoch(s)
+epoch 0 step 50 train_loss=0.0106
+epoch 0 done in 0.483s: train_loss=0.1058 val_loss=0.0085
+epoch 1 step 100 train_loss=0.0056
+epoch 1 done in 0.169s: train_loss=0.0063 val_loss=0.0057
+epoch 2 step 150 train_loss=0.0033
+epoch 2 done in 0.172s: train_loss=0.0036 val_loss=0.0046
+Traceback (most recent call last):
+  File "/home/user/gpulayer/scripts/validate_cuda.py", line 33, in wrap
+    detail = fn() or ""
+             ^^^^
+  File "/home/user/gpulayer/scripts/validate_cuda.py", line 107, in <lambda>
+    check(f"trainer-in-process-{_precision}")(lambda p=_precision: fit(p, compiled=False))
+                                                                   ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/gpulayer/scripts/validate_cuda.py", line 102, in fit
+    assert next(model.parameters()).device.type == "cuda"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+CHECK trainer-in-process-32-true FAIL AssertionError: 
+[gpulayer] training on cuda, precision bf16-mixed, 3 epoch(s)
+epoch 0 step 50 train_loss=0.0116
+epoch 0 done in 0.221s: train_loss=0.1106 val_loss=0.0082
+epoch 1 step 100 train_loss=0.0046
+epoch 1 done in 0.193s: train_loss=0.0062 val_loss=0.0057
+epoch 2 step 150 train_loss=0.0031
+epoch 2 done in 0.191s: train_loss=0.0035 val_loss=0.0043
+Traceback (most recent call last):
+  File "/home/user/gpulayer/scripts/validate_cuda.py", line 33, in wrap
+    detail = fn() or ""
+             ^^^^
+  File "/home/user/gpulayer/scripts/validate_cuda.py", line 107, in <lambda>
+    check(f"trainer-in-process-{_precision}")(lambda p=_precision: fit(p, compiled=False))
+                                                                   ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/gpulayer/scripts/validate_cuda.py", line 102, in fit
+    assert next(model.parameters()).device.type == "cuda"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+CHECK trainer-in-process-bf16-mixed FAIL AssertionError: 
+[gpulayer] training on cuda, precision 16-mixed, 3 epoch(s)
+epoch 0 step 50 train_loss=0.0093
+epoch 0 done in 0.362s: train_loss=0.1109 val_loss=0.0092
+epoch 1 step 100 train_loss=0.0055
+epoch 1 done in 0.213s: train_loss=0.0067 val_loss=0.0061
+epoch 2 step 150 train_loss=0.0032
+epoch 2 done in 0.202s: train_loss=0.0038 val_loss=0.0048
+Traceback (most recent call last):
+  File "/home/user/gpulayer/scripts/validate_cuda.py", line 33, in wrap
+    detail = fn() or ""
+             ^^^^
+  File "/home/user/gpulayer/scripts/validate_cuda.py", line 107, in <lambda>
+    check(f"trainer-in-process-{_precision}")(lambda p=_precision: fit(p, compiled=False))
+                                                                   ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/gpulayer/scripts/validate_cuda.py", line 102, in fit
+    assert next(model.parameters()).device.type == "cuda"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+CHECK trainer-in-process-16-mixed FAIL AssertionError: 
+[gpulayer] training on cuda, precision bf16-mixed, 3 epoch(s)
+/home/user/gpulayer/.venv-validate/lib/python3.12/site-packages/torch/_inductor/compile_fx.py:3634: UserWarning: Tesla T4 does not support bfloat16 compilation natively, skipping
+  warnings.warn(
+epoch 0 step 50 train_loss=0.0106
+epoch 0 done in 3.671s: train_loss=0.1078 val_loss=0.0090
+epoch 1 step 100 train_loss=0.0061
+epoch 1 done in 0.413s: train_loss=0.0062 val_loss=0.0062
+epoch 2 step 150 train_loss=0.0034
+epoch 2 done in 0.203s: train_loss=0.0036 val_loss=0.0047
+Traceback (most recent call last):
+  File "/home/user/gpulayer/scripts/validate_cuda.py", line 33, in wrap
+    detail = fn() or ""
+             ^^^^
+  File "/home/user/gpulayer/scripts/validate_cuda.py", line 108, in <lambda>
+    check("trainer-torch-compile-bf16")(lambda: fit("bf16-mixed", compiled=True))
+                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/gpulayer/scripts/validate_cuda.py", line 102, in fit
+    assert next(model.parameters()).device.type == "cuda"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+CHECK trainer-torch-compile-bf16 FAIL AssertionError: 
+CHECK cuda-job-gets-its-reserved-gpu PASS CVD 0 1 Tesla T4 (4.7s)
+CHECK one-gpu-worker-runs-gpu-jobs-one-at-a-time PASS gap 0.03s (8.4s)
+CHECK trainer-as-gpulayer-job-cuda PASS succeeded (10.5s)
+SUMMARY 4/8 passed ['trainer-in-process-32-true', 'trainer-in-process-bf16-mixed', 'trainer-in-process-16-mixed', 'trainer-torch-compile-bf16']
+FAILED: python scripts/validate_cuda.py
+
+==== benchmarks
+jobs=20 workers=1
+python start-up               17.2 ms
+one job, idle worker       p50    31.0 ms   p95    33.2 ms   (submit -> wait() returns)
+burst of jobs:
+submit -> started          p50   302.2 ms   p95   516.1 ms
+submit -> client sees done p50   330.1 ms   p95   544.4 ms
+throughput                   29.3 jobs/s
+2 node(s) x 2 process(es), seconds
+direct    dispatch  0.01  launcher start  0.06  import torch  1.83  init group  0.08  launcher exit  0.72  completion  0.01  total  2.69
+direct    dispatch  0.01  launcher start  0.05  import torch  1.84  init group  0.47  launcher exit  0.71  completion  0.01  total  3.09
+direct    dispatch  0.01  launcher start  0.06  import torch  1.82  init group  0.52  launcher exit  0.67  completion  0.01  total  3.08
+torchrun  dispatch  0.01  launcher start  1.97  import torch  1.86  init group  0.03  launcher exit  1.43  completion  0.01  total  5.29
+torchrun  dispatch  0.01  launcher start  1.96  import torch  1.83  init group  0.01  launcher exit  1.47  completion  0.01  total  5.28
+torchrun  dispatch  0.01  launcher start  2.48  import torch  1.82  init group  0.02  launcher exit  1.45  completion  0.01  total  5.77
+
+==== done
+SOME STEPS FAILED

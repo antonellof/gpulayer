@@ -9,7 +9,7 @@ const code = JetBrains_Mono({ subsets: ["latin"], variable: "--font-code", displ
 
 export const metadata: Metadata = {
   title: {
-    default: "GPUlayer | Run any workload on every GPU you can reach",
+    default: "GPUlayer | Run any workload on every GPU and CPU you can reach",
     template: "%s | GPUlayer",
   },
   description:

@@ -40,8 +40,18 @@ def finetune(...): ...
 
 ## Validation status
 
-CUDA detection and scheduling are tested with mocked `nvidia-smi` output, and execution uses
-the same process path as CPU and MPS jobs. Neither single-GPU nor NCCL multi-GPU runs have
-been validated on NVIDIA hardware in this repository yet. The hardware test
-(`pytest -m hardware_cuda tests/hardware`) runs automatically on a machine with a GPU; please
-report the result.
+Validated on a Tesla T4 (GCP `n1-standard-8`, driver 580, torch 2.15 with CUDA 13.2):
+detection, CUDA jobs with their reserved GPU, one GPU job at a time on a one-GPU worker, and
+the PyTorch Trainer in `32-true`, `bf16-mixed`, `16-mixed` and with `torch.compile`, both in
+process and as a job. Several GPUs per machine and NCCL across GPUs or machines have not been
+run on hardware yet.
+
+Repeat the validation on any NVIDIA machine:
+
+```bash
+bash scripts/validate_gpu.sh 2>&1 | tee validate.log
+```
+
+It runs the test suite, the CUDA hardware test, `scripts/validate_cuda.py` and the
+benchmarks. Results from 2026-10-30 are in `benchmarks/results/2026-10-30-gcp/t4/`, and
+[Performance and comparison](../get-started/performance-and-comparison.md) has the numbers.

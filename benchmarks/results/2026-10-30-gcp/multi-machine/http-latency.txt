@@ -1,0 +1,9 @@
+benchmarks/http_requests.py on gpulayer-cpu (e2-standard-8, Ubuntu 22.04, Python 3.12), loopback, TLS
+before (new connection per request, no TCP_NODELAY):
+one thread    p50  43.04 ms   p95  44.15 ms        23 req/s
+8 threads        112 req/s
+after (kept-open connection per thread, TCP_NODELAY, handshake in handler thread):
+one thread    p50   0.60 ms   p95   1.17 ms      1555 req/s
+8 threads        853 req/s
+macOS (M2 Pro) loopback: before p50 1.04 ms, 869 req/s; after p50 0.24 ms, 4114 req/s
+500 tiny jobs over 2 GCP VMs: before 64.4 s (7.8 jobs/s), after 9.0 s (55.6 jobs/s)

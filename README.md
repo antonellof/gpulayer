@@ -3,11 +3,12 @@
 </p>
 
 <p align="center">
-  <b>Run any workload on every GPU you can reach.</b><br>
+  <b>Run any workload on every GPU and CPU you can reach.</b><br>
   <a href="#install">Install</a> ·
   <a href="#quickstart">Quickstart</a> ·
   <a href="#for-ai-and-coding-agents">AI agents</a> ·
   <a href="#why-gpulayer">Why GPUlayer</a> ·
+  <a href="#performance-and-comparison">Performance</a> ·
   <a href="#architecture">Architecture</a> ·
   <a href="https://www.gpulayer.dev/docs/">Docs</a> ·
   <a href="examples">Examples</a> ·
@@ -19,9 +20,10 @@ it (this one, remote servers, clusters, data centers, cloud VMs, or several at o
 it there and brings back logs, outputs and results. PyTorch gets a deeper integration on top.
 Documentation: [gpulayer.dev/docs](https://www.gpulayer.dev/docs/).
 
-> **v0.1.0, the first release.** Tested on CPU and Apple Silicon (PyTorch MPS and MLX) and in
-> Linux CI. NVIDIA GPUs and multi-machine runs are implemented but not validated yet; cloud
-> provisioning is simulated. See [Status and roadmap](docs/project/status.md).
+> **v0.2.0.** Tested on CPU, Apple Silicon (PyTorch MPS and MLX) and an
+> NVIDIA Tesla T4, and across two machines on Google Cloud. Several GPUs per machine and NCCL
+> across machines are implemented but not validated yet; cloud provisioning is simulated. See
+> [Status and roadmap](docs/project/status.md).
 
 ## Install
 
@@ -94,6 +96,24 @@ has it, wherever that machine is.
 On one machine with one GPU, running your code directly is simpler. GPUlayer runs jobs that
 finish (long-running services are planned) and is not a sandbox for untrusted code. More in
 [Why GPUlayer](https://www.gpulayer.dev/docs/#why-gpulayer).
+
+## Performance and comparison
+
+Measured on one NVIDIA Tesla T4 against PyTorch Lightning, with the same model, data and
+optimizer:
+
+![Training step time: GPUlayer and PyTorch Lightning](docs/assets/perf/training-step-light.svg#gh-light-mode-only)
+![Training step time: GPUlayer and PyTorch Lightning](docs/assets/perf/training-step-dark.svg#gh-dark-mode-only)
+
+- GPUlayer's Trainer is 1.3 to 1.4x faster per step on small models and the same on a
+  compute-bound CNN, and starts about 0.6 s sooner.
+- Distributed jobs start 1.1 to 2.3 s faster than through torchrun.
+- Across two machines: a distributed job spanning both, fail-fast in 2.7 s, and 55.6 small
+  jobs per second.
+
+Method, all charts and raw logs:
+[Performance and comparison](docs/get-started/performance-and-comparison.md). Reproduce them
+with [`benchmarks/`](benchmarks/README.md).
 
 ## Architecture
 

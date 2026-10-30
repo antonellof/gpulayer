@@ -1,0 +1,37 @@
+{
+  "_about": "Numbers behind docs/project/performance.md and the charts from scripts/make_perf_charts.py. Raw logs are in this directory; see benchmarks/README.md for how they were produced.",
+  "training_vs_lightning": {
+    "hardware": "GCP n1-standard-8 + 1x Tesla T4 (driver 580.178.04), Ubuntu 22.04, Python 3.12, torch 2.15.0+cu132, Lightning 2.6.6",
+    "method": "benchmarks/lightning_comparison: 100 and 600 steps, 3 runs each in fresh processes, one at a time; ms/step = (median 600 - median 100) / 500; start-up = median 100-step wall - 100 x step",
+    "unit_step": "ms per step",
+    "unit_startup": "s",
+    "cases": [
+      {"case": "MLP, fp32", "gpulayer_ms": 3.93, "lightning_ms": 5.41, "gpulayer_startup_s": 4.83, "lightning_startup_s": 5.39},
+      {"case": "MLP, fp16 mixed", "gpulayer_ms": 5.04, "lightning_ms": 6.54, "gpulayer_startup_s": 5.11, "lightning_startup_s": 5.80},
+      {"case": "CNN, fp16 mixed", "gpulayer_ms": 12.18, "lightning_ms": 12.27, "gpulayer_startup_s": 5.19, "lightning_startup_s": 5.74},
+      {"case": "DDP, 2 CPU processes", "gpulayer_ms": 3.39, "lightning_ms": 7.46, "gpulayer_startup_s": 9.25, "lightning_startup_s": 9.01}
+    ]
+  },
+  "distributed_startup": {
+    "method": "benchmarks/distributed_startup.py and benchmarks/multi_machine.py: trivial job (import torch, init_process_group, all_reduce/barrier), 2 nodes x 2 processes, gloo; median of runs",
+    "unit": "s, submit to client sees the result",
+    "rows": [
+      {"setup": "Apple M2 Pro, one machine", "direct_s": 0.94, "torchrun_s": 2.07, "runs": 4},
+      {"setup": "GCP n1-standard-8, one machine", "direct_s": 3.08, "torchrun_s": 5.29, "runs": 3},
+      {"setup": "Two GCP VMs over the network", "direct_s": 2.43, "torchrun_s": 4.73, "runs": 1}
+    ]
+  },
+  "http": {
+    "method": "benchmarks/http_requests.py (TLS, loopback) and benchmarks/multi_machine.py scale section",
+    "request_p50_ms": {"linux_before": 43.04, "linux_after": 0.60, "macos_before": 1.04, "macos_after": 0.24},
+    "jobs_per_s_500_small_jobs_two_vms": {"before": 7.8, "after": 55.6}
+  },
+  "multi_machine": {
+    "hardware": "GCP europe-west1-b: n1-standard-8 + T4 (server, workers 't4' 1 slot and 't4-cpu' 6 slots) and e2-standard-8 (worker 'cpu8', 8 slots)",
+    "workloads": [
+      {"name": "500 tiny jobs (0.02 s each)", "jobs": 500, "wall_s": 9.0, "task_s": 11.0, "per_worker": {"cpu8": 243, "t4-cpu": 188, "t4": 69}},
+      {"name": "200 data shards (0.6 s each)", "jobs": 200, "wall_s": 11.8, "task_s": 127.8, "per_worker": {"cpu8": 115, "t4-cpu": 72, "t4": 13}},
+      {"name": "96 training runs (sweep)", "jobs": 96, "wall_s": 55.2, "task_s": 241.7, "per_worker": {"cpu8": 56, "t4-cpu": 34, "t4": 6}}
+    ]
+  }
+}

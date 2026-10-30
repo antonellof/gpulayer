@@ -18,6 +18,10 @@
         {
           "slug": "get-started/concepts",
           "title": "Core concepts"
+        },
+        {
+          "slug": "get-started/performance-and-comparison",
+          "title": "Performance and comparison"
         }
       ]
     },

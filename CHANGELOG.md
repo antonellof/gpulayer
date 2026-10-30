@@ -3,7 +3,18 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
-## Unreleased
+## 0.2.0 (2026-10-30)
+
+Validated on an NVIDIA GPU and across machines, faster distributed start-up and HTTP API, and
+a measured comparison with PyTorch Lightning.
+
+### Migration from 0.1.0
+
+- Distributed jobs default to `launcher="direct"`. Upgrade the server and the workers
+  together: 0.1.0 workers are not chosen for `direct` jobs, and a 0.1.0 server rejects them.
+  Pass `launcher="torchrun"` (`--launcher torchrun`) to keep the old behaviour.
+
+### Changes
 
 - `gpulayer mcp`: a Model Context Protocol server on stdio, so AI and coding agents can list
   resources, submit commands (with a project directory and inputs), wait, read logs, cancel
@@ -27,6 +38,12 @@ before 1.0, minor versions may change public APIs, with migration notes here.
   fp16 and with `torch.compile`, GPU reservation), and on two machines over a real network
   (distributed jobs across both, fail-fast, hundreds of jobs). `scripts/validate_gpu.sh`
   repeats the single-machine part on any NVIDIA machine.
+- Performance and comparison: a docs page and README section with charts
+  (`scripts/make_perf_charts.py`), the GPUlayer vs PyTorch Lightning harness
+  (`benchmarks/lightning_comparison/`), `benchmarks/multi_machine.py`, raw results in
+  `benchmarks/results/2026-10-30-gcp/`, and `benchmarks/cloud/gcp.sh` to rerun them on Google
+  Cloud.
+- NVIDIA CUDA independent jobs are now `hardware-validated` in the support matrix.
 
 ## 0.1.0 (2026-10-29)
 

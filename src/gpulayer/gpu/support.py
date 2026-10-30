@@ -28,12 +28,12 @@ SUPPORT: dict[Accelerator, BackendSupport] = {
         "Distributed CPU uses torchrun + gloo; tested multi-process on one host.",
     ),
     Accelerator.CUDA: BackendSupport(
+        SupportLevel.HARDWARE_VALIDATED,
         SupportLevel.IMPLEMENTED,
-        SupportLevel.IMPLEMENTED,
-        "Any CUDA workload (binaries, CuPy, JAX, PyTorch, ...) once the driver works. Detection "
-        "and scheduling are unit-tested with mocks and execution shares the tested process "
-        "path, but neither single-GPU nor NCCL multi-GPU runs have been made on NVIDIA "
-        "hardware yet (tests/hardware/test_gpu_smoke.py is skipped without a GPU).",
+        "Any CUDA workload (binaries, CuPy, JAX, PyTorch, ...) once the driver works. Single-GPU "
+        "jobs and the PyTorch Trainer (fp32, bf16, fp16, torch.compile) were validated on a "
+        "Tesla T4 (scripts/validate_gpu.sh). NCCL across several GPUs has not been run on "
+        "hardware yet.",
     ),
     Accelerator.MPS: BackendSupport(
         SupportLevel.HARDWARE_VALIDATED,

@@ -276,7 +276,7 @@ const BEHIND = [
   "A small PyTorch Trainer: no FSDP, DeepSpeed or logger integrations, unlike PyTorch Lightning.",
   "Measured with the torchrun launcher, distributed jobs started about a second slower than PyTorch Lightning's DDP on one machine. The direct launcher, now the default, removes about 1.1 s; the comparison has not been re-run.",
   "Distributed jobs support PyTorch process groups only; no JAX multi-host or MPI launcher yet.",
-  "First release (v0.1.0): NVIDIA GPUs and multi-machine runs are implemented but not validated yet. Not a sandbox for untrusted users.",
+  "v0.2.0: validated on one NVIDIA GPU and two machines; several GPUs per machine and NCCL across machines are not validated yet. Not a sandbox for untrusted users.",
 ];
 
 const FITS = [

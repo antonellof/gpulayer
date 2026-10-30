@@ -1,0 +1,20 @@
+WORKER t4 offline host=gpulayer-t4 slots=1 devices=Tesla T4 addr=10.132.0.2
+WORKER cpu8 offline host=gpulayer-cpu slots=8 devices=cpu addr=10.132.0.3
+WORKER t4-cpu offline host=gpulayer-t4 slots=6 devices=Tesla T4 addr=10.132.0.2
+WORKER t4 idle host=gpulayer-t4 slots=1 devices=Tesla T4 addr=10.132.0.2
+WORKER t4-cpu idle host=gpulayer-t4 slots=6 devices=Tesla T4 addr=10.132.0.2
+WORKER cpu8 idle host=gpulayer-cpu slots=8 devices=cpu addr=10.132.0.3
+CHECK workers PASS 6 workers on 2 hosts
+CHECK cuda-job-lands-on-gpu-worker PASS ['t4-cpu'] ['HOST gpulayer-t4']
+CHECK impossible-request-rejected PASS unschedulable: no eligible worker
+CHECK distributed-2-machines-direct PASS world=4 hosts=['gpulayer-cpu', 'gpulayer-t4'] 2.43s
+CHECK distributed-2-machines-torchrun PASS world=4 hosts=['gpulayer-cpu', 'gpulayer-t4'] 4.73s
+CHECK rank-failure-stops-both-machines PASS {'cpu8': 'failed', 't4': 'failed'} 2.7s
+RESULT scale_500_shards: 500 jobs, 0 failed, wall 9.0s, 55.6 jobs/s, summed task time 11.0s (x1.2 parallel), per worker {'t4-cpu': 188, 'cpu8': 243, 't4': 69}
+CHECK scale PASS 500 results, median task 0.02s
+RESULT heavy_200_shards_96MB: 200 jobs, 0 failed, wall 11.8s, 16.9 jobs/s, summed task time 127.8s (x10.8 parallel), per worker {'t4-cpu': 72, 'cpu8': 115, 't4': 13}
+CHECK heavy PASS 200 results, median task 0.60s
+RESULT sweep_96_trainings: 96 jobs, 0 failed, wall 55.2s, 1.7 jobs/s, summed task time 241.7s (x4.4 parallel), per worker {'t4-cpu': 34, 'cpu8': 56, 't4': 6}
+RESULT sweep diverged trials (NaN loss): 19
+CHECK sweep PASS best lr 0.042813 loss 0.0010
+SUMMARY all passed

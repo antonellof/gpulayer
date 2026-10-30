@@ -85,5 +85,5 @@ glt.launch(nodes=2, devices=4, accelerator="cuda", target="remote")
 |---|---|
 | 1 node x 2 processes, 2 nodes x 2 processes, CPU/gloo, one machine | tested end to end |
 | A failing rank fails the job and stops the other node | tested |
-| Nodes on different machines | not validated yet |
+| Nodes on different machines | validated with gloo on two GCP VMs |
 | NCCL on NVIDIA GPUs | implemented, not validated on hardware yet |

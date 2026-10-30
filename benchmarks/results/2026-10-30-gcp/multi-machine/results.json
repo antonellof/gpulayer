@@ -1,0 +1,37 @@
+{
+  "distributed_direct_s": 2.43,
+  "distributed_torchrun_s": 4.73,
+  "scale_500_shards": {
+    "jobs": 500,
+    "failed": 0,
+    "wall_s": 8.99,
+    "task_s": 11.05,
+    "per_worker": {
+      "t4-cpu": 188,
+      "cpu8": 243,
+      "t4": 69
+    }
+  },
+  "heavy_200_shards_96MB": {
+    "jobs": 200,
+    "failed": 0,
+    "wall_s": 11.83,
+    "task_s": 127.75,
+    "per_worker": {
+      "t4-cpu": 72,
+      "cpu8": 115,
+      "t4": 13
+    }
+  },
+  "sweep_96_trainings": {
+    "jobs": 96,
+    "failed": 0,
+    "wall_s": 55.18,
+    "task_s": 241.65,
+    "per_worker": {
+      "t4-cpu": 34,
+      "cpu8": 56,
+      "t4": 6
+    }
+  }
+}

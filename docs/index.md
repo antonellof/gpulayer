@@ -1,6 +1,6 @@
 # GPUlayer
 
-GPUlayer runs your workloads on every GPU you can reach: the one in your laptop, remote
+GPUlayer runs your workloads on every GPU and CPU you can reach: the ones in your laptop, remote
 servers, clusters, data centers, or cloud VMs. A workload can be a command in any
 language, a Python function using any library, or a distributed job across several machines.
 GPUlayer finds a machine that can run it, starts it there, and brings back the logs, outputs and
@@ -22,10 +22,12 @@ trainer = glt.Trainer(accelerator="cuda", devices=4, num_nodes=2, target="remote
 trainer.fit(model, train_loader)                                         # PyTorch integration
 ```
 
-> **Status: v0.1.0, the first release.** Local execution, scheduling, the server and worker protocol, and
-> distributed jobs on one host are implemented and tested, on CPU and Apple Silicon. NVIDIA GPUs
-> and multi-machine runs are implemented but not validated yet, and automatic cloud
-> provisioning is simulated. See [Status and roadmap](project/status.md).
+> **Status: v0.2.0.** Local execution, scheduling, the server and worker
+> protocol, and distributed jobs are implemented and tested on CPU and Apple Silicon, and
+> validated on an NVIDIA Tesla T4 and across two machines on Google Cloud. Several GPUs per
+> machine and NCCL across machines are not validated yet, and automatic cloud provisioning is
+> simulated. See [Status and roadmap](project/status.md) and
+> [Performance and comparison](get-started/performance-and-comparison.md).
 
 ## Why GPUlayer
 
@@ -107,9 +109,9 @@ flow in detail.
   supported yet; GPUlayer runs jobs that finish.
 - **Untrusted users.** Workloads run as normal processes on workers, not in a sandbox. Use
   GPUlayer among people who trust each other.
-- **Validated scale today.** GPUlayer is at its first release (v0.1.0). NVIDIA GPUs and
-  multi-machine runs are implemented but not validated yet, distributed jobs support PyTorch
-  only, and automatic cloud provisioning is simulated. Cloud VMs you start yourself can join
+- **Validated scale today.** GPUlayer is at v0.2.0. It has been validated
+  on one NVIDIA GPU and on two machines; several GPUs per machine and NCCL across machines are
+  not validated yet, distributed jobs support PyTorch only, and automatic cloud provisioning is simulated. Cloud VMs you start yourself can join
   with `gpulayer join`.
 
 Two constraints: function arguments and results must be JSON, and code ships as files (the
@@ -118,6 +120,7 @@ directory of your script), not as pickled Python objects.
 ## Where to go next
 
 - [Quickstart](get-started/quickstart.md): commands, functions and training, from this machine to several
+- [Performance and comparison](get-started/performance-and-comparison.md): measured results, including PyTorch Lightning
 - [Commands and scripts](workloads/commands.md), [Python functions](workloads/functions.md), [Any GPU framework](workloads/frameworks.md)
 - [PyTorch integration](pytorch/trainer.md)
 - [Run a server](guides/self-hosting.md): add more machines
