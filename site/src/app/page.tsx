@@ -375,7 +375,7 @@ export default function Home() {
             <p className="mt-6 max-w-3xl text-sm text-muted-foreground">
               On a single machine with a single GPU, running your code directly is simpler. GPUlayer runs jobs that
               finish (long-running services are planned) and is meant for people who trust each other.{" "}
-              <Link href="/docs/get-started/why-gpulayer/" className="link-arrow">
+              <Link href="/docs/#when-not-to-use-it" className="link-arrow">
                 When to use it
               </Link>
             </p>

@@ -93,7 +93,7 @@ has it, wherever that machine is.
 
 On one machine with one GPU, running your code directly is simpler. GPUlayer runs jobs that
 finish (long-running services are planned) and is not a sandbox for untrusted code. More in
-[Why GPUlayer](https://www.gpulayer.dev/docs/get-started/why-gpulayer/).
+[Why GPUlayer](https://www.gpulayer.dev/docs/#why-gpulayer).
 
 ## Architecture
 

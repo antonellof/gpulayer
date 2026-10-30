@@ -557,7 +557,7 @@ export default function ComparePage() {
               Try the quickstart <ArrowRight className="h-4 w-4" />
             </Link>
             <Link
-              href="/docs/get-started/why-gpulayer/"
+              href="/docs/#why-gpulayer"
               className="inline-flex items-center gap-1 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-secondary"
             >
               Why GPUlayer
