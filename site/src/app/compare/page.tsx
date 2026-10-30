@@ -491,8 +491,17 @@ export default function ComparePage() {
                 scheduled and started with torchrun), which is why its DDP start-up was about a
                 second longer. These runs used the torchrun launcher; the direct launcher, now
                 the default, removes about 1.1 s from a distributed job&apos;s start-up and
-                shutdown, and the comparison has not been re-run with it. These are CPU and Apple GPU results on one machine; NVIDIA and
-                multi-machine results have not been measured yet.
+                shutdown, and the comparison has not been re-run with it. These are CPU and Apple GPU results on one machine.
+              </p>
+              <p>
+                On an NVIDIA Tesla T4 (2026-10-30, same method, direct launcher), GPUlayer was 1.38x faster per step on an
+                fp32 MLP, 1.30x faster with fp16 mixed precision, the same on a compute-bound CNN, and 2.2x faster for
+                2-process CPU DDP with each trainer&apos;s defaults; it started 0.55 to 0.7 s sooner on one GPU. Charts,
+                method and logs:{" "}
+                <Link href="/docs/get-started/performance-and-comparison/" className="underline underline-offset-2">
+                  Performance and comparison
+                </Link>
+                .
               </p>
             </div>
           </div>

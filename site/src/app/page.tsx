@@ -212,8 +212,15 @@ export default function Home() {
             </h1>
             <p className="lede mt-6 max-w-2xl sm:text-xl">
               GPUlayer sits between your code and your GPUs and CPUs: your laptop, remote servers, clusters, data
-              centers and cloud VMs. Commands, Python functions and distributed jobs go to a machine that can run them, and the
-              results come back.
+              centers and cloud VMs. Commands, Python functions and PyTorch training go to a machine that can run them,
+              and the results come back.
+            </p>
+            <p className="mt-4 max-w-2xl text-sm text-muted-foreground">
+              Its PyTorch Trainer ran up to 1.38x faster per step than PyTorch Lightning on an NVIDIA T4, and started
+              sooner.{" "}
+              <Link href="/docs/get-started/performance-and-comparison/" className="link-arrow">
+                Benchmarks and method <ArrowRight className="h-3 w-3" />
+              </Link>
             </p>
             <div className="mt-9 flex flex-wrap items-center gap-3">
               <Link href="/docs/get-started/quickstart/" className="btn-primary">
