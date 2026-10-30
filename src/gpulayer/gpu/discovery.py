@@ -101,6 +101,48 @@ GPU_PACKAGES: dict[str, str] = {
 _TORCH_PROBE = _TORCH_PROBE % {"packages": sorted(GPU_PACKAGES)}
 
 
+# Can JAX and CuPy drive a CUDA GPU? Installed is not enough: a CPU-only jaxlib or a CuPy built
+# for another CUDA major version imports fine and then fails on the GPU. Run only when one of
+# them is installed, in its own interpreter; JAX must not preallocate GPU memory here.
+_ACCEL_PROBE = r"""
+import json, os
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+out = {}
+try:
+    import jax
+    if jax.devices("cuda"):
+        out["jax.cuda"] = jax.__version__
+except Exception:
+    pass
+try:
+    import cupy
+    if cupy.cuda.runtime.getDeviceCount() > 0:
+        int((cupy.arange(4) * 2).sum())  # a kernel must actually run
+        out["cupy.cuda"] = cupy.__version__
+except Exception:
+    pass
+print("ACCEL " + json.dumps(out), flush=True)
+"""
+
+
+def probe_gpu_frameworks(
+    packages: dict[str, str],
+    python: str = sys.executable,
+    runner: CommandRunner | None = None,
+    timeout: float = 90,
+) -> dict[str, str]:
+    """``jax.cuda`` / ``cupy.cuda`` when those packages can run on a CUDA GPU. Never raises."""
+    if not ({"jax", "jaxlib", "cupy", "cupy-cuda12x", "cupy-cuda11x"} & set(packages)):
+        return {}
+    code, out = (runner or run_command)([python, "-c", _ACCEL_PROBE], timeout)
+    for line in out.splitlines():
+        if line.startswith("ACCEL "):
+            with contextlib.suppress(json.JSONDecodeError, AttributeError):
+                found = json.loads(line[6:])
+                return {str(k): str(v).split("+")[0] for k, v in found.items()}
+    return {}
+
+
 def run_command(cmd: list[str], timeout: float) -> tuple[int, str]:
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
@@ -356,6 +398,9 @@ def detect_capabilities(
             launchers += ["direct", "torchrun"]
     elif tp.error:
         notes.append(f"torch unavailable: {tp.error}")
+    if nvidia:
+        # Like 'torch.cuda': this JAX / CuPy can run on the GPU, not just import.
+        frameworks.update(probe_gpu_frameworks(tp.packages, runner=runner))
 
     disk = shutil.disk_usage(workdir or os.getcwd())
     caps = WorkerCapabilities(

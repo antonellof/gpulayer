@@ -210,3 +210,31 @@ def test_join_waits_for_an_unreachable_server_but_not_a_wrong_token(monkeypatch)
         cli._register_when_reachable(
             lambda: (_ for _ in ()).throw(ConnectionRefusedError()), "u", wait=0
         )
+
+
+def test_jax_and_cupy_cuda_only_when_they_run_on_the_gpu(monkeypatch):
+    """Installed is not enough: 'jax.cuda' / 'cupy.cuda' come from a probe that uses the GPU."""
+    monkeypatch.setattr("gpulayer.gpu.discovery.apple_silicon", lambda: False)
+    smi = "0, Tesla T4, 15360, 7.5, 580.65\n"
+    calls = []
+
+    def run(cmd, timeout):
+        if cmd[0] == "nvidia-smi":
+            return 0, smi
+        if "ACCEL" in cmd[-1]:
+            calls.append(cmd)
+            return 0, 'noise\nACCEL {"jax.cuda": "0.7.2"}\n'  # CuPy failed on the GPU
+        return 127, ""
+
+    pkgs = {"jax": "0.7.2", "jaxlib": "0.7.2", "cupy-cuda12x": "13.6.0"}
+    caps = detect_capabilities(runner=run, torch_probe=lambda: TorchProbe(packages=pkgs))
+    assert caps.frameworks["jax.cuda"] == "0.7.2" and "cupy.cuda" not in caps.frameworks
+    assert caps.frameworks["cupy"] == "13.6.0"  # still installed, just not usable on the GPU
+    assert len(calls) == 1
+
+    calls.clear()  # neither installed: no probe at all
+    caps = detect_capabilities(runner=run, torch_probe=lambda: TorchProbe(packages={}))
+    assert "jax.cuda" not in caps.frameworks and calls == []
+    # No NVIDIA driver: no probe either
+    caps = detect_capabilities(runner=runner_for({}), torch_probe=lambda: TorchProbe(packages=pkgs))
+    assert "jax.cuda" not in caps.frameworks

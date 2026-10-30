@@ -5,6 +5,13 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Workers report `jax.cuda` and `cupy.cuda` only when JAX or CuPy actually ran on the GPU (a
+  probe in its own interpreter, run only when they are installed), as `torch.cuda` already
+  was. Before, an installed CPU-only `jax` was enough for a `--accelerator cuda --framework
+  jax` job to be placed there.
+- Examples for remote NVIDIA GPUs: Blender Cycles rendering, ffmpeg NVENC transcoding, JAX and
+  CuPy, and a PyTorch inference service. Not yet run on a GPU.
+
 - Two-level gradient sync (ADR-0020): with gloo and several processes per machine, the
   Trainer sums gradients inside each machine before all-reducing across machines
   (`Trainer(gradient_sync="auto" | "flat" | "two_level")`). On 8 GCP machines x 4 processes a
