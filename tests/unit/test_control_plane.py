@@ -298,3 +298,24 @@ def test_distributed_worker_loss_fails_group_without_retry(cp, clock):
         cp.heartbeat(w0)  # only node 0 stays alive
     st = cp.get_job(job.job_id)
     assert st.state == JobState.FAILED and st.attempts == 1
+
+
+def test_full_cluster_submit_only_evaluates_new_jobs_and_keeps_fifo(cp):
+    """With every slot busy, a submit gives the new job its first decision without
+    re-evaluating the queue; when a slot frees, the oldest queued job is placed first."""
+    w = reg(cp, max_concurrent_tasks=2)
+    jobs = [cp.submit(cmd_spec()) for _ in range(6)]
+    assert [cp.get_job(j.job_id).state for j in jobs[:2]] == [JobState.SCHEDULED] * 2
+    waiting = cp.get_job(jobs[2].job_id).scheduling
+    assert waiting is not None and not waiting.placed
+    assert "no free task slot" in str(waiting.model_dump())
+    late = cp.submit(cmd_spec())
+    assert cp.get_job(late.job_id).scheduling is not None  # new jobs still get a reason
+    # Queued jobs were not re-decided by the later submits.
+    assert cp.get_job(jobs[2].job_id).scheduling.decided_at == waiting.decided_at
+    a = cp.acquire_task(w)
+    cp.start_task(w, a.task_id)
+    cp.finish_task(w, a.task_id, OK)
+    cp.schedule_pending()
+    assert cp.get_job(jobs[2].job_id).state == JobState.SCHEDULED
+    assert all(cp.get_job(j.job_id).state == JobState.QUEUED for j in jobs[3:])

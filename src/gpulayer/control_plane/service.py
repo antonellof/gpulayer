@@ -65,6 +65,14 @@ MAX_LOG_LINE = 8192
 LogEntry = tuple[str, str] | tuple[str, str, int | None]  # (stream, line[, global rank])
 
 
+_PLACEABLE = (WorkerState.IDLE, WorkerState.BUSY)
+
+
+def _free_slots(views: list[WorkerView]) -> int:
+    """Task slots free on workers that can take work now."""
+    return sum(v.free_slots for v in views if v.state in _PLACEABLE)
+
+
 @dataclass
 class ControlPlaneConfig:
     heartbeat_interval_seconds: float = 2.0
@@ -99,6 +107,9 @@ class ControlPlane:
         from gpulayer.control_plane.provisioning import ProvisioningManager
 
         self.store = store
+        # Job specs never change after submission; parsing them on every scheduling pass
+        # cost O(queue) per submit. Entries leave when the job leaves the queue.
+        self._specs: dict[str, JobSpec] = {}
         self.artifacts = artifacts
         self.config = config or ControlPlaneConfig()
         self.now = clock
@@ -340,25 +351,49 @@ class ControlPlane:
             )
         return views
 
+    def _spec(self, job_id: str) -> JobSpec:
+        spec = self._specs.get(job_id)
+        if spec is None:
+            row = self.store.query("SELECT spec FROM jobs WHERE id=?", (job_id,))[0]
+            spec = self._specs[job_id] = JobSpec.model_validate_json(row["spec"])
+        return spec
+
     def schedule_pending(self) -> None:
         with self.store.tx() as c:
             views = self._worker_views()
+            free = _free_slots(views)
+            # With every task slot busy nothing can be placed, so only jobs that were never
+            # evaluated (just submitted) need a look; the rest keep their decision. A first
+            # evaluation already fails never-schedulable jobs and starts provisioning, and
+            # cancel_job resolves queued jobs itself. The partial index jobs_undecided makes
+            # this lookup independent of the queue length.
+            only_new = "" if free else " AND scheduling IS NULL"
             jobs = self.store.query(
-                "SELECT * FROM jobs WHERE state IN (?,?) ORDER BY created_at",
+                "SELECT id, state, attempts, cancel_requested, scheduling IS NULL AS undecided "
+                f"FROM jobs WHERE state IN (?,?){only_new} ORDER BY created_at",
                 (JobState.QUEUED.value, JobState.PROVISIONING.value),
             )
+            if free:
+                queued = {row["id"] for row in jobs}
+                for gone in [j for j in self._specs if j not in queued]:
+                    del self._specs[gone]
             for row in jobs:
                 job_id = row["id"]
-                spec = JobSpec.model_validate_json(row["spec"])
                 if row["cancel_requested"]:
                     self._set_job_state(job_id, JobState.CANCELLED)
                     continue
+                if free == 0 and not row["undecided"]:
+                    # The last slot went to an earlier job in this pass. Jobs never evaluated
+                    # get their first decision on the next pass (the jobs_undecided query).
+                    break
+                spec = self._spec(job_id)
                 decision = schedule(spec, views, job_id=job_id)
                 c.execute(
                     "UPDATE jobs SET scheduling=? WHERE id=?", (decision.model_dump_json(), job_id)
                 )
                 if decision.placed:
                     self._place(c, job_id, spec, row["attempts"] + 1, decision, views)
+                    free = _free_slots(views)
                     continue
                 if spec.placement.provisioning and JobState(row["state"]) == JobState.QUEUED:
                     self.provisioning.mark(job_id, spec, decision)

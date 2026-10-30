@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   rendezvous TEXT, provisioning_deadline TEXT, submitted_by TEXT
 );
 CREATE INDEX IF NOT EXISTS jobs_state ON jobs(state, created_at);
+CREATE INDEX IF NOT EXISTS jobs_undecided ON jobs(state, created_at) WHERE scheduling IS NULL;
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY, job_id TEXT NOT NULL, attempt INTEGER NOT NULL,
   node_rank INTEGER NOT NULL DEFAULT 0, worker_id TEXT, state TEXT NOT NULL,
