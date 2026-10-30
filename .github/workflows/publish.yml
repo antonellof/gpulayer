@@ -1,0 +1,51 @@
+# Publish to PyPI when a GitHub release is published, with trusted publishing (OpenID Connect):
+# no API token is stored. PyPI trusts this workflow file in this repository, running in the
+# `pypi` environment (configure both on pypi.org, see docs/project/contributing.md).
+name: publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Build sdist and wheel
+        run: uv build
+      - name: Check the version matches the tag
+        if: github.event_name == 'release'
+        run: |
+          version=$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)
+          test "v$version" = "${{ github.event.release.tag_name }}" \
+            || { echo "tag ${{ github.event.release.tag_name }} != version $version"; exit 1; }
+      - name: Smoke-test the wheel
+        run: |
+          uv venv /tmp/wheel-test
+          uv pip install --python /tmp/wheel-test/bin/python dist/*.whl
+          /tmp/wheel-test/bin/gpulayer --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/gpulayer/
+    permissions:
+      id-token: write  # trusted publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

@@ -38,6 +38,12 @@ implementation status of every feature accurately.
 
 ## Releases
 
-Not yet established. Versioning follows PEP 440 (`0.1.0.devN` during milestone 1). Contract
-changes bump `API_VERSION` / `PROTOCOL_VERSION` and must document migration. A license and
-release process will be set before any public release (ADR-0012).
+GPUlayer is licensed under Apache-2.0 (ADR-0012). Versions follow PEP 440; before 1.0, minor
+versions may change public APIs, with migration notes in `CHANGELOG.md`. Contract changes bump
+`API_VERSION` / `PROTOCOL_VERSION` and must document migration.
+
+To release: bump the version in `pyproject.toml`, `src/gpulayer/__init__.py` and
+`site/src/lib/version.ts` (`tests/unit/test_version.py` checks they agree), move the
+`Unreleased` CHANGELOG entries under the new version, wait for CI on `main`, then tag and
+publish a GitHub release. `.github/workflows/publish.yml` builds the package and uploads it to
+PyPI through trusted publishing.

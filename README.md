@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/logo.svg" alt="GPUlayer" width="300">
+  <img src="https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/logo.svg" alt="GPUlayer" width="300">
 </p>
 
 <p align="center">
@@ -11,8 +11,8 @@
   <a href="#performance-and-comparison">Performance</a> ·
   <a href="#architecture">Architecture</a> ·
   <a href="https://www.gpulayer.dev/docs/">Docs</a> ·
-  <a href="examples">Examples</a> ·
-  <a href="CHANGELOG.md">Changelog</a>
+  <a href="https://github.com/antonellof/gpulayer/tree/main/examples">Examples</a> ·
+  <a href="https://github.com/antonellof/gpulayer/blob/main/CHANGELOG.md">Changelog</a>
 </p>
 
 GPUlayer sends a command, a Python function or a distributed job to machines that can run
@@ -23,18 +23,20 @@ Documentation: [gpulayer.dev/docs](https://www.gpulayer.dev/docs/).
 > **v0.2.0.** Tested on CPU, Apple Silicon (PyTorch MPS and MLX) and an
 > NVIDIA Tesla T4, and across two machines on Google Cloud. Several GPUs per machine and NCCL
 > across machines are implemented but not validated yet; cloud provisioning is simulated. See
-> [Status and roadmap](docs/project/status.md).
+> [Status and roadmap](https://github.com/antonellof/gpulayer/blob/main/docs/project/status.md).
 
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/antonellof/gpulayer/main/install.sh | sh
-gpulayer resources detect      # what this machine can run
+pip install gpulayer                 # or: uv tool install gpulayer
+gpulayer resources detect            # what this machine can run
 ```
 
-Or with Docker (`docker build -t gpulayer .`, see [deploy/docker](deploy/docker)), or from
+Add PyTorch with `pip install 'gpulayer[torch]'`. Or use the install script
+(`curl -fsSL https://raw.githubusercontent.com/antonellof/gpulayer/main/install.sh | sh`, a private
+virtual environment), Docker (`docker build -t gpulayer .`, see [deploy/docker](https://github.com/antonellof/gpulayer/tree/main/deploy/docker)), or from
 source to run the examples (`uv pip install -e '.[dev,examples]'`).
-More in [Installation](docs/get-started/installation.md).
+More in [Installation](https://github.com/antonellof/gpulayer/blob/main/docs/get-started/installation.md).
 
 ## Quickstart
 
@@ -63,21 +65,21 @@ def benchmark(n: int) -> dict: ...
 benchmark.map([1024, 2048, 4096])                           # in parallel
 ```
 
-![GPUlayer dashboard](docs/assets/dashboard/overview-dark.png)
+![GPUlayer dashboard](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/dashboard/overview-dark.png)
 
-The [full quickstart](docs/get-started/quickstart.md) walks through each step with its output.
+The [full quickstart](https://github.com/antonellof/gpulayer/blob/main/docs/get-started/quickstart.md) walks through each step with its output.
 
 ## For AI and coding agents
 
 `gpulayer mcp` is an MCP server, so Claude Code, Claude Desktop, Cursor, Codex and VS Code
 agents can list GPUs, submit jobs, wait, read logs and download outputs. An
-[Agent Skill](integrations/skills/gpulayer/SKILL.md) covers agents that use the CLI.
+[Agent Skill](https://github.com/antonellof/gpulayer/blob/main/integrations/skills/gpulayer/SKILL.md) covers agents that use the CLI.
 
 ```bash
 claude mcp add gpulayer -- gpulayer mcp
 ```
 
-See [AI and coding agents](docs/guides/ai-agents.md).
+See [AI and coding agents](https://github.com/antonellof/gpulayer/blob/main/docs/guides/ai-agents.md).
 
 ## Why GPUlayer
 
@@ -102,8 +104,8 @@ finish (long-running services are planned) and is not a sandbox for untrusted co
 Measured on one NVIDIA Tesla T4 against PyTorch Lightning, with the same model, data and
 optimizer:
 
-![Training step time: GPUlayer and PyTorch Lightning](docs/assets/perf/training-step-light.svg#gh-light-mode-only)
-![Training step time: GPUlayer and PyTorch Lightning](docs/assets/perf/training-step-dark.svg#gh-dark-mode-only)
+![Training step time: GPUlayer and PyTorch Lightning](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/perf/training-step-light.svg#gh-light-mode-only)
+![Training step time: GPUlayer and PyTorch Lightning](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/perf/training-step-dark.svg#gh-dark-mode-only)
 
 - GPUlayer's Trainer is 1.3 to 1.4x faster per step on small models and the same on a
   compute-bound CNN, and starts about 0.6 s sooner.
@@ -112,13 +114,13 @@ optimizer:
   jobs per second.
 
 Method, all charts and raw logs:
-[Performance and comparison](docs/get-started/performance-and-comparison.md). Reproduce them
-with [`benchmarks/`](benchmarks/README.md).
+[Performance and comparison](https://github.com/antonellof/gpulayer/blob/main/docs/get-started/performance-and-comparison.md). Reproduce them
+with [`benchmarks/`](https://github.com/antonellof/gpulayer/blob/main/benchmarks/README.md).
 
 ## Architecture
 
-![Your workloads go through GPUlayer to the machines you can reach](docs/assets/architecture-light.svg#gh-light-mode-only)
-![Your workloads go through GPUlayer to the machines you can reach](docs/assets/architecture-dark.svg#gh-dark-mode-only)
+![Your workloads go through GPUlayer to the machines you can reach](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/architecture-light.svg#gh-light-mode-only)
+![Your workloads go through GPUlayer to the machines you can reach](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/architecture-dark.svg#gh-dark-mode-only)
 
 GPUlayer has three parts:
 
@@ -137,7 +139,7 @@ GPUlayer has three parts:
 A job goes from `queued` to `scheduled` when a worker fits, then `running`, and ends as
 `succeeded`, `failed`, `cancelled` or `timed_out`. Frameworks such as PyTorch, JAX, MLX and
 CuPy still decide how the computation uses the GPU; GPUlayer decides which GPU runs it. More in
-[Architecture overview](docs/architecture/overview.md).
+[Architecture overview](https://github.com/antonellof/gpulayer/blob/main/docs/architecture/overview.md).
 
 ## Development
 
@@ -146,6 +148,8 @@ uv pip install -e '.[dev,examples]'
 .venv/bin/pytest && .venv/bin/ruff check src tests && .venv/bin/mypy src
 ```
 
-See [Contributing](docs/project/contributing.md). No license has been chosen yet
-([ADR-0012](docs/decisions/ADR-0012-licensing-and-project-governance.md)); until one is added,
-no rights are granted beyond viewing.
+See [Contributing](https://github.com/antonellof/gpulayer/blob/main/docs/project/contributing.md).
+
+## License
+
+Apache License 2.0, see [LICENSE](https://github.com/antonellof/gpulayer/blob/main/LICENSE).

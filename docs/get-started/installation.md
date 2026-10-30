@@ -3,7 +3,16 @@
 GPUlayer needs Python 3.10 or newer. PyTorch is optional for the core package and required for
 everything in `gpulayer.pytorch`.
 
-GPUlayer is not on PyPI yet. There are three ways to install it.
+## From PyPI
+
+```bash
+pip install gpulayer                # the CLI and SDK
+pip install 'gpulayer[torch]'       # with PyTorch, for gpulayer.pytorch and distributed jobs
+uv tool install gpulayer            # the CLI in its own environment, with uv
+```
+
+Install it in the Python environment your jobs use: a worker runs `python` jobs with its own
+interpreter, so that environment needs the frameworks your jobs import.
 
 ## With the install script
 

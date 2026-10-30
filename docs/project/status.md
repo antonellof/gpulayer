@@ -111,9 +111,9 @@ uncommitted local changes, so it was deliberately left untouched.
 - Done: `install.sh` (curl one-liner, private virtualenv, uv or pip, no sudo; tested from a
   local checkout with and without uv), `Dockerfile` (CPU or CUDA base, unprivileged user,
   `/data` volume) and `deploy/docker/docker-compose.yml`. The image has not been built in CI.
-- Next, after the licence decision (ADR-0012) and making the repository public: CI that builds
-  and tests the images, published images on GitHub Container Registry, a PyPI release
-  (`pip install gpulayer`, `uv tool install gpulayer`), possibly a Homebrew formula.
+- Done: Apache-2.0 licence (ADR-0012), public repository, PyPI releases through trusted
+  publishing (`pip install gpulayer`).
+- Next: published images on GitHub Container Registry, possibly a Homebrew formula.
 
 ### Iteration 3: validate across machines
 

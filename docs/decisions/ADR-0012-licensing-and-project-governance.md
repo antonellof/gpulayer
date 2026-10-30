@@ -1,7 +1,7 @@
 # ADR-0012: Licensing and project governance
 
-- **Status:** Proposed (no decision; `pyproject.toml` deliberately declares no license)
-- **Date:** 2026-10-29
+- **Status:** Accepted (licence); contributor terms and governance Proposed
+- **Date:** 2026-10-29, decided 2026-10-30
 
 ## Context
 
@@ -28,13 +28,22 @@ Governance questions to settle alongside:
 
 ## Decision
 
-None yet. Until decided, the repository must not be published under an implied license.
+GPUlayer is licensed under the **Apache License 2.0** (owner decision, 2026-10-30). `LICENSE`
+holds the text and `pyproject.toml` declares `license = "Apache-2.0"`. The package is
+published on PyPI as `gpulayer` and the repository is public.
+
+Apache-2.0 was chosen for adoption: it is the common licence for infrastructure that
+companies run (Kubernetes, Ray, SkyPilot, PyTorch Lightning), and its explicit patent grant
+matters for a project that may receive contributions from companies. It allows proprietary
+forks and hosted resale; that is accepted.
 
 ## Consequences
 
-- External contributions should wait for the license and contributor-terms decision.
+- Anyone may use, modify and redistribute GPUlayer under Apache-2.0, including commercially.
+- Contributions are accepted under the same licence (inbound = outbound) until contributor
+  terms are decided.
 
 ## Follow-up
 
-- Owner decision on commercial intent (hosted offering or not), then pick a license,
-  add `LICENSE`, the contributor terms and `SECURITY.md`, and update `pyproject.toml`.
+- Contributor terms (DCO sign-off or CLA), `SECURITY.md` with a disclosure contact, and a
+  trademark policy for the name "GPUlayer" are still Proposed.

@@ -23,11 +23,15 @@ blocks publishing packages and images for others to use.
    (`--build-arg BASE=... EXTRAS=pytorch-cuda`). It runs as an unprivileged user with state
    in `/data`. `deploy/docker/docker-compose.yml` runs a server and workers, with an NVIDIA
    worker profile.
-3. **Later, once ADR-0012 settles the licence and the repository is public:**
+3. **PyPI (done, 2026-10-30, after ADR-0012 chose Apache-2.0 and the repository went
+   public):** `.github/workflows/publish.yml` builds the sdist and wheel and publishes them
+   to PyPI with trusted publishing (OpenID Connect, no API token) when a GitHub release is
+   published, from the `pypi` environment. `pip install gpulayer` and
+   `uv tool install gpulayer` work.
+4. **Later:**
    - publish images to GitHub Container Registry from CI (`ghcr.io/antonellof/gpulayer`,
      tags per release, `:cuda` variant), with SBOM and signatures;
-   - release to PyPI so `pip install gpulayer` and `uv tool install gpulayer` work, and switch
-     the install script to the released package;
+   - switch the install script to the released package;
    - consider a Homebrew formula for macOS workers.
 
 ## Alternatives considered
