@@ -7,7 +7,12 @@ Three layers, each usable alone:
 * ``Module`` + ``Trainer`` -- a small training API that also picks where training runs
 """
 
-from gpulayer.pytorch.callbacks import Callback, EarlyStopping, ModelCheckpoint
+from gpulayer.pytorch.callbacks import (
+    Callback,
+    EarlyStopping,
+    LearningRateMonitor,
+    ModelCheckpoint,
+)
 from gpulayer.pytorch.launch import LaunchResult, in_gpulayer_job, is_launcher_process, launch
 from gpulayer.pytorch.module import Module
 from gpulayer.pytorch.runtime import Runtime, resolve_accelerator, seed_everything
@@ -17,6 +22,7 @@ __all__ = [
     "Callback",
     "EarlyStopping",
     "LaunchResult",
+    "LearningRateMonitor",
     "ModelCheckpoint",
     "Module",
     "Runtime",

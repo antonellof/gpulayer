@@ -88,7 +88,7 @@ job is placed, so name it).
 
 ## Callbacks
 
-Callbacks hook into the training loop. Two are built in:
+Callbacks hook into the training loop. Three are built in:
 
 ```python
 from gpulayer.pytorch import EarlyStopping, ModelCheckpoint, Trainer
@@ -101,9 +101,13 @@ model = MyModel.load_from_checkpoint(best.best_model_path)
 
 - `EarlyStopping(monitor, mode="min", patience=3, min_delta=0.0)` stops when the metric has
   not improved for `patience` epochs.
-- `ModelCheckpoint(monitor, mode="min", filename="best.ckpt")` saves a checkpoint each time
-  the metric improves. `best_model_path` points at it, also when training ran on workers (the
-  file comes back with the job's outputs).
+- `ModelCheckpoint(monitor, mode="min", filename="best.ckpt", save_top_k=1)` saves a
+  checkpoint each time the metric improves. With `save_top_k=N` it keeps the N best epochs as
+  `best-epoch=E.ckpt` and deletes worse ones; `best_k_models` maps each kept file to its
+  score. `best_model_path` points at the best, also when training ran on workers (the files
+  come back with the job's outputs).
+- `LearningRateMonitor()` records the learning rate used in each epoch as `lr` (or `lr-<i>`
+  per parameter group) in `trainer.history` and `trainer.callback_metrics`.
 - The monitored name must be logged with `self.log(...)`; otherwise the error lists the
   names that were logged.
 
@@ -186,7 +190,7 @@ current process, without gradients and with the Trainer's precision.
 
 ## What the Trainer does not do yet
 
-Logger integrations, learning-rate monitoring, keeping the best N checkpoints, and strategies
+Logger integrations, validation within an epoch, and strategies
 other than DDP (such as FSDP) are not implemented. [ADR-0018](../decisions/ADR-0018-trainer-scope.md)
 lists what is planned. If you need them now, keep your existing training code and run it with
 [`launch()`](launch.md).

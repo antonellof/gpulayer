@@ -103,11 +103,14 @@ class EarlyStopping(_Monitor):
 
 
 class ModelCheckpoint(_Monitor):
-    """Save ``checkpoints/<filename>`` whenever ``monitor`` improves (rank 0 only).
+    """Save checkpoints of the best epochs by ``monitor`` (rank 0 only).
 
-    The file has the same format as ``last.ckpt``, so ``Module.load_from_checkpoint`` and
-    ``Trainer.fit(ckpt_path=...)`` accept it. ``best_model_path`` points at it afterwards,
-    also when training ran on GPUlayer workers.
+    With ``save_top_k=1`` (the default) the best epoch is kept as ``checkpoints/<filename>``.
+    With ``save_top_k=N`` the N best are kept as ``checkpoints/<stem>-epoch=E.ckpt`` and worse
+    ones are deleted. The files have the same format as ``last.ckpt``, so
+    ``Module.load_from_checkpoint`` and ``Trainer.fit(ckpt_path=...)`` accept them.
+    ``best_model_path`` points at the best one afterwards, also when training ran on GPUlayer
+    workers; ``best_k_models`` maps each kept file to its score.
     """
 
     def __init__(
@@ -117,27 +120,103 @@ class ModelCheckpoint(_Monitor):
         mode: Literal["min", "max"] = "min",
         filename: str = "best.ckpt",
         min_delta: float = 0.0,
+        save_top_k: int = 1,
     ) -> None:
         super().__init__(monitor, mode, min_delta)
         if "/" in filename or "\\" in filename or not filename.endswith(".ckpt"):
             raise ValidationFailed("filename must be a plain name ending in .ckpt")
+        if save_top_k < 1:
+            raise ValidationFailed("save_top_k must be >= 1")
         self.filename = filename
+        self.save_top_k = save_top_k
         self.best_model_path: Path | None = None
+        self.best_k_models: dict[Path, float] = {}
+
+    def _kept_name(self, epoch: int) -> str:
+        if self.save_top_k == 1:
+            return self.filename
+        return f"{self.filename[: -len('.ckpt')]}-epoch={epoch}.ckpt"
+
+    def _worst(self) -> tuple[Path, float]:
+        pick = max if self.mode == "min" else min
+        return pick(self.best_k_models.items(), key=lambda kv: kv[1])
 
     def on_train_epoch_end(self, trainer: Trainer, model: Module) -> None:
         value = self._current(trainer)
-        if not self._improved(value):
+        if math.isnan(value):
             return
-        self.best_score = value
-        path = trainer.save_checkpoint(self.filename)
-        if path is not None:
+        if self.save_top_k == 1:
+            if not self._improved(value):
+                return
+        elif len(self.best_k_models) >= self.save_top_k:
+            worst_path, worst = self._worst()
+            better = (
+                value < worst - self.min_delta
+                if self.mode == "min"
+                else (value > worst + self.min_delta)
+            )
+            if not better:
+                return
+        if self._improved(value):
+            self.best_score = value
+        path = trainer.save_checkpoint(self._kept_name(trainer.current_epoch))
+        if path is None:  # not rank 0
+            return
+        if self.save_top_k > 1:
+            self.best_k_models[path] = value
+            if len(self.best_k_models) > self.save_top_k:
+                worst_path, _ = self._worst()
+                del self.best_k_models[worst_path]
+                worst_path.unlink(missing_ok=True)
+            pick = min if self.mode == "min" else max
+            self.best_model_path = pick(self.best_k_models.items(), key=lambda kv: kv[1])[0]
+        else:
+            self.best_k_models = {path: value}
             self.best_model_path = path
 
     def on_fit_end(self, trainer: Trainer, model: Module) -> None:
         if self.best_model_path is None and trainer.launch_result is not None:
-            # Trained on workers: the checkpoint came back with the job's outputs.
-            found = sorted(trainer.launch_result.output_dir.rglob(self.filename))
-            self.best_model_path = found[0] if found else None
+            # Trained on workers: the checkpoints came back with the job's outputs.
+            out = trainer.launch_result.output_dir
+            if self.save_top_k == 1:
+                found = sorted(out.rglob(self.filename))
+                self.best_model_path = found[0] if found else None
+            else:
+                import torch
+
+                stem = self.filename[: -len(".ckpt")]
+                for path in sorted(out.rglob(f"{stem}-epoch=*.ckpt")):
+                    # Each checkpoint carries the metric history up to its epoch.
+                    state = torch.load(path, map_location="cpu", weights_only=False)
+                    epoch_metrics = state.get("history", [{}])[-1]
+                    self.best_k_models[path] = float(epoch_metrics.get(self.monitor, math.nan))
+                if self.best_k_models:
+                    pick = min if self.mode == "min" else max
+                    self.best_model_path = pick(
+                        self.best_k_models.items(),
+                        key=lambda kv: kv[1] if not math.isnan(kv[1]) else math.inf,
+                    )[0]
+
+
+class LearningRateMonitor(Callback):
+    """Record the learning rate each optimizer parameter group used in an epoch, as ``lr`` (one
+    group) or ``lr-<i>``, in ``trainer.history`` and ``trainer.callback_metrics``. The value is
+    read when the epoch starts, before an epoch-interval scheduler steps."""
+
+    def __init__(self) -> None:
+        self._lrs: dict[str, float] = {}
+
+    def on_train_epoch_start(self, trainer: Trainer, model: Module) -> None:
+        optimizer = trainer._optimizer
+        groups = optimizer.param_groups if optimizer is not None else []
+        self._lrs = {
+            ("lr" if len(groups) == 1 else f"lr-{i}"): float(g["lr"]) for i, g in enumerate(groups)
+        }
+
+    def on_train_epoch_end(self, trainer: Trainer, model: Module) -> None:
+        trainer.callback_metrics.update(self._lrs)
+        if trainer.history:
+            trainer.history[-1].update(self._lrs)
 
 
 def _call(callbacks: list[Callback], hook: str, *args: Any) -> None:

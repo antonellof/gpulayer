@@ -12,6 +12,8 @@ before 1.0, minor versions may change public APIs, with migration notes here.
   that were reserved (`nvidia-smi` numbering) on machines with mixed GPU models.
 - Trainer: `max_steps`, `check_val_every_n_epoch`, `trainer.test()` with `Module.test_step`
   and `trainer.predict()` with `Module.predict_step` (ADR-0018).
+- `ModelCheckpoint(save_top_k=N)` keeps the N best epochs (also after remote runs), and a
+  `LearningRateMonitor` callback records each epoch's learning rate.
 
 ## 0.2.0 (2026-10-30)
 

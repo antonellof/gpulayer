@@ -153,3 +153,54 @@ def test_one_rank_asking_to_stop_stops_every_rank(tmp_path):
     )
     assert p.returncode == 0, p.stdout + p.stderr
     assert "epochs trained: 1" in p.stdout  # both ranks left after epoch 0, no hang
+
+
+class Scripted(Lin):
+    """Logs a fixed val_loss per epoch, to test which checkpoints are kept."""
+
+    VALUES = [5.0, 1.0, 4.0, 2.0, 3.0]
+
+    def validation_step(self, batch, batch_idx):
+        self.log("val_loss", self.VALUES[self.trainer.current_epoch])
+
+
+def test_model_checkpoint_save_top_k_keeps_the_k_best(tmp_path):
+    best = glt.ModelCheckpoint(monitor="val_loss", save_top_k=2)
+    t = trainer(tmp_path, max_epochs=5, callbacks=[best])
+    t.fit(Scripted(), *data())
+    kept = sorted(p.name for p in best.best_k_models)
+    assert kept == ["best-epoch=1.ckpt", "best-epoch=3.ckpt"]  # val_loss 1.0 and 2.0
+    on_disk = sorted(p.name for p in best.best_model_path.parent.glob("best-*.ckpt"))
+    assert on_disk == kept  # worse ones were deleted
+    assert best.best_model_path.name == "best-epoch=1.ckpt"
+    with pytest.raises(ValidationFailed, match="save_top_k"):
+        glt.ModelCheckpoint(save_top_k=0)
+
+
+def test_learning_rate_monitor_records_each_epochs_rate(tmp_path):
+    class WithScheduler(Lin):
+        def configure_optimizers(self):
+            opt = torch.optim.SGD(self.parameters(), lr=0.1)
+            return opt, torch.optim.lr_scheduler.StepLR(opt, step_size=1, gamma=0.5)
+
+    t = trainer(tmp_path, max_epochs=3, callbacks=[glt.LearningRateMonitor()])
+    t.fit(WithScheduler(), *data())
+    assert [h["lr"] for h in t.history] == pytest.approx([0.1, 0.05, 0.025])
+    assert t.callback_metrics["lr"] == pytest.approx(0.025)
+
+
+def test_model_checkpoint_top_k_finds_the_best_after_a_remote_run(tmp_path):
+    """After a run on workers, the kept files come back with the outputs; their scores are read
+    from the history stored in each checkpoint."""
+    from types import SimpleNamespace
+
+    ckpts = tmp_path / "node0" / "checkpoints"
+    ckpts.mkdir(parents=True)
+    for epoch, loss in ((1, 0.4), (3, 0.2)):
+        history = [{"val_loss": 9.0}] * epoch + [{"val_loss": loss}]
+        torch.save({"history": history}, ckpts / f"best-epoch={epoch}.ckpt")
+    best = glt.ModelCheckpoint(monitor="val_loss", save_top_k=2)
+    remote = SimpleNamespace(launch_result=SimpleNamespace(output_dir=tmp_path))
+    best.on_fit_end(remote, None)
+    assert best.best_model_path.name == "best-epoch=3.ckpt"
+    assert sorted(best.best_k_models.values()) == [0.2, 0.4]
