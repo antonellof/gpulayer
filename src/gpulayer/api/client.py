@@ -73,9 +73,12 @@ class HttpTransport:
                 self._ctx.minimum_version = ssl.TLSVersion.TLSv1_2
             else:
                 self._ctx = ssl.create_default_context(cafile=ca_file)
-        # One kept-open connection per thread: no TCP and TLS handshake per request, and
-        # threads (worker slots, log shipping) never share a connection.
-        self._local = threading.local()
+        # Kept-open connections, shared by all threads: a request takes an idle one (or opens
+        # one) and returns it afterwards, so no request uses a connection another is using.
+        # Workers start a thread per task, so per-thread connections meant a TCP and TLS
+        # handshake for almost every job.
+        self._idle: list[http.client.HTTPConnection] = []
+        self._idle_lock = threading.Lock()
 
     def _connect(self) -> http.client.HTTPConnection:
         host, port = self._parsed.hostname or "", self._parsed.port
@@ -117,7 +120,8 @@ class HttpTransport:
             data = json.dumps(body).encode()
             hdrs["Content-Type"] = "application/json"
         url = (self._parsed.path.rstrip("/") or "") + path
-        conn: http.client.HTTPConnection | None = getattr(self._local, "conn", None)
+        with self._idle_lock:
+            conn: http.client.HTTPConnection | None = self._idle.pop() if self._idle else None
         reused = conn is not None
         while True:
             if conn is None:
@@ -131,19 +135,22 @@ class HttpTransport:
                 # A kept-open connection the server has since closed (idle timeout, restart)
                 # fails before the request reaches the handler: retry once on a new one.
                 conn.close()
-                self._local.conn = conn = None
+                conn = None
                 if not reused:
                     raise ConnectionError(f"control plane connection failed: {e}") from e
                 reused = False
             except BaseException:
                 conn.close()
-                self._local.conn = None
                 raise
         if resp.will_close:
             conn.close()
-            self._local.conn = None
         else:
-            self._local.conn = conn
+            with self._idle_lock:
+                if len(self._idle) < MAX_IDLE_CONNECTIONS:
+                    self._idle.append(conn)
+                    conn = None
+            if conn is not None:
+                conn.close()
         if resp.status >= 400:
             try:
                 err = json.loads(content)["error"]
@@ -157,6 +164,8 @@ class HttpTransport:
             return content.decode()
         return json.loads(content) if content else None
 
+
+MAX_IDLE_CONNECTIONS = 32  # kept open per transport; more concurrent requests open extra ones
 
 _STALE = (
     http.client.RemoteDisconnected,

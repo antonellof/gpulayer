@@ -135,8 +135,11 @@ can hold at most one server thread per open request; the failed-login limiter st
 6. **Server CPU.** Measured on 30 GCP workers (2026-10-30): after fixing queue-length
    scheduling, idle polling and wake-all signalling, bursts of very short jobs stay at about
    25 jobs/s because the server process uses one core at 100% (the GIL; about ten API
-   requests per job). Next: batch endpoints (submit many jobs, acquire several tasks, finish
-   with outputs in one request), cheaper per-request validation, then an async or
-   multi-process server.
+   requests per job). Done since: a partial index for active tasks (the scheduling pass
+   scanned every task ever run: 2.2 ms at 13,000 tasks, now 0.002 ms), a connection pool
+   shared by a client's threads (workers had a TLS handshake per job), and cached worker
+   capabilities; `benchmarks/server_throughput.py` (6 local workers) went from 6.7-6.8 to
+   5.2-6.0 ms of server CPU per job. Next: batch endpoints (submit many jobs, acquire several
+   tasks, finish with outputs in one request), then an async or multi-process server.
 
 Validating items 3 and 5, and any multi-node claim, requires NVIDIA hardware.

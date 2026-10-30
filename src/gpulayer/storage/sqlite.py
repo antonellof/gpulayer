@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 CREATE INDEX IF NOT EXISTS tasks_job ON tasks(job_id);
 CREATE INDEX IF NOT EXISTS tasks_worker ON tasks(worker_id, state);
+CREATE INDEX IF NOT EXISTS tasks_active ON tasks(worker_id) WHERE state IN ('assigned', 'running');
 CREATE TABLE IF NOT EXISTS worker_samples (
   worker_id TEXT NOT NULL, ts TEXT NOT NULL, data TEXT NOT NULL
 );

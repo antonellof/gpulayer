@@ -3,6 +3,15 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
+## Unreleased
+
+- Less server work per job: active-task queries use a partial index instead of scanning every
+  task ever run (2.2 ms to 0.002 ms per scheduling pass at 13,000 tasks), the HTTP client
+  shares kept-open connections between threads (a worker no longer opens a TLS connection per
+  job), and worker capabilities are parsed once. Server CPU per job in
+  `benchmarks/server_throughput.py`: 6.7-6.8 ms to 5.2-6.0 ms.
+- Site: sitemap.xml, robots.txt, canonical URLs, link previews and structured data.
+
 ## 0.3.0 (2026-10-30)
 
 First release on PyPI (`pip install gpulayer`), under the Apache-2.0 licence. Tested on 30

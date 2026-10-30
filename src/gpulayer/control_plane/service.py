@@ -61,6 +61,11 @@ from gpulayer.observability.metrics import observe
 from gpulayer.storage.sqlite import SqliteStore, parse_ts, ts
 
 ACTIVE_TASK_STATES = (TaskState.ASSIGNED.value, TaskState.RUNNING.value)
+# Literal form for queries that filter on the active states alone: SQLite uses the partial
+# index tasks_active (storage/sqlite.py) only when the query repeats its condition verbatim.
+# Without it these queries scanned every task ever run (2.2 ms per scheduling pass at 13,000).
+ACTIVE_SQL = "state IN ('assigned', 'running')"
+assert ACTIVE_TASK_STATES == ("assigned", "running")
 MAX_LOG_LINE = 8192
 LogEntry = tuple[str, str] | tuple[str, str, int | None]  # (stream, line[, global rank])
 
@@ -110,6 +115,8 @@ class ControlPlane:
         # Job specs never change after submission; parsing them on every scheduling pass
         # cost O(queue) per submit. Entries leave when the job leaves the queue.
         self._specs: dict[str, JobSpec] = {}
+        # Parsed worker capabilities by their stored JSON (re-parsed only when they change).
+        self._caps: dict[str, tuple[str, WorkerCapabilities]] = {}
         # Set by ControlPlaneServer, which runs reconcile() and schedule_pending() in a loop
         # and through which every change passes. Requests then skip that work, and waiters
         # sleep until signalled instead of re-checking every POLL_SLICE: with 100+ idle worker
@@ -344,9 +351,7 @@ class ControlPlane:
     def _worker_views(self) -> list[WorkerView]:
         running: dict[str, int] = {}
         busy: dict[str, set[int]] = {}
-        for r in self.store.query(
-            "SELECT worker_id, devices FROM tasks WHERE state IN (?,?)", ACTIVE_TASK_STATES
-        ):
+        for r in self.store.query(f"SELECT worker_id, devices FROM tasks WHERE {ACTIVE_SQL}"):
             running[r["worker_id"]] = running.get(r["worker_id"], 0) + 1
             if r["devices"]:
                 busy.setdefault(r["worker_id"], set()).update(json.loads(r["devices"]))
@@ -356,7 +361,7 @@ class ControlPlane:
                 WorkerView(
                     worker_id=r["id"],
                     state=WorkerState(r["state"]),
-                    capabilities=WorkerCapabilities.model_validate_json(r["capabilities"]),
+                    capabilities=self._parsed_caps(r["id"], r["capabilities"]),
                     running_tasks=running.get(r["id"], 0),
                     busy_devices=busy.get(r["id"], set()),
                 )
@@ -369,6 +374,12 @@ class ControlPlane:
             row = self.store.query("SELECT spec FROM jobs WHERE id=?", (job_id,))[0]
             spec = self._specs[job_id] = JobSpec.model_validate_json(row["spec"])
         return spec
+
+    def _parsed_caps(self, worker_id: str, raw: str) -> WorkerCapabilities:
+        cached = self._caps.get(worker_id)
+        if cached is None or cached[0] != raw:
+            cached = self._caps[worker_id] = (raw, WorkerCapabilities.model_validate_json(raw))
+        return cached[1]
 
     def schedule_pending(self) -> None:
         with self.store.tx() as c:
@@ -522,9 +533,7 @@ class ControlPlane:
         if not self.served:
             self.reconcile()
         running: dict[str, list[str]] = {}
-        for r in self.store.query(
-            "SELECT id, worker_id FROM tasks WHERE state IN (?,?)", ACTIVE_TASK_STATES
-        ):
+        for r in self.store.query(f"SELECT id, worker_id FROM tasks WHERE {ACTIVE_SQL}"):
             running.setdefault(r["worker_id"], []).append(r["id"])
         return [
             WorkerStatus(
@@ -1075,9 +1084,9 @@ class ControlPlane:
                 )
                 self.store.add_event("worker.offline", "heartbeat lease expired", worker_id=r[0])
             expired = c.execute(
-                "SELECT id, job_id, worker_id FROM tasks WHERE state IN (?,?) AND "
+                f"SELECT id, job_id, worker_id FROM tasks WHERE {ACTIVE_SQL} AND "
                 "lease_expires_at < ?",
-                (*ACTIVE_TASK_STATES, ts(now)),
+                (ts(now),),
             ).fetchall()
             for t in expired:
                 self._mark_task(
@@ -1207,8 +1216,8 @@ class ControlPlane:
                 for r in c.execute(
                     "SELECT id FROM workers WHERE (state=? OR revoked=1) AND "
                     "COALESCE(last_heartbeat_at, registered_at) < ? AND id NOT IN "
-                    "(SELECT worker_id FROM tasks WHERE state IN (?,?) AND worker_id IS NOT NULL)",
-                    (WorkerState.OFFLINE.value, ts(cutoff), *ACTIVE_TASK_STATES),
+                    f"(SELECT worker_id FROM tasks WHERE {ACTIVE_SQL} AND worker_id IS NOT NULL)",
+                    (WorkerState.OFFLINE.value, ts(cutoff)),
                 ).fetchall()
             ]
             report["workers"] = len(stale_workers)
