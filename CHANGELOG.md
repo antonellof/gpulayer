@@ -16,6 +16,11 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 - `Trainer(strategy="fsdp")` (experimental): FSDP2 sharding of parameters, gradients and
   optimizer state, full-state checkpoints; on CPU it trains exactly like DDP. Not yet run on
   CUDA GPUs.
+- Multi-node training against PyTorch Lightning, both trainers on the same machines: the same
+  speed within 2% on 1 to 8 machines (40.5 s vs 41.2 s on 8). The earlier comparison, which
+  ran the trainers on different VMs, overstated GPUlayer's lead.
+- On 8 GCP workers after the server changes, 2,000 tiny jobs ran at 83 jobs/s, or 93 with
+  `submit_batch`, which submits all of them in 1.1 s. The workers now set the limit.
 - `fit(ckpt_path=...)` resumes launched (remote) runs: the local checkpoint is uploaded with
   the job. `launch(inputs={...})` ships local files to `$GPULAYER_INPUT_DIR`.
 

@@ -2,28 +2,104 @@
   "_about": "Numbers from the 31-VM GCP run of 2026-10-30 (benchmarks/scale_test.py and benchmarks/lightning_comparison/scaling_run.py). Raw logs are in this directory.",
   "fleet": "1 server (n1-standard-4, gpulayer up --no-worker) and 30 workers (n1-standard-4, 4 slots each): 23 in europe-west1-b, 7 in europe-west4-a; Python 3.12, torch 2.15.0 CPU, Lightning 2.6.6",
   "strong_scaling": {
-    "subtitle": "A CNN on 32,768 images, 2 epochs, global batch 256; GCP n1-standard-4, 4 processes per machine, gloo",
-    "method": "Wall time from start until the last process exits, median of 2 runs, one run at a time. GPUlayer: Trainer(num_nodes=N, devices=4) submitted from the server. Lightning: Trainer(num_nodes=N, devices=4, strategy='ddp') started with torchrun on N workers over ssh.",
+    "subtitle": "A CNN on 32,768 images, 2 epochs; GCP n1-standard-4, 4 processes per machine, gloo; same machines for both",
+    "method": "Wall time from start until the last process exits, median of 3 interleaved runs, both trainers on the same machines (GPUlayer pinned with worker_ids). benchmarks/results/2026-10-30-gcp-9vm/strong-scaling-pinned.log. An earlier unpinned run (strong-scaling.log here, and strong-scaling-unpinned.log in the 9vm folder) differed by up to 9% in either direction because the trainers ran on different VMs.",
     "rows": [
-      {"nodes": 1, "procs": 4, "gpulayer_s": 134.0, "lightning_s": 147.1, "gpulayer_loss": 2.2069, "lightning_loss": 2.2042},
-      {"nodes": 2, "procs": 8, "gpulayer_s": 82.5, "lightning_s": 85.1, "gpulayer_loss": 2.2099, "lightning_loss": 2.2109},
-      {"nodes": 4, "procs": 16, "gpulayer_s": 53.4, "lightning_s": 53.5, "gpulayer_loss": 2.2173, "lightning_loss": 2.2121},
-      {"nodes": 8, "procs": 32, "gpulayer_s": 39.9, "lightning_s": 42.8, "gpulayer_loss": 2.2265, "lightning_loss": 2.2304}
+      {
+        "nodes": 1,
+        "procs": 4,
+        "gpulayer_s": 145.9,
+        "lightning_s": 145.8,
+        "gpulayer_loss": 2.2069,
+        "lightning_loss": 2.2042
+      },
+      {
+        "nodes": 2,
+        "procs": 8,
+        "gpulayer_s": 83.0,
+        "lightning_s": 84.1,
+        "gpulayer_loss": 2.2099,
+        "lightning_loss": 2.2109
+      },
+      {
+        "nodes": 4,
+        "procs": 16,
+        "gpulayer_s": 52.9,
+        "lightning_s": 53.3,
+        "gpulayer_loss": 2.2173,
+        "lightning_loss": 2.2121
+      },
+      {
+        "nodes": 8,
+        "procs": 32,
+        "gpulayer_s": 40.5,
+        "lightning_s": 41.2,
+        "gpulayer_loss": 2.2265,
+        "lightning_loss": 2.2304
+      }
     ]
   },
   "submit": {
     "subtitle": "30 workers, 120 slots, client with 16 threads on the server VM",
     "rows": [
-      {"name": "480 training runs (sweep)", "before_s": 102.4, "after_s": 45.0},
-      {"name": "2,000 data shards (0.5 s each)", "before_s": 100.9, "after_s": 81.7},
-      {"name": "5,000 tiny jobs", "before_s": 166.3, "after_s": 190.0}
+      {
+        "name": "480 training runs (sweep)",
+        "before_s": 102.4,
+        "after_s": 45.0
+      },
+      {
+        "name": "2,000 data shards (0.5 s each)",
+        "before_s": 100.9,
+        "after_s": 81.7
+      },
+      {
+        "name": "5,000 tiny jobs",
+        "before_s": 166.3,
+        "after_s": 190.0
+      }
     ],
     "note": "before: scale-test-before-fixes.log; after: scale-test-served-mode.log (sweep) and scale-test-sync-normal.log (shards, tiny jobs). The tiny-job burst is limited by the server process using one CPU core at 100-113% (measured with top), about 25 jobs/s."
   },
   "distributed": [
-    {"setup": "8 machines x 2 processes", "direct_s": 4.27, "torchrun_s": 6.87},
-    {"setup": "16 machines x 2 processes", "direct_s": 5.43, "torchrun_s": 8.06}
+    {
+      "setup": "8 machines x 2 processes",
+      "direct_s": 4.27,
+      "torchrun_s": 6.87
+    },
+    {
+      "setup": "16 machines x 2 processes",
+      "direct_s": 5.43,
+      "torchrun_s": 8.06
+    }
   ],
   "failure_8_nodes_s": 4.9,
-  "worker_loss": {"jobs": 600, "workers_killed": 3, "retried": 9, "failed": 0}
+  "worker_loss": {
+    "jobs": 600,
+    "workers_killed": 3,
+    "retried": 9,
+    "failed": 0
+  },
+  "burst_after_server_fixes": {
+    "fleet": "1 server + 8 workers (n1-standard-4, 32 slots), europe-west1-b, all Intel Haswell",
+    "rows": [
+      {
+        "name": "2,000 tiny jobs, one request per job",
+        "submit_s": 9.6,
+        "wall_s": 24.1,
+        "jobs_per_s": 82.9
+      },
+      {
+        "name": "2,000 tiny jobs, submit_batch",
+        "submit_s": 1.1,
+        "wall_s": 21.6,
+        "jobs_per_s": 92.7
+      },
+      {
+        "name": "2,000 data shards (0.84 s), submit_batch",
+        "submit_s": 1.1,
+        "wall_s": 60.2,
+        "jobs_per_s": 33.2
+      }
+    ]
+  }
 }

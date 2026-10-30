@@ -12,7 +12,7 @@ Updated 2026-10-29 at the end of the first iteration.
 | `gpulayer up` / `join` / `gl.connect`, TLS with a pinned certificate | tested (several processes, one host) |
 | Workers on separate physical machines | validated: 30 GCP workers in two regions (2026-10-30) |
 | Distributed DDP, 1 x 2 and 2 x 2 processes, gloo | tested on one host |
-| Distributed across machines, gloo | validated: up to 16 machines x 2 processes; DDP training on 8 machines (3.4x faster than one) |
+| Distributed across machines, gloo | validated: up to 16 machines x 2 processes; DDP training on 8 machines (3.6x faster than one, same speed as Lightning) |
 | NCCL across GPUs or machines | not validated yet (GPU quota of one) |
 | Apple MPS, independent jobs | hardware-validated |
 | NVIDIA CUDA execution | hardware-validated on a Tesla T4 (single GPU) |

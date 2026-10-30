@@ -1,0 +1,5 @@
+WORKERS 8 online on 8 hosts, 32 slots
+CHECK workers PASS 8 {'europe-west1-b': 8}
+RESULT burst_2000_tiny: 2000 jobs, 0 failed, 0 retried, submit 9.6s, wall 24.1s, 82.9 jobs/s, task time 0.0s, 8 workers used (min 246, max 254 jobs each)
+CHECK burst PASS
+SUMMARY all passed

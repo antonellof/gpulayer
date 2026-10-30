@@ -123,8 +123,9 @@ optimizer:
 
 - GPUlayer's Trainer is 1.3 to 1.4x faster per step on small models and the same on a
   compute-bound CNN, and starts about 0.6 s sooner.
-- One training job on 8 machines runs 3.4x faster than on one, and GPUlayer finishes it 7%
-  sooner than Lightning under torchrun (39.9 s vs 42.8 s; 9% sooner on one machine).
+- One training job on 8 machines runs 3.6x faster than on one. Training speed matches
+  Lightning under torchrun (40.5 s vs 41.2 s on 8 machines), and GPUlayer starts every
+  machine from one `Trainer(num_nodes=N)` call.
 - Distributed jobs start 1.1 to 2.3 s faster than through torchrun; tested on up to 16
   machines (32 processes) and 30 workers across two GCP regions.
 - Across two machines: a distributed job spanning both, fail-fast in 2.7 s, and 55.6 small

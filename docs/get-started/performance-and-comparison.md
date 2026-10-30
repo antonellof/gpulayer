@@ -103,23 +103,25 @@ torchrun on each machine, as its documentation describes.
 
 | Machines | Processes | GPUlayer | Lightning | GPUlayer speedup | Lightning speedup | Final loss (GPUlayer, Lightning) |
 |---|---|---|---|---|---|---|
-| 1 | 4 | 134.0 s | 147.1 s | 1.00x | 1.00x | 2.207, 2.204 |
-| 2 | 8 | 82.5 s | 85.1 s | 1.62x | 1.73x | 2.210, 2.211 |
-| 4 | 16 | 53.4 s | 53.5 s | 2.51x | 2.75x | 2.217, 2.212 |
-| 8 | 32 | 39.9 s | 42.8 s | 3.36x | 3.44x | 2.227, 2.230 |
+| 1 | 4 | 145.9 s | 145.8 s | 1.00x | 1.00x | 2.207, 2.204 |
+| 2 | 8 | 83.0 s | 84.1 s | 1.76x | 1.73x | 2.210, 2.211 |
+| 4 | 16 | 52.9 s | 53.3 s | 2.76x | 2.74x | 2.217, 2.212 |
+| 8 | 32 | 40.5 s | 41.2 s | 3.60x | 3.54x | 2.227, 2.230 |
 
-- Eight machines train the job 3.4x faster than one, for both trainers.
-- GPUlayer finished first at 1, 2 and 8 machines (9% sooner on one, 7% on eight) and the
-  two tied at 4. Lightning's speedup ratios are slightly higher because its one-machine time
-  was slower.
-- The losses agree, so both did the same training.
-- With only 2 epochs, fixed costs (start-up, `import torch`, process-group setup) and
-  gradient exchange over gloo on CPUs take a growing share as the training time falls; longer
+- Eight machines train the job 3.6x faster than one, with either trainer.
+- Both train at the same speed, within 2% at every size. GPUlayer starts all the machines
+  from one `Trainer(num_nodes=N)` call; with Lightning you start torchrun on each machine,
+  with matching ranks and addresses.
+- The losses agree, so both trainers did the same work.
+- With only 2 epochs, fixed costs (start-up, `import torch`, process-group setup) and the
+  gradient exchange over gloo on CPUs take a growing share as the training time falls. Longer
   training would scale closer to linear. GPUs with NCCL were not measured.
 
-Method: wall time from start until the last process exits, median of two runs, one run at a
-time. Scripts: `benchmarks/lightning_comparison/scaling.py` and `scaling_run.py`; log in
-`benchmarks/results/2026-10-30-gcp-fleet/`.
+Method: both trainers on the same machines (GPUlayer's job pinned with `worker_ids`), runs
+alternating between the two, wall time from start until the last process exits, median of
+three runs. An earlier run without pinning put the two trainers on different VMs, and its results
+swung by up to 9% either way, so it is not used here. Scripts: `benchmarks/lightning_comparison/scaling.py`
+and `scaling_run.py`; logs in `benchmarks/results/2026-10-30-gcp-9vm/`.
 
 ## Thirty machines
 
@@ -141,11 +143,21 @@ re-checked the database five times a second, and each change woke every waiting 
 
 ![Submitting thousands of jobs to 30 workers](../assets/perf/fleet-throughput-light.svg)
 
-The training sweep finished 2.3x sooner. Bursts of very short jobs did not get faster:
-submission stays at about 25 jobs per second because the server is one Python process and
-uses one CPU core at 100% (measured with `top`; each job makes about ten API requests). That is
-the next bottleneck (ADR-0016, roadmap item 6). Jobs that run longer than a few seconds are
-not affected.
+The training sweep finished 2.3x sooner. Bursts of very short jobs stayed at about 25 jobs
+per second, because the server is one Python process and used one CPU core at 100%. Three more
+changes cut the server's work per job: a partial index for active tasks, HTTP connections
+shared between a client's threads, and batch submission (`POST /v1/jobs/batch`). On a second
+run with 8 workers (32 slots):
+
+| Workload | Submitting | Total | Jobs per second |
+|---|---|---|---|
+| 2,000 tiny jobs, one request per job | 9.6 s | 24.1 s | 82.9 |
+| 2,000 tiny jobs, `submit_batch` | 1.1 s | 21.6 s | 92.7 |
+| 2,000 data shards (0.84 s each), `submit_batch` | 1.1 s | 60.2 s | 33.2 |
+
+Now the workers set the limit, since each job starts a Python process. The shards ran 1,682 s of
+work in 60 s on 32 slots, 87% of the ideal. These numbers come from a smaller fleet than the
+first run, so they are not a direct before and after.
 
 ## What has not been measured
 

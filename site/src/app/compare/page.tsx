@@ -42,7 +42,7 @@ const ROWS: Row[] = [
     what: "Places workloads on machines you can reach, starts them, returns logs and results",
     runsOn: "This machine, servers that join, cloud VMs that join",
     machines: "Picks a compatible machine per job (GPU, memory, frameworks); cloud provisioning is simulated today",
-    workloads: "Any command, Python functions with any library, torchrun groups, PyTorch training",
+    workloads: "Any command, Python functions with any library, distributed PyTorch on many machines",
     hosting: "Self-hosted; embedded mode needs no server",
     highlight: true,
   },
@@ -131,13 +131,13 @@ const MATRIX: MatrixRow[] = [
   },
   {
     feature: "PyTorch training helpers (devices, DDP, precision)",
-    marks: ["partial", "yes", "yes", "yes", "no", "no", "no", "partial"],
-    note: "GPUlayer's Trainer is small; Kubernetes via training operators",
+    marks: ["yes", "yes", "yes", "yes", "no", "no", "no", "partial"],
+    note: "GPUlayer: DDP, mixed precision, callbacks, best-N checkpoints, experimental FSDP; Lightning has more strategies and loggers. Kubernetes via training operators",
   },
   {
     feature: "Multi-node jobs",
-    marks: ["partial", "yes", "yes", "yes", "yes", "yes", "partial", "yes"],
-    note: "GPUlayer: torchrun groups, tested on one host only",
+    marks: ["yes", "partial", "partial", "yes", "yes", "yes", "partial", "yes"],
+    note: "GPUlayer starts every node from one call (tested up to 16 machines); Lightning and Accelerate train across nodes but need a launcher started on each node",
   },
   {
     feature: "Chooses a machine that fits the job",
@@ -277,7 +277,7 @@ const BEHIND = [
   "No real cloud provisioning or autoscaling yet (simulated adapter only); SkyPilot, dstack and Ray already do this.",
   "No long-running services yet; dstack, Ray Serve, Modal and Kubernetes handle them.",
   "A small PyTorch Trainer: FSDP is experimental (CPU-tested), and there is no DeepSpeed or logger integration, unlike PyTorch Lightning.",
-  "Measured with the torchrun launcher, distributed jobs started about a second slower than PyTorch Lightning's DDP on one machine. The direct launcher, now the default, removes about 1.1 s; the comparison has not been re-run.",
+  "Multi-node training runs at the same speed as PyTorch Lightning under torchrun (within 2% on 1 to 8 machines). GPUlayer is faster at start-up and per step on small models, and it starts all the nodes for you.",
   "Distributed jobs support PyTorch process groups only; no JAX multi-host or MPI launcher yet.",
   "v0.3.0: validated on one NVIDIA GPU and two machines; several GPUs per machine and NCCL across machines are not validated yet. Not a sandbox for untrusted users.",
 ];
@@ -495,6 +495,12 @@ export default function ComparePage() {
                 second longer. These runs used the torchrun launcher; the direct launcher, now
                 the default, removes about 1.1 s from a distributed job&apos;s start-up and
                 shutdown, and the comparison has not been re-run with it. These are CPU and Apple GPU results on one machine.
+              </p>
+              <p>
+                On 1, 2, 4 and 8 GCP machines (4 processes each, same machines and interleaved runs for both trainers),
+                one CNN training job took 145.9, 83.0, 52.9 and 40.5 s with GPUlayer and 145.8, 84.1, 53.3 and 41.2 s
+                with Lightning under torchrun. The speed is the same; GPUlayer starts every node from one{" "}
+                <code className="font-mono">Trainer(num_nodes=N)</code> call.
               </p>
               <p>
                 On an NVIDIA Tesla T4 (2026-10-30, same method, direct launcher), GPUlayer was 1.38x faster per step on an

@@ -1,0 +1,3 @@
+RESULT burst_2000_tiny_batch: 2000 jobs, 0 failed, 0 retried, submit 1.1s, wall 21.6s, 92.7 jobs/s, task time 0.0s, 8 workers used (min 246, max 256 jobs each)
+CHECK burst PASS
+SUMMARY all passed
