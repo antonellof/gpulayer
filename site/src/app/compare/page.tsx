@@ -220,7 +220,7 @@ const NOTES: Note[] = [
   {
     name: "PyTorch Lightning and Hugging Face Accelerate",
     summary:
-      "Both decide how a PyTorch model trains inside the machines they are started on: device placement, precision, DDP, FSDP or DeepSpeed, callbacks, logging. They do not choose those machines, copy code to them, or start the processes on each node. GPUlayer works one level below: it decides where a workload runs and starts it there. Its own PyTorch Trainer is deliberately small: it has callbacks, early stopping and gradient accumulation, but no FSDP, DeepSpeed or logger integrations yet.",
+      "Both decide how a PyTorch model trains inside the machines they are started on: device placement, precision, DDP, FSDP or DeepSpeed, callbacks, logging. They do not choose those machines, copy code to them, or start the processes on each node. GPUlayer works one level below: it decides where a workload runs and starts it there. Its own PyTorch Trainer is deliberately small: it has callbacks, early stopping, the best-N checkpoints, gradient accumulation and experimental FSDP, but no DeepSpeed or logger integrations.",
     choose:
       "Choose them for training features. Lightning has a far richer Trainer than GPUlayer's, and Accelerate makes an existing loop portable.",
     together:
