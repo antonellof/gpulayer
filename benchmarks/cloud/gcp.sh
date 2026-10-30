@@ -40,9 +40,10 @@ zone_of() { gcloud compute instances list "${G[@]}" --filter="name=$1" --format=
 on() { local vm=$1; shift; gcloud compute ssh "$vm" "${G[@]}" --zone "$(zone_of "$vm")" --quiet --command "$*"; }
 ip_of() { gcloud compute instances describe "$1" "${G[@]}" --zone "$(zone_of "$1")" --format="value(networkInterfaces[0].networkIP)"; }
 
-create() {  # create NAME ZONE MACHINE PROVISIONING EXTRA...
+create() {  # create NAME ZONE MACHINE SPOT|GPU|STANDARD EXTRA...
   local name=$1 zone=$2 mt=$3 model=$4; shift 4
-  local prov=(--maintenance-policy TERMINATE)
+  local prov=()
+  [ "$model" = GPU ] && prov=(--maintenance-policy TERMINATE)  # GPU VMs cannot live-migrate
   [ "$model" = SPOT ] && prov=(--provisioning-model SPOT --instance-termination-action DELETE)
   gcloud compute instances create "$name" "${G[@]}" --zone "$zone" --machine-type "$mt" \
     "${prov[@]}" --boot-disk-size "${DISK_SIZE:-100GB}" --boot-disk-type "${DISK_TYPE:-pd-balanced}" \
@@ -56,7 +57,7 @@ case "$cmd" in
   gpu-up)
     name=$1 accel=${2:-nvidia-tesla-t4} mt=${3:-n1-standard-8}
     for z in $GPU_ZONES; do
-      for model in SPOT STANDARD; do
+      for model in SPOT GPU; do
         if create "$name" "$z" "$mt" "$model" --accelerator "type=$accel,count=1" \
           "${IMAGE_GPU[@]}" --metadata install-nvidia-driver=True 2>/tmp/gl-create.err; then
           wait_ssh "$name"
