@@ -553,6 +553,12 @@ class AcceleratorDevice(_Model):
     execution_supported: bool = Field(
         True, description="False when detected but GPUlayer has no validated execution path."
     )
+    links: dict[int, str] = Field(
+        default_factory=dict,
+        description="Interconnect to each other GPU on the machine, by index, as nvidia-smi "
+        "topo -m names it: NV<n> (NVLink, n links), PIX, PXB, PHB, NODE or SYS. Empty: unknown.",
+    )
+    numa_node: int | None = None
 
 
 class WorkerCapabilities(_Model):

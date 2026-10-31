@@ -15,6 +15,11 @@ before 1.0, minor versions may change public APIs, with migration notes here.
   before. On a simulated fleet of 5 zones in 2 regions an 8-node group now stays in one zone
   instead of spanning both regions; `schedule()` costs 1 to 15% more
   (`benchmarks/placement.py`). Training speed-up not measured yet.
+- Multi-GPU tasks get the best-connected free GPUs on a machine: workers read
+  `nvidia-smi topo -m` into `AcceleratorDevice.links` and `numa_node`, and a task asking for
+  several GPUs gets the set whose slowest link is fastest (an NVLink island, or GPUs behind one
+  PCIe switch) instead of the lowest indices. Tested with recorded topology output; not yet run
+  on a multi-GPU machine.
 - Migration: the GCP adapter now reports `region="europe-west1"` and `zone="europe-west1-b"`
   (it used to put the zone in `region`). `placement.regions` matches either, so existing
   policies keep working.

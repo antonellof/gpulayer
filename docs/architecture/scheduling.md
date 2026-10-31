@@ -53,6 +53,17 @@ gpulayer submit --distributed --nodes 8 --group-locality zone -- ...
 From Python: `launch(..., group_locality="zone")`, `Trainer(..., launch_options={"group_locality": "zone"})`,
 or `@gl.remote(..., group_locality="zone")`.
 
+## GPUs inside a machine
+
+On machines with several NVIDIA GPUs, workers read the interconnect between them from
+`nvidia-smi topo -m`: NVLink (`NV<n>`, n bonded links), one PCIe switch (`PIX`), several
+switches (`PXB`), the CPU's host bridge (`PHB`), one NUMA node (`NODE`) or across CPU sockets
+(`SYS`). A task that asks for several GPUs gets the free ones whose slowest link is fastest,
+so a 4-GPU job on an 8-GPU NVLink machine takes one NVLink island, and a 2-GPU job on a
+two-socket PCIe box takes two GPUs behind one switch. Single-GPU tasks, and machines where the
+topology is unknown, get the lowest-numbered free GPUs as before. This is tested with recorded
+`nvidia-smi topo -m` output; it has not run on a multi-GPU machine yet.
+
 ## What is not scheduled on (yet)
 
 - `cpu_cores` and `memory_gb` only constrain placement; nothing enforces them at runtime.
@@ -60,8 +71,9 @@ or `@gl.remote(..., group_locality="zone")`.
   NVIDIA or AMD GPU, at least 1; `--concurrency N` overrides it). Each task is given its own
   GPUs, which the worker exposes through `CUDA_VISIBLE_DEVICES`. CPU jobs take a slot but no
   GPU. Apple Silicon Macs have one GPU, so they run one task at a time by default.
-- GPU interconnect inside a machine (NVLink, PCIe switches): a multi-GPU task gets the
-  lowest-numbered free GPUs that meet its requirements.
+- Single-GPU tasks are not placed to keep NVLink islands free for later multi-GPU tasks.
+- Distributed groups do not yet consider GPU interconnect inside each machine when choosing
+  machines.
 - Data locality and cost optimization are planned once reliable capability and pricing data
   exist.
 

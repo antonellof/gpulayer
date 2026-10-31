@@ -192,9 +192,29 @@ def _accelerator_reasons(r: ResourceRequest, caps: WorkerCapabilities) -> list[s
 
 def pick_devices(r: ResourceRequest, caps: WorkerCapabilities, busy: set[int]) -> list[int] | None:
     """Indices of the devices a task gets on this worker: free devices that meet every
-    per-device requirement, lowest index first. ``[]`` for CPU jobs; None if too few are free."""
+    per-device requirement. Several GPUs are chosen by interconnect when the worker reports it
+    (the best-connected set), else lowest index first. ``[]`` for CPU jobs; None if too few
+    are free."""
     if r.accelerator == Accelerator.CPU or r.gpu_count == 0:
         return []
+    ok = _fitting_free(r, caps, busy)
+    if len(ok) < r.gpu_count:
+        return None
+    if r.gpu_count > 1:
+        links = {d.index: d.links for d in caps.devices(r.accelerator)}
+        if any(links.get(i) for i in ok):
+            return _best_connected(ok, r.gpu_count, links)
+    return ok[: r.gpu_count]
+
+
+def has_free_devices(r: ResourceRequest, caps: WorkerCapabilities, busy: set[int]) -> bool:
+    """Whether ``pick_devices`` would succeed, without choosing among the devices."""
+    if r.accelerator == Accelerator.CPU or r.gpu_count == 0:
+        return True
+    return len(_fitting_free(r, caps, busy)) >= r.gpu_count
+
+
+def _fitting_free(r: ResourceRequest, caps: WorkerCapabilities, busy: set[int]) -> list[int]:
     ok = []
     for d in caps.devices(r.accelerator):
         if not d.execution_supported or d.index in busy:
@@ -210,7 +230,63 @@ def pick_devices(r: ResourceRequest, caps: WorkerCapabilities, busy: set[int]) -
             continue
         ok.append(d.index)
     ok.sort()
-    return ok[: r.gpu_count] if len(ok) >= r.gpu_count else None
+    return ok
+
+
+def link_rank(link: str | None) -> int:
+    """Higher is faster: NVLink (more links better), then the PCIe paths nvidia-smi names,
+    from one switch (PIX) to across CPU sockets (SYS). Unknown ranks lowest."""
+    if not link:
+        return -1
+    if link.startswith("NV"):
+        n = link[2:]
+        return 100 + (int(n) if n.isdigit() else 1)
+    return {"PIX": 50, "PXB": 40, "PHB": 30, "NODE": 20, "SYS": 10}.get(link, -1)
+
+
+def _best_connected(free: list[int], n: int, links: dict[int, dict[int, str]]) -> list[int]:
+    """The ``n`` free GPUs whose slowest link between any two is fastest (then the fastest
+    links in total, then the lowest indices). Greedy from every starting GPU: a machine has at
+    most a few dozen GPUs, so this is cheap and finds e.g. an NVLink island when one is free."""
+    if n >= len(free):
+        return list(free)
+    m = len(free)
+    rank = [
+        [
+            max(
+                link_rank(links.get(a, {}).get(b)),
+                link_rank(links.get(b, {}).get(a)),
+            )
+            for b in free
+        ]
+        for a in free
+    ]
+    best: tuple[tuple[int, int], list[int]] | None = None
+    for seed in range(m):
+        group = [seed]
+        weakest = rank[seed][:]  # each candidate's slowest link to the group so far
+        total = rank[seed][:]  # and the sum of its links to the group
+        taken = [False] * m
+        taken[seed] = True
+        while len(group) < n:
+            nxt = max(
+                (c for c in range(m) if not taken[c]),
+                key=lambda c: (weakest[c], total[c], -c),
+            )
+            taken[nxt] = True
+            group.append(nxt)
+            row = rank[nxt]
+            for c in range(m):
+                if row[c] < weakest[c]:
+                    weakest[c] = row[c]
+                total[c] += row[c]
+        pairs = [rank[a][b] for k, a in enumerate(group) for b in group[k + 1 :]]
+        score = (min(pairs), sum(pairs))
+        chosen = sorted(free[g] for g in group)
+        if best is None or score > best[0] or (score == best[0] and chosen < best[1]):
+            best = (score, chosen)
+    assert best is not None
+    return best[1]
 
 
 def default_max_tasks(caps: WorkerCapabilities) -> int:
@@ -262,7 +338,7 @@ def schedule(
                     reasons.append(f"worker is {w.state.value}")
                 elif not w.available:
                     reasons.append("compatible but no free task slot")
-                elif pick_devices(spec.resources, w.capabilities, w.busy_devices) is None:
+                elif not has_free_devices(spec.resources, w.capabilities, w.busy_devices):
                     reasons.append(
                         f"compatible but its {spec.resources.accelerator.value} devices are in "
                         "use by other tasks"

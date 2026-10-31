@@ -30,6 +30,60 @@ from gpulayer.contracts import (  # noqa: E402
 )
 from gpulayer.control_plane.scheduler import WorkerView, schedule  # noqa: E402
 
+# DGX-1-like hybrid cube mesh: two NVLink islands of four GPUs (NV1/NV2), SYS between most
+# GPUs of different islands. Row i: links from GPU i to GPUs 0..7.
+CUBE_MESH = [
+    "X NV1 NV1 NV2 NV2 SYS SYS SYS",
+    "NV1 X NV2 NV1 SYS NV2 SYS SYS",
+    "NV1 NV2 X NV2 SYS SYS NV1 SYS",
+    "NV2 NV1 NV2 X SYS SYS SYS NV1",
+    "NV2 SYS SYS SYS X NV1 NV1 NV2",
+    "SYS NV2 SYS SYS NV1 X NV2 NV1",
+    "SYS SYS NV1 SYS NV1 NV2 X NV2",
+    "SYS SYS SYS NV1 NV2 NV1 NV2 X",
+]
+
+
+def gpu_choice(repeat: int) -> None:
+    """Time pick_devices on an 8-GPU NVLink machine (skipped before interconnect support)."""
+    from gpulayer.contracts import AcceleratorDevice
+    from gpulayer.control_plane.scheduler import pick_devices
+
+    if "links" not in AcceleratorDevice.model_fields:
+        return
+    devices = [
+        AcceleratorDevice(
+            index=i,
+            accelerator="cuda",
+            vendor="nvidia",
+            name="GPU",
+            memory_gb=32.0,
+            links={j: t for j, t in enumerate(row.split()) if t != "X"},
+        )
+        for i, row in enumerate(CUBE_MESH)
+    ]
+    caps = WorkerCapabilities(
+        hostname="h",
+        os="linux",
+        cpu_arch="x86_64",
+        cpu_cores=80,
+        python_version="3.12.3",
+        accelerators=devices,
+    )
+    print("# pick_devices on an 8-GPU NVLink machine (DGX-1-like layout)")
+    for n, busy in ((2, set()), (4, set()), (4, {0}), (8, set())):
+        r = ResourceRequest(accelerator="cuda", gpu_count=n)
+        times = []
+        for _ in range(repeat):
+            t = time.perf_counter()
+            chosen = pick_devices(r, caps, busy)
+            times.append(time.perf_counter() - t)
+        print(
+            f"gpus={n} busy={sorted(busy)}  {statistics.median(times) * 1e6:7.1f} us/call  "
+            f"chosen={chosen}"
+        )
+
+
 ZONES = ["europe-west1-b", "europe-west1-c", "europe-west1-d", "europe-west4-a", "europe-west4-b"]
 
 
@@ -92,6 +146,7 @@ def main() -> None:
             f"workers={n:4d}  {statistics.median(times) * 1e6:9.1f} us/call  "
             f"placed={d.placed}  zones={zones}"
         )
+    gpu_choice(a.repeat)
 
 
 if __name__ == "__main__":

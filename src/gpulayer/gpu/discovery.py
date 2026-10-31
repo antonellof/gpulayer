@@ -18,6 +18,7 @@ import contextlib
 import json
 import os
 import platform
+import re
 import shutil
 import socket
 import subprocess
@@ -237,7 +238,61 @@ def detect_nvidia(
                 driver_version=driver,
             )
         )
+    if len(devices) > 1:
+        topo = detect_nvidia_topology(runner)
+        devices = [
+            d.model_copy(update={"links": topo[d.index][0], "numa_node": topo[d.index][1]})
+            if d.index in topo
+            else d
+            for d in devices
+        ]
     return devices, None
+
+
+def detect_nvidia_topology(
+    runner: CommandRunner = run_command,
+) -> dict[int, tuple[dict[int, str], int | None]]:
+    """GPU-to-GPU links and NUMA node per GPU from ``nvidia-smi topo -m``; {} if unavailable."""
+    code, out = runner(["nvidia-smi", "topo", "-m"], 15)
+    return parse_nvidia_topology(out) if code == 0 else {}
+
+
+def parse_nvidia_topology(out: str) -> dict[int, tuple[dict[int, str], int | None]]:
+    """Parse the matrix printed by ``nvidia-smi topo -m``.
+
+    The header names the GPU columns (``GPU0 GPU1 ... [NIC0 ...] CPU Affinity NUMA Affinity
+    ...``); each ``GPUn`` row gives the link to every column, then the affinities.
+    """
+    out = re.sub(r"\x1b\[[0-9;]*m", "", out)  # some drivers underline the header
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    if not lines:
+        return {}
+    header = lines[0].split()
+    cols = [h for h in header if h.startswith(("GPU", "NIC")) and h[3:].isdigit()]
+    gpu_cols = [int(h[3:]) for h in cols if h.startswith("GPU")]
+    # After the link columns come the CPU affinity, the NUMA affinity and (newer drivers) the
+    # GPU NUMA ID; "CPU Affinity" is two header words but one value.
+    numa_at = len(cols) + 1 if "NUMA" in header else None
+    result: dict[int, tuple[dict[int, str], int | None]] = {}
+    for ln in lines[1:]:
+        parts = ln.split()
+        if not parts or not parts[0].startswith("GPU") or not parts[0][3:].isdigit():
+            continue
+        me = int(parts[0][3:])
+        values = parts[1:]
+        if len(values) < len(cols):
+            continue
+        links = {
+            gpu_cols[i]: values[i]
+            for i in range(len(gpu_cols))
+            if gpu_cols[i] != me and values[i] != "X"
+        }
+        numa = None
+        if numa_at is not None and len(values) > numa_at:
+            raw = values[numa_at]
+            numa = int(raw) if raw.isdigit() else None
+        result[me] = (links, numa)
+    return result
 
 
 def detect_rocm(runner: CommandRunner = run_command) -> list[AcceleratorDevice]:

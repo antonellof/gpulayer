@@ -11,3 +11,13 @@ workers=  30  60.3 us/call; workers= 120  219.0 us/call; workers= 500  939.1 us/
 ## zones spanned by the 8-node group (5 zones in 2 regions, half the workers busy)
 group_locality=any (old behaviour): 5 zones, 2 regions at 30, 120 and 500 workers
 group_locality=prefer: 3 zones in 1 region at 30 workers; 1 zone at 120 and 500
+
+## GPU choice inside a machine (pick_devices), 8-GPU DGX-1-like NVLink layout, median of 2000
+# before (lowest free indices, no interconnect): about 2.8 us/call; chose [0, 1] for 2 GPUs (NV1)
+# after:
+gpus=2 busy=[]     43.8 us/call  chosen=[0, 3]          (NV2)
+gpus=4 busy=[]     65.5 us/call  chosen=[0, 1, 2, 3]    (one NVLink island)
+gpus=4 busy=[0]    51.5 us/call  chosen=[4, 5, 6, 7]    (lowest free would be [1, 2, 3, 4]: SYS links)
+gpus=8 busy=[]      1.6 us/call  chosen=all
+# Runs once per multi-GPU task assignment; schedule() checks only that enough GPUs are free
+# (has_free_devices), so placement cost is unchanged: 61.5 / 224.1 / 960.5 us at 30 / 120 / 500 workers

@@ -44,6 +44,13 @@ A worker offers all of its machine's GPUs and runs one single-GPU job per GPU at
 reserving each job's GPUs and setting `CUDA_VISIBLE_DEVICES` (with `CUDA_DEVICE_ORDER=PCI_BUS_ID`,
 so the indices match `nvidia-smi`). One worker per machine is usually right.
 
+A job that asks for several GPUs (`--gpus 4`, or `devices=4` in the Trainer) gets the free
+GPUs with the fastest links between them, read from `nvidia-smi topo -m`: an NVLink island
+when one is free, otherwise GPUs behind one PCIe switch, and across CPU sockets only when
+nothing better is free. When splitting a machine with `--gpus`, keep GPUs that share NVLink
+or a PCIe switch in the same worker. See
+[Scheduling](../architecture/scheduling.md#gpus-inside-a-machine).
+
 To split a machine between workers, for example separate queues or Python environments, give
 each worker its own GPUs with `--gpus`, so no GPU is offered twice:
 

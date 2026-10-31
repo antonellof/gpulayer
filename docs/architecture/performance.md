@@ -111,5 +111,5 @@ environment to change it.
 - Each waiting worker holds one server thread during its long poll; the built-in server suits
   tens to low hundreds of workers.
 - Distributed groups are kept in one network group, zone or region when possible
-  ([Scheduling](scheduling.md#distributed-groups-and-network-locality)); GPU interconnect
-  inside a machine is not considered yet.
+  ([Scheduling](scheduling.md#distributed-groups-and-network-locality)); multi-GPU tasks get the
+  best-connected free GPUs on a machine.

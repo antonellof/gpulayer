@@ -1,6 +1,6 @@
 # ADR-0021: Topology-aware placement of distributed groups
 
-- **Status:** Accepted (first slice: network locality between machines)
+- **Status:** Accepted (network locality between machines; GPU interconnect inside a machine)
 - **Date:** 2026-10-31
 
 ## Context
@@ -67,7 +67,22 @@ Code: `control_plane/scheduler.py` (`locality`, `_pick_group`, `ever_schedulable
   `benchmarks/results/2026-10-31-placement/`.
 - The training-time benefit has not been measured: that needs a run of the same job on one
   zone and across regions on real machines.
-- GPU topology inside a machine (NVLink, PCIe switches) is not part of this decision.
+
+## Addendum: GPUs inside a machine
+
+- Discovery parses `nvidia-smi topo -m` on machines with more than one NVIDIA GPU into
+  `AcceleratorDevice.links` (peer index to `NV<n>`, `PIX`, `PXB`, `PHB`, `NODE` or `SYS`) and
+  `numa_node`. Indices match `CUDA_VISIBLE_DEVICES`, which the worker sets with
+  `CUDA_DEVICE_ORDER=PCI_BUS_ID`.
+- `pick_devices` gives a task that asks for several GPUs the free set whose slowest link is
+  fastest, then the most total link speed, then the lowest indices (greedy from every
+  starting GPU). Without link data, or for one GPU, it keeps the lowest free indices.
+- `schedule()` only checks that enough GPUs are free (`has_free_devices`); the choice runs
+  once, when a task is assigned: 44 to 66 us on an 8-GPU NVLink layout, against about 3 us
+  for the lowest indices. On that layout a 4-GPU task with GPU 0 busy now gets the other
+  NVLink island (4 to 7) instead of 1 to 4, which crosses the CPU sockets.
+- Tested with recorded matrices (NVLink cube mesh, two-socket PCIe with NIC columns). Not run
+  on a multi-GPU machine: the GCP project's GPU quota is one.
 
 ## Security and operational implications
 
@@ -79,5 +94,7 @@ Code: `control_plane/scheduler.py` (`locality`, `_pick_group`, `ever_schedulable
 ## Follow-up
 
 - Measure one training job in one zone against the same job across regions.
-- Pick GPUs inside a machine by interconnect (`nvidia-smi topo -m`) for multi-GPU tasks.
+- Validate the GPU choice on a multi-GPU machine and measure NCCL all-reduce on the chosen
+  set against the lowest indices.
+- Keep NVLink islands free: place single-GPU tasks on GPUs outside them when possible.
 - AWS and Azure metadata, once those providers exist.

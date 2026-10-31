@@ -23,6 +23,7 @@ Updated 2026-10-31 (v0.5.0 plus unreleased Trainer changes).
 | JAX and CuPy GPU detection (reported only when they ran on the GPU) | tested; not yet run on a GPU |
 | Trainer FSDP (`strategy="fsdp"`) | experimental; tested on CPU, not validated on GPUs |
 | Topology-aware group placement (ADR-0021): zone, region, network group | tested (unit tests, simulated fleet); training speed-up not measured on machines |
+| Multi-GPU tasks get the best-connected GPUs (`nvidia-smi topo -m`) | tested with recorded topology output; not run on a multi-GPU machine (GPU quota of one) |
 | Long-running services (ADR-0019): replicas, `$PORT`, endpoints, restarts | tested on a local worker and on Kubernetes (kind); no load balancer |
 | Cloud provisioning through provider adapters | Google Cloud: validated with a CPU VM and a Spot T4 VM (create, join, run a CUDA training job, delete); other clouds: none yet; `FakeProvider` for tests |
 | Documentation site (`site/`) | builds as a static export |
@@ -115,7 +116,9 @@ uncommitted local changes, so it was deliberately left untouched.
   machines x 4 processes.
 - Done: topology-aware group placement (ADR-0021): distributed groups prefer one network
   group, then zone, then region; required with `group_locality`.
-- Next: measure it on machines in two regions; pick GPUs inside a machine by interconnect.
+- Done: multi-GPU tasks get the best-connected free GPUs on a machine.
+- Next: measure group placement on machines in two regions; validate the GPU choice on a
+  multi-GPU machine.
   Validating FSDP and `torch.compile` needs CUDA hardware.
 
 ### Distribution (ADR-0017)
