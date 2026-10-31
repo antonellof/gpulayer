@@ -203,3 +203,80 @@ def test_service_endpoint_reported_over_http(server):
     assert job.endpoints() == ["10.1.2.3:8123"]
     ch.report_endpoint(a.task_id, None)
     assert job.endpoints() == []
+
+
+class _SilentProxy:
+    """TCP proxy that can stop forwarding without closing, like a deleted pod's address."""
+
+    def __init__(self, target_port: int) -> None:
+        import socket
+        import threading
+
+        self.silent = threading.Event()
+        self._lsock = socket.create_server(("127.0.0.1", 0))
+        self.port = self._lsock.getsockname()[1]
+        self._target = target_port
+        self._socks: list[socket.socket] = []
+        threading.Thread(target=self._accept, daemon=True).start()
+
+    def _accept(self) -> None:
+        import socket
+        import threading
+
+        while True:
+            try:
+                c, _ = self._lsock.accept()
+            except OSError:
+                return
+            u = socket.create_connection(("127.0.0.1", self._target))
+            self._socks += [c, u]
+            for a, b in ((c, u), (u, c)):
+                threading.Thread(target=self._pipe, args=(a, b), daemon=True).start()
+
+    def _pipe(self, a, b) -> None:
+        while True:
+            try:
+                data = a.recv(65536)
+            except OSError:
+                return
+            if not data:
+                return
+            if not self.silent.is_set():  # once silent, drop bytes and never answer
+                try:
+                    b.sendall(data)
+                except OSError:
+                    return
+
+    def close(self) -> None:
+        self._lsock.close()
+        for s in self._socks:
+            s.close()
+
+
+def test_heartbeat_gives_up_on_a_silent_connection_inside_the_lease(server):
+    """A kept-open connection whose peer vanished (server pod restarted) must not hold a
+    heartbeat past the lease: it times out and the next heartbeat uses a new connection."""
+    from gpulayer.contracts import WorkerCapabilities
+
+    srv, _, join_token = server
+    caps = WorkerCapabilities(
+        hostname="h", os="linux", cpu_arch="x86_64", cpu_cores=1, python_version="3.11.0"
+    )
+    ch = HttpWorkerChannel.register(srv.url, join_token, "w", caps)
+    reg_lease = srv.cp.config.lease_ttl_seconds
+    assert ch.heartbeat_timeout == max(1.0, reg_lease / 4) < reg_lease
+
+    proxy = _SilentProxy(int(srv.url.rsplit(":", 1)[1]))
+    try:
+        ch.t = HttpTransport(f"http://127.0.0.1:{proxy.port}", ch.t._token)
+        ch.heartbeat_timeout = 0.5
+        ch.heartbeat()  # opens the kept-open connection
+        proxy.silent.set()
+        t0 = time.monotonic()
+        with pytest.raises(OSError):  # socket timeout, not a minute-long hang
+            ch.heartbeat()
+        assert time.monotonic() - t0 < 2.0
+        proxy.silent.clear()
+        ch.heartbeat()  # a new connection works again
+    finally:
+        proxy.close()

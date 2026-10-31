@@ -5,6 +5,10 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Fix: after a server restart behind the same address (a Kubernetes server pod), a worker's
+  kept-open connection could go silent and hold a heartbeat for 60 s, past the 20 s lease, so
+  its tasks were marked lost. Heartbeats now time out after a quarter of the lease and
+  acquires 10 s after their long-poll wait; a test reproduces the silent connection.
 - Tagline is now "Train PyTorch on every GPU you can reach: one Trainer, from your laptop to
   many machines." The comparison with PyTorch Lightning appears only in performance sections,
   always as the GPUlayer Trainer.

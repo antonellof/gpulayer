@@ -80,14 +80,14 @@ class HttpTransport:
         self._idle: list[http.client.HTTPConnection] = []
         self._idle_lock = threading.Lock()
 
-    def _connect(self) -> http.client.HTTPConnection:
+    def _connect(self, timeout: float) -> http.client.HTTPConnection:
         host, port = self._parsed.hostname or "", self._parsed.port
         if self._ctx is None:
-            conn = http.client.HTTPConnection(host, port, timeout=self.timeout)
+            conn = http.client.HTTPConnection(host, port, timeout=timeout)
             conn.connect()
             _nodelay(conn)
             return conn
-        tls = http.client.HTTPSConnection(host, port, timeout=self.timeout, context=self._ctx)
+        tls = http.client.HTTPSConnection(host, port, timeout=timeout, context=self._ctx)
         tls.connect()
         _nodelay(tls)
         if self.fingerprint:
@@ -109,7 +109,15 @@ class HttpTransport:
         raw: bytes | None = None,
         headers: dict[str, str] | None = None,
         token: str | None = None,
+        timeout: float | None = None,
     ) -> Any:
+        """Send one request. ``timeout`` bounds each socket operation (default ``self.timeout``).
+
+        Kept-open connections can go silent (a restarted server pod whose old address now drops
+        packets), so lease-critical calls pass a short timeout: a heartbeat must fail fast and
+        retry on a new connection well inside the lease, not block for a minute.
+        """
+        limit = self.timeout if timeout is None else timeout
         hdrs = {
             "Authorization": f"Bearer {token or self._token}",
             "X-GpuLayer-Protocol": PROTOCOL_VERSION,
@@ -125,7 +133,10 @@ class HttpTransport:
         reused = conn is not None
         while True:
             if conn is None:
-                conn = self._connect()
+                conn = self._connect(limit)
+            conn.timeout = limit
+            if conn.sock is not None:
+                conn.sock.settimeout(limit)
             try:
                 conn.request(method, url, body=data, headers=hdrs)
                 resp = conn.getresponse()
@@ -165,6 +176,7 @@ class HttpTransport:
         return json.loads(content) if content else None
 
 
+ACQUIRE_MARGIN_SECONDS = 10.0  # how long past its long-poll wait an acquire may take
 MAX_IDLE_CONNECTIONS = 32  # kept open per transport; more concurrent requests open extra ones
 
 _STALE = (
@@ -295,6 +307,9 @@ class HttpWorkerChannel:
         self.t = transport
         self.worker_id = registration.worker_id
         self.heartbeat_interval = registration.heartbeat_interval_seconds
+        # A heartbeat that hangs must give up while the lease still has time left, so the next
+        # one (on a new connection) renews it. A quarter of the lease leaves room for retries.
+        self.heartbeat_timeout = max(1.0, registration.lease_ttl_seconds / 4)
         self._session = registration.session_token
 
     @classmethod
@@ -327,7 +342,7 @@ class HttpWorkerChannel:
         if metrics is not None:
             body["metrics"] = metrics.model_dump(mode="json", exclude_none=True)
         return HeartbeatResponse.model_validate(
-            self.t.request("POST", "/v1/worker/heartbeat", body)
+            self.t.request("POST", "/v1/worker/heartbeat", body, timeout=self.heartbeat_timeout)
         )
 
     def acquire(
@@ -335,7 +350,10 @@ class HttpWorkerChannel:
     ) -> TaskAssignment | None:
         # Long poll: the server holds the request until a task is assigned or `wait` passes.
         # Servers without long-poll support answer at once; the agent then backs off.
-        data = self.t.request("POST", "/v1/worker/acquire", {"wait": wait})
+        # Bounded by the wait plus a margin, so a silent connection is dropped after one poll.
+        data = self.t.request(
+            "POST", "/v1/worker/acquire", {"wait": wait}, timeout=wait + ACQUIRE_MARGIN_SECONDS
+        )
         return TaskAssignment.model_validate(data) if data else None
 
     def start(self, task_id: str) -> None:

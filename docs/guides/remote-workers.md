@@ -39,7 +39,10 @@ token cannot call client endpoints, and the join token can only register.
 
 ## Leases, loss and duplicates
 
-- Heartbeat interval 2 s, lease TTL 20 s (defaults, `ControlPlaneConfig`).
+- Heartbeat interval 2 s, lease TTL 20 s (defaults, `ControlPlaneConfig`). A heartbeat gives
+  up after a quarter of the lease (5 s) and the next one uses a new connection, so a server
+  that restarts behind the same address (a Kubernetes pod) does not cost a worker its lease.
+  A long-poll acquire gives up 10 s after its wait.
 - A task whose lease expires becomes `lost`; the worker is marked `offline`.
 - A lost task may still be running. If the worker reconnects, its next heartbeat tells it to
   kill the task, and a late result is recorded as an event and otherwise ignored.
