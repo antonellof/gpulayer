@@ -8,7 +8,7 @@ comparisons with PyTorch Lightning.
 | Hardware | What ran | Result |
 |---|---|---|
 | 1x Tesla T4 (GCP) | Trainer vs Lightning, MLP and CNN | GPUlayer 1.14 to 1.39x faster per step |
-| 4x RTX 3070 (Vast.ai, PCIe) | Trainer vs Lightning on 1, 2 and 4 GPUs, DDP over NCCL | GPUlayer faster in 4 of 6 cases (1.10 to 1.30x), the same in one, slower in one (1.25x); starts faster on 1 and 2 GPUs |
+| 4x RTX 3070 (Vast.ai, PCIe) | Trainer vs Lightning on 1, 2 and 4 GPUs, DDP over NCCL | GPUlayer faster in 5 of 6 cases (1.11 to 1.76x), slower on the 1-GPU CNN (1.14x); starts faster in 4 of 6 |
 | 4x RTX 3070 (Vast.ai) | NCCL all-reduce across 4 GPUs, best-connected GPU choice | passed; with GPU 0 busy a 2-GPU job got GPUs 2-3 (`PHB`) instead of 1-2 (`SYS`) |
 | 2x A100 SXM4 (Vast.ai, NVLink) | NCCL all-reduce over NVLink, CUDA checks | passed; NVLink read as `NV4` |
 | 1x T4, 1x RTX 3070, 1x A100 | Trainer in fp32, bf16, fp16, `torch.compile`, as a job | passed |
@@ -73,34 +73,40 @@ trains on more samples as GPUs are added.
 
 | Case (4x RTX 3070) | GPUlayer, ms per step | Lightning, ms per step | Result | Start-up, GPUlayer / Lightning |
 |---|---|---|---|---|
-| CNN fp16, 1 GPU | 13.63 | 15.11 | GPUlayer 1.11x faster | 5.5 s / 6.0 s |
-| CNN fp16, 2 GPUs | 40.40 | 30.11 | Lightning 1.34x faster | 8.6 s / 10.0 s |
-| CNN fp16, 4 GPUs | 50.43 | 50.10 | about the same | 10.6 s / 10.7 s |
-| MLP fp32, 1 GPU | 5.03 | 6.52 | GPUlayer 1.30x faster | 5.2 s / 5.7 s |
-| MLP fp32, 2 GPUs | 14.36 | 15.78 | GPUlayer 1.10x faster | 9.2 s / 10.1 s |
-| MLP fp32, 4 GPUs | 60.65 | 70.23 | GPUlayer 1.16x faster | 11.4 s / 10.2 s |
+| CNN fp16, 1 GPU | 14.29 | 12.57 | Lightning 1.14x faster | 6.4 s / 7.3 s |
+| CNN fp16, 2 GPUs | 32.81 | 36.49 | GPUlayer 1.11x faster | 10.3 s / 11.0 s |
+| CNN fp16, 4 GPUs | 43.87 | 56.48 | GPUlayer 1.29x faster | 11.9 s / 12.8 s |
+| MLP fp32, 1 GPU | 5.66 | 6.64 | GPUlayer 1.17x faster | 6.2 s / 6.8 s |
+| MLP fp32, 2 GPUs | 10.68 | 17.50 | GPUlayer 1.64x faster | 11.2 s / 10.9 s |
+| MLP fp32, 4 GPUs | 17.46 | 30.73 | GPUlayer 1.76x faster | 12.4 s / 12.1 s |
 
 ![Start-up on several GPUs: GPUlayer and PyTorch Lightning](../assets/perf/multigpu-startup-light.svg)
 
-- **GPUlayer is faster in four of six cases** and starts sooner on one and two GPUs.
-- **The 2-GPU CNN is slower with GPUlayer's defaults.** Rerun with each setting changed:
-  37.98 ms with defaults, 30.67 ms with `benchmark=True` (cuDNN autotuning), 37.40 ms with all
-  CPU threads per process, and 30.47 ms for Lightning. Lightning also leaves autotuning off,
-  so the default kernel choice differs between the two for a reason not found yet. For CNN
-  training on several GPUs, `Trainer(benchmark=True)` closes the gap; runs of 1,000 steps or
-  more turn it on by default.
-- **Steps get slower as GPUs are added, for both trainers.** Each step trains on more samples,
-  the GPUs exchange gradients over PCIe through the CPU (`PHB`/`SYS` links, no NVLink), and this
-  host's CPU (AMD EPYC 7551) also loads the data. Throughput, not step time, is what scales here.
-- **This host is noisy.** Repeated runs moved by up to 15% (the 1-GPU MLP measured 5.03 to
-  6.88 ms across three runs), so differences under that are not meaningful. Earlier runs
-  are kept in the logs.
+- **GPUlayer is faster in five of six cases, by 1.11 to 1.76x, and the lead grows with the
+  number of GPUs.** On this machine the GPUs are unevenly connected (GPU 0 on one CPU socket,
+  GPUs 1 to 3 on the other, 2 and 3 behind one PCIe switch). GPUlayer gives a 2-GPU job the
+  best-connected pair (2 and 3) and each process its share of the CPU cores; the two
+  contributions were not measured separately.
+- **The 1-GPU CNN is 1.14x faster with Lightning on this host.** Both run the same GPU kernels
+  (profiled: 777 vs 779 ms of CUDA time for 200 steps); the step is limited by the CPU, and
+  GPUlayer's CPU work ran about 10% slower here for a reason not found yet. On the T4 and on
+  the earlier RTX 3070 host the same case was 1.14x and 1.11x faster with GPUlayer.
+- **What was fixed on the way.** An earlier run showed the 2-GPU CNN 1.34x slower. Inside
+  `fit()` the two trainers were within noise: the launching process built the benchmark's 6 s
+  dataset and threw it away, and that was counted per step. GPUlayer's Trainer now takes the
+  loader as a function, built only where training runs, and the benchmark uses it. CPU threads
+  per process now follow the platform (one per process for CPU training, the cores divided
+  among the processes for GPU training), and the per-step `torch.autocast` construction, which
+  queried the CUDA driver every step, is done once.
+- **These hosts are noisy.** Repeated runs moved by up to 15%, so differences under that are
+  not meaningful.
 
-**Method.** Vast.ai `4x RTX 3070 8 GB`, AMD EPYC 7551, driver with CUDA 13.2, Ubuntu 22.04,
-Python 3.12, torch 2.15.0 with CUDA 13.2, Lightning 2.6.6, run on 2026-10-31. Same script and
-measurement as the T4 comparison (`benchmarks/lightning_comparison/`, cases `cnn-gpu1/2/4`
-and `mlp-gpu1/2/4`): 100 and 600 steps, three times each in fresh processes, interleaved.
-Logs: `benchmarks/results/2026-10-31-vast-4x3070-multigpu/`.
+**Method.** Vast.ai `4x RTX 3070 8 GB`, Intel Xeon E5-2673 v4 (two sockets), Ubuntu 22.04,
+Python 3.12, torch 2.15.0 with CUDA 13.2, Lightning 2.6.6, run on 2026-10-31. Script:
+`benchmarks/lightning_comparison/` (cases `cnn-gpu1/2/4` and `mlp-gpu1/2/4`): 100 and 600
+steps, three times each in fresh processes, interleaved; GPUlayer passes its loader as a
+function, Lightning the loader. Logs: `benchmarks/results/2026-10-31-vast-4x3070-xeon/`; the
+earlier run on an AMD EPYC 7551 host is in `2026-10-31-vast-4x3070-multigpu/`.
 
 ## Distributed job start-up
 

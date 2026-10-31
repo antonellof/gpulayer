@@ -489,8 +489,7 @@ export default function ComparePage() {
               </p>
               <p>
                 On 1, 2 and 4 RTX 3070 GPUs of one machine (DDP over NCCL, each trainer&apos;s defaults), GPUlayer was
-                faster in 4 of 6 cases (1.10 to 1.30x), the same on the 4-GPU CNN, and 1.34x slower on the 2-GPU CNN,
-                where <code className="font-mono">benchmark=True</code> brings it level.
+                faster in 5 of 6 cases, by 1.11 to 1.76x, and 1.14x slower on the 1-GPU CNN.
               </p>
               <p>
                 One CNN training job on 2, 4 and 8 GCP machines (4 processes each, gloo, same machines and

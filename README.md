@@ -127,9 +127,9 @@ and each trainer's defaults:
 
 - One Tesla T4: GPUlayer's Trainer is 1.25 to 1.39x faster per step on small models and 1.14x
   on a compute-bound CNN, and starts 0.1 to 0.7 s sooner.
-- 1, 2 and 4 RTX 3070s (DDP over NCCL): GPUlayer is faster in 4 of 6 cases (1.10 to 1.30x),
-  the same on the 4-GPU CNN, and 1.34x slower on the 2-GPU CNN with default settings
-  (`benchmark=True` closes that gap); it starts sooner on 1 and 2 GPUs.
+- 1, 2 and 4 RTX 3070s (DDP over NCCL): GPUlayer is faster in 5 of 6 cases, by 1.11 to 1.76x,
+  with the lead growing with the number of GPUs; the 1-GPU CNN was 1.14x faster with Lightning
+  on that host.
 - NCCL across 4 GPUs and over NVLink (2x A100), and the best-connected GPU choice, validated
   on rented machines.
 - One training job across machines on CPUs (gloo): GPUlayer trains 11.9% faster than

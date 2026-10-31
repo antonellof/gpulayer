@@ -5,6 +5,10 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- The Trainer builds its `torch.autocast` context once per run instead of once per step: each
+  construction queried the CUDA driver (1,000 driver calls in a 1,000-step profile).
+- Multi-GPU results rerun with these fixes on 4x RTX 3070: GPUlayer faster than Lightning in 5
+  of 6 cases (1.11 to 1.76x), 1.14x slower on the 1-GPU CNN on that host.
 - Trainer `fit`, `validate`, `test` and `predict` accept a function that returns the loader;
   it is called only in the processes that train. When a Trainer launches a job, data built in
   the launching process is thrown away: a 6 s synthetic dataset built that way made a 2-GPU

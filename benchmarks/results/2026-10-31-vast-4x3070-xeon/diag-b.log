@@ -1,0 +1,2 @@
+case       trainer   ms/step start-up s
+cnn-gpu2   pl          35.90      11.25

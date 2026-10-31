@@ -114,7 +114,7 @@ const GPU_RESULTS: { gpu: string; result: string }[] = [
   { gpu: "Tesla T4", result: "1.14 to 1.39x faster per step than Lightning; Trainer in fp32, bf16, fp16 and torch.compile" },
   {
     gpu: "4x RTX 3070 (PCIe)",
-    result: "Faster than Lightning in 4 of 6 cases on 1, 2 and 4 GPUs; NCCL across 4 GPUs; best-connected GPU choice checked",
+    result: "Faster than Lightning in 5 of 6 cases on 1, 2 and 4 GPUs (up to 1.76x); NCCL across 4 GPUs; best-connected GPU choice checked",
   },
   { gpu: "2x A100 SXM4 (NVLink)", result: "NCCL over NVLink (NV4); CUDA checks passed" },
   { gpu: "Apple M2 Pro (Metal)", result: "PyTorch MPS and MLX jobs; Trainer on MPS" },
@@ -294,8 +294,8 @@ export default function Home() {
               it, launched there, and its logs, outputs and results are returned to you.
             </p>
             <p className="mt-4 max-w-2xl text-sm text-muted-foreground">
-              Its PyTorch Trainer ran 1.14 to 1.39x faster per step than PyTorch Lightning on an NVIDIA T4, was faster
-              in 4 of 6 cases on 1 to 4 RTX 3070s, and trained 11.9% faster on 8 machines.{" "}
+              Benchmarked against PyTorch Lightning on NVIDIA GPUs, its Trainer was faster in 8 of 9 cases: up to 1.39x
+              per step on a Tesla T4 and up to 1.76x on four RTX 3070s.{" "}
               <Link href="/docs/get-started/performance-and-comparison/" className="link-arrow">
                 Benchmarks and method <ArrowRight className="h-3 w-3" />
               </Link>

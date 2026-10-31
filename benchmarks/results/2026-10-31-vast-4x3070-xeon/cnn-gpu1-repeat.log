@@ -1,0 +1,5 @@
+case       trainer   ms/step start-up s
+cnn-gpu1   gl          14.58       6.12
+cnn-gpu1   pl          13.22       7.07
+cnn-gpu1   gl-bench    13.55       8.32
+cnn-gpu1   ratio    pl faster x1.10

@@ -1,0 +1,5 @@
+case       trainer   ms/step start-up s
+cnn-gpu2   gl          43.32       9.47
+cnn-gpu2   gl-omp      44.26       9.98
+cnn-gpu2   pl          34.34      11.66
+cnn-gpu2   ratio    pl faster x1.26

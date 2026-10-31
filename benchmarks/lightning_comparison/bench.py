@@ -168,7 +168,19 @@ model = M()
 # takes the loader itself (its launching process becomes rank 0, so the data is used).
 _data = loader if fw.startswith("gl") else loader()
 _t_fit = time.perf_counter()
-trainer.fit(model, _data)
+if os.environ.get("BENCH_TORCH_PROFILE"):  # GPU kernels, top by CUDA time (one process)
+    from torch.profiler import ProfilerActivity, profile
+
+    with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as _tp:
+        trainer.fit(model, _data)
+    print(
+        _tp.key_averages().table(
+            sort_by="self_cuda_time_total", row_limit=14, max_name_column_width=60
+        ),
+        flush=True,
+    )
+else:
+    trainer.fit(model, _data)
 if "RANK" in os.environ or fw == "pl" or devices * nodes == 1:
     # Time inside fit() in a process that trained (not GPUlayer's launcher, which only waits).
     print(f"FIT {os.environ.get('RANK', '0')} {time.perf_counter() - _t_fit:.4f}", flush=True)

@@ -14,7 +14,7 @@ machines named. Everything else says what is missing.
 | Distributed groups kept in one network group, zone or region | validated on GCP: a job split across two regions ran 16 to 24% slower than in one region; the scheduler kept it in one zone |
 | NVIDIA CUDA | validated on one Tesla T4, including the Trainer (1.14 to 1.39x faster per step than Lightning) |
 | Several GPUs per machine with NCCL, choosing the best-connected GPUs | validated on 4× RTX 3070 (PCIe) and 2× A100 SXM4 (NVLink) |
-| Trainer on several GPUs against Lightning | measured on 1, 2 and 4 RTX 3070s: faster in 4 of 6 cases, slower on the 2-GPU CNN with defaults (under investigation) |
+| Trainer on several GPUs against Lightning | measured on 1, 2 and 4 RTX 3070s: faster in 5 of 6 cases (1.11 to 1.76x), 1.14x slower on the 1-GPU CNN on one host |
 | NCCL across machines | implemented; not run yet |
 | Apple Silicon (PyTorch MPS, MLX) | validated on an M2 Pro |
 | AMD ROCm | detected, not run |
@@ -31,7 +31,7 @@ machines named. Everything else says what is missing.
 ## Next
 
 - NCCL across machines.
-- Why the 2-GPU CNN picks slower cuDNN kernels with GPUlayer's defaults than with Lightning's.
+- Why the 1-GPU CNN's CPU work ran about 10% slower than Lightning's on one RTX 3070 host (same GPU kernels).
 - FSDP and `torch.compile` on CUDA.
 - A second cloud provider.
 - A CUDA container image.
