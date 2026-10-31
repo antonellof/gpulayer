@@ -189,6 +189,24 @@ A checkpoint holds `state_dict`, `optimizer`, `epoch`, `global_step` and `histor
 training on workers, a local `ckpt_path` is uploaded with the job, so resuming works the same
 way remotely.
 
+## Build data where training runs
+
+When the Trainer launches a job (several GPUs or machines, or `target`), the launching process
+only submits it and waits; the job runs the script again in each process. Data built before
+`fit()` in the launching process is thrown away. Pass a function instead and it is called only
+where training runs:
+
+```python
+def train_loader():
+    return DataLoader(make_dataset(), batch_size=128, shuffle=True)
+
+trainer.fit(model, train_loader)          # not train_loader()
+```
+
+The same works for `val_dataloaders`, `validate`, `test` and `predict`. Lightning's equivalent
+is a `LightningDataModule`; with Lightning the launching process becomes rank 0, so its data is
+used rather than thrown away.
+
 ## FSDP (experimental)
 
 `strategy="fsdp"` shards each submodule that owns parameters (for example every `nn.Linear`)

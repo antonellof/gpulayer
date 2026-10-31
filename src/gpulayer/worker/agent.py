@@ -382,10 +382,15 @@ class WorkerAgent:
             env["CUDA_VISIBLE_DEVICES"] = ""  # CPU jobs must not grab a GPU by accident
         if isinstance(spec.workload, DistributedJob):
             env["GPULAYER_COMM_BACKEND"] = spec.workload.comm_backend
-            # torchrun defaults this to 1 per process and prints a banner when it is unset.
-            # Measured (ADR-0016): sharing the cores between ranks instead was slower for small
-            # models and no faster for larger ones on CPU, so keep 1; jobs can override it.
-            env.setdefault("OMP_NUM_THREADS", "1")
+            # CPU threads per rank, by platform (ADR-0016). CPU training: 1, measured faster
+            # than sharing the cores, since every rank computes on the CPU. GPU training: the
+            # CPU only loads data and drives the GPU, so each rank gets its share of the cores,
+            # as Lightning does. Jobs can override it with `env`.
+            if spec.resources.accelerator == Accelerator.CPU:
+                env.setdefault("OMP_NUM_THREADS", "1")
+            else:
+                share = max(1, self.caps.cpu_cores // max(1, spec.workload.procs_per_worker))
+                env.setdefault("OMP_NUM_THREADS", str(share))
         return env, secret_values
 
     def _run(self, a: TaskAssignment, ws: Path, cancel: threading.Event) -> TaskOutcome:

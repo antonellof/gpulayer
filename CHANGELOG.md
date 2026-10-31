@@ -5,6 +5,13 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Trainer `fit`, `validate`, `test` and `predict` accept a function that returns the loader;
+  it is called only in the processes that train. When a Trainer launches a job, data built in
+  the launching process is thrown away: a 6 s synthetic dataset built that way made a 2-GPU
+  run look 25% slower per step than Lightning, whose launching process becomes rank 0. Inside
+  `fit()` the two were within noise (21.98 vs 20.32 ms/step on 2x RTX 3070).
+- CPU threads per rank are now set by platform: 1 for CPU training (measured faster), and the
+  machine's cores divided among the ranks for GPU training, as Lightning does.
 - GPU benchmarks: Trainer against Lightning on 1, 2 and 4 RTX 3070s (Vast.ai), DDP over NCCL.
   GPUlayer faster in 4 of 6 cases (1.10 to 1.30x), the same on the 4-GPU CNN, slower on the
   2-GPU CNN with defaults (1.34x; `benchmark=True` closes it). New charts

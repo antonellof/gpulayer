@@ -541,3 +541,16 @@ def test_autotuning_follows_the_planned_steps():
     assert glt.Trainer(max_steps=5000)._planned_steps(train) == 5000
     assert glt.Trainer(max_epochs=1000, limit_train_batches=2)._planned_steps(train) == 2000
     assert glt.Trainer()._planned_steps(iter([])) == 0  # no length: unknown
+
+
+def test_loaders_can_be_functions_built_only_where_training_runs(tmp_path):
+    built = []
+
+    def make_train():
+        built.append("train")
+        return loaders()[0]
+
+    t = glt.Trainer(accelerator="cpu", max_epochs=1, default_root_dir=tmp_path)
+    t.fit(Lin(), make_train, lambda: loaders()[1])
+    assert built == ["train"] and "val_loss" in t.callback_metrics
+    assert "val_loss" in t.validate(Lin(), lambda: loaders()[1])

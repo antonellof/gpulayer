@@ -11,6 +11,22 @@ import sys
 import time
 
 T0 = time.perf_counter()
+
+if os.environ.get("BENCH_PROFILE"):  # profile every process of either trainer, same way
+    import atexit
+    import cProfile
+    import pstats
+
+    _prof = cProfile.Profile()
+    _prof.enable()
+
+    def _dump() -> None:
+        _prof.disable()
+        role = f"rank{os.environ['RANK']}" if "RANK" in os.environ else "main"
+        with open(f"/tmp/prof-{sys.argv[1]}-{role}-{os.getpid()}.txt", "w") as f:
+            pstats.Stats(_prof, stream=f).sort_stats("tottime").print_stats(18)
+
+    atexit.register(_dump)
 fw, case, steps = sys.argv[1], sys.argv[2], int(sys.argv[3])
 nodes = int(sys.argv[4]) if len(sys.argv) > 4 else 1
 
@@ -88,7 +104,7 @@ VARIANTS: dict[str, dict] = {
 
 launch_options: dict | None = {"quiet": True} if devices * nodes > 1 else None
 if fw == "gl-omp" and launch_options is not None:
-    launch_options["env"] = {"OMP_NUM_THREADS": str(os.cpu_count())}
+    launch_options["env"] = {"OMP_NUM_THREADS": str(max(1, (os.cpu_count() or 1) // devices))}
 
 if fw in VARIANTS:
     import gpulayer.pytorch as glt
@@ -148,7 +164,14 @@ else:
 
 torch.manual_seed(0)
 model = M()
-trainer.fit(model, loader())
+# GPUlayer takes the loader as a function, built only in the processes that train; Lightning
+# takes the loader itself (its launching process becomes rank 0, so the data is used).
+_data = loader if fw.startswith("gl") else loader()
+_t_fit = time.perf_counter()
+trainer.fit(model, _data)
+if "RANK" in os.environ or fw == "pl" or devices * nodes == 1:
+    # Time inside fit() in a process that trained (not GPUlayer's launcher, which only waits).
+    print(f"FIT {os.environ.get('RANK', '0')} {time.perf_counter() - _t_fit:.4f}", flush=True)
 if torch.cuda.is_initialized():  # not in GPUlayer's launcher, which never used the GPU
     torch.cuda.synchronize()
 if fw == "pl" and trainer.global_rank != 0:
