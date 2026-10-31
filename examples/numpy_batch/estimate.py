@@ -1,9 +1,6 @@
-"""Any Python library, any workload: a NumPy Monte Carlo job split into parallel chunks.
+"""A NumPy Monte Carlo job split into parallel chunks with @gl.remote and .map().
 
-GPUlayer is not tied to a training framework. A function that uses NumPy, SciPy, pandas,
-OpenCV, CuPy or anything else runs the same way: decorate it, then .run() or .map() it.
-
-    python estimate.py
+python estimate.py
 """
 
 import gpulayer as gl

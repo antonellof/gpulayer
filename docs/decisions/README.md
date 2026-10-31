@@ -39,7 +39,7 @@ proposed. Each ADR says which part is which.
 | [0020](ADR-0020-two-level-gradient-sync.md) | Two-level gradient sync | Accepted | With gloo and several processes per machine, the Trainer sums gradients inside each machine before crossing the network. |
 | [0021](ADR-0021-topology-aware-group-placement.md) | Topology-aware group placement | Accepted (first slice) | Workers report a zone and an optional network group; distributed groups prefer one network group, then zone, then region, or require one with `group_locality`. |
 | [0022](ADR-0022-job-environments-and-dependency-installation.md) | Job environments and dependency installation | Accepted (per-job requirements implemented) | Installation stays out of job time: worker environments by default; per-job requirements in environments cached by content (like Ray's runtime_env), built on the worker's packages, with preparation reported apart. |
-| [0023](ADR-0023-product-focus-pytorch-training.md) | Product focus on PyTorch training | Accepted | "Train PyTorch on every GPU you can reach: one Trainer, from your laptop to many machines, faster than Lightning." The job engine stays as the foundation; claims name validated backends and measured cases. |
+| [0023](ADR-0023-product-focus-pytorch-training.md) | Product focus on PyTorch training | Accepted | "Train PyTorch on every GPU you can reach: one Trainer, from your laptop to many machines." The job engine stays as the foundation; claims name validated backends and measured cases. |
 
 ## Template
 

@@ -4,11 +4,10 @@
 
 <p align="center">
   <b>Train PyTorch on every GPU you can reach.</b><br>
-  One Trainer, from your laptop to many machines, faster than Lightning.<br>
+  One Trainer, from your laptop to many machines.<br>
   <a href="#install">Install</a> ·
   <a href="#quickstart">Quickstart</a> ·
   <a href="#performance-and-comparison">Performance</a> ·
-  <a href="#why-gpulayer">Why GPUlayer</a> ·
   <a href="#for-ai-and-coding-agents">AI agents</a> ·
   <a href="#architecture">Architecture</a> ·
   <a href="https://www.gpulayer.dev/docs/">Docs</a> ·
@@ -16,24 +15,18 @@
   <a href="https://github.com/antonellof/gpulayer/blob/main/CHANGELOG.md">Changelog</a>
 </p>
 
-GPUlayer trains PyTorch models with one `Trainer` that runs the same script in your process,
-on several GPUs of one machine, or across many machines: your laptop, workstations, servers,
-clusters and cloud VMs. It picks machines and GPUs that can run the job, keeps a distributed
-group on the best-connected GPUs and in one zone, starts every process, and brings back
-logs, checkpoints and metrics. Against PyTorch Lightning, with the same model, data and
-optimizer, it was faster in 10 of 11 GPU benchmarks (NVIDIA and Apple) and in every CPU
-benchmark.
+The GPUlayer `Trainer` runs the same PyTorch script in your process, on every GPU of a
+machine, or across many machines: laptops, workstations, servers and cloud VMs. It picks
+machines and GPUs that can train the model, starts every process, and brings back logs,
+checkpoints and metrics.
 
-NVIDIA CUDA, Apple Metal (MPS) and CPU are validated; AMD ROCm is implemented and awaiting
-validation on AMD hardware. Under the Trainer is a general job engine, so commands and
-Python functions in any language or library run the same way.
-Documentation: [gpulayer.dev/docs](https://www.gpulayer.dev/docs/).
+NVIDIA CUDA, Apple Metal (MPS) and CPU are validated on hardware. AMD ROCm is implemented and
+not yet validated. Docs: [gpulayer.dev/docs](https://www.gpulayer.dev/docs/).
 
-> **v0.7.0.** Tested on CPU, Apple Silicon (PyTorch MPS and MLX) and an
-> NVIDIA Tesla T4, on machines with several GPUs (4× RTX 3070, 2× A100 with NVLink: NCCL across all
-> GPUs of a machine), and on up to 30 machines on Google Cloud. NCCL across machines is implemented
-> but not validated yet; cloud provisioning covers Google Cloud. See
-> [Status and roadmap](https://github.com/antonellof/gpulayer/blob/main/docs/project/status.md).
+> **v0.7.0.** Validated on a Tesla T4, 4× RTX 3070, 2× A100 (NVLink), an Apple M2 Pro, and
+> distributed CPU training on up to 16 Google Cloud machines. NCCL across machines is
+> implemented but not validated. See
+> [Status](https://github.com/antonellof/gpulayer/blob/main/docs/project/status.md).
 
 ## Install
 
@@ -41,7 +34,7 @@ Documentation: [gpulayer.dev/docs](https://www.gpulayer.dev/docs/).
 pip install gpulayer
 ```
 
-That's it. Check what this machine can run:
+Check what this machine can train on:
 
 ```bash
 gpulayer resources detect
@@ -73,116 +66,57 @@ trainer.fit(model, train_loader)          # 2 machines x 4 GPUs, DDP over NCCL
 ```
 
 ```bash
-# The same script in this process, as 2-process DDP, or on 2 nodes: only the flags change
+# The same file in this process, as 2-process DDP, or on 2 nodes: only the flags change
 python examples/trainer_regression/train.py
 python examples/trainer_regression/train.py --accelerator cpu --devices 2
 python examples/trainer_regression/train.py --accelerator cpu --nodes 2 --devices 2
 
-# More machines: run this on one of them, then paste the printed `gpulayer join` line on the others
+# More machines: run this on one, then paste the printed `gpulayer join` line on the others
 gpulayer up
-
-# See what ran
-gpulayer dashboard
 ```
 
-Not only PyTorch: any command or Python function runs the same way.
+The [full quickstart](https://github.com/antonellof/gpulayer/blob/main/docs/get-started/quickstart.md) shows the output of each step.
 
-```bash
-gpulayer submit --accelerator cuda --source ./app -- ./render.sh
-```
+## Performance
 
-![GPUlayer dashboard](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/dashboard/overview-dark.png)
-
-The [full quickstart](https://github.com/antonellof/gpulayer/blob/main/docs/get-started/quickstart.md) walks through each step with its output.
-
-## Performance and comparison
-
-Measured on NVIDIA GPUs against PyTorch Lightning, with the same model, data and optimizer
-and each trainer's defaults:
+Against PyTorch Lightning, with the same model, data and optimizer and each trainer's
+defaults, the GPUlayer Trainer was faster in 10 of 11 GPU cases and in every CPU case.
 
 ![Training step time: GPUlayer and PyTorch Lightning](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/perf/training-step-light.svg#gh-light-mode-only)
 ![Training step time: GPUlayer and PyTorch Lightning](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/perf/training-step-dark.svg#gh-dark-mode-only)
 ![Several GPUs in one machine](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/perf/multigpu-step-light.svg#gh-light-mode-only)
 ![Several GPUs in one machine](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/perf/multigpu-step-dark.svg#gh-dark-mode-only)
 
-- One Tesla T4: GPUlayer's Trainer is 1.25 to 1.39x faster per step on small models and 1.14x
-  on a compute-bound CNN, and starts 0.1 to 0.7 s sooner.
-- 1, 2 and 4 RTX 3070s (DDP over NCCL): GPUlayer is faster in 5 of 6 cases, by 1.11 to 1.76x,
-  with the lead growing with the number of GPUs; the 1-GPU CNN was 1.14x faster with Lightning
-  on that host.
-- NCCL across 4 GPUs and over NVLink (2x A100), and the best-connected GPU choice, validated
-  on rented machines.
-- One training job across machines on CPUs (gloo): GPUlayer trains 11.9% faster than
-  Lightning under torchrun on 8 machines (50.5 s vs 57.3 s; 5.3% on 4, 1.6% on 2), and it
-  starts every machine from one `Trainer(num_nodes=N)` call.
-- Placement: the same 4-machine job took 42.5 s when GPUlayer kept it in one zone and 58.8 s
-  when it was spread across two GCP regions (median of five, placed by the scheduler).
-- Distributed jobs start 1.1 to 2.3 s faster than through torchrun; tested on up to 16
-  machines (32 processes) and 30 workers across two GCP regions.
-- Across two machines: a distributed job spanning both, fail-fast in 2.7 s, and 55.6 small
-  jobs per second.
+| Hardware | GPUlayer Trainer against Lightning |
+|---|---|
+| Tesla T4 | 1.14 to 1.39x per step |
+| 1, 2 and 4 RTX 3070s (DDP over NCCL) | 1.11 to 1.76x in 5 cases; 1.14x slower on one GPU with a CNN |
+| Apple M2 Pro, GPU and CPU | 1.05 to 1.75x |
+| 8 CPU machines on Google Cloud (gloo) | 11.9% faster (Lightning under torchrun) |
 
-![One training job on more machines](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/perf/strong-scaling-light.svg#gh-light-mode-only)
-![One training job on more machines](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/perf/strong-scaling-dark.svg#gh-dark-mode-only)
+Keeping a 4-machine run in one zone instead of two regions made it 1.38x faster (42.5 s vs
+58.8 s). Method and logs:
+[Performance](https://github.com/antonellof/gpulayer/blob/main/docs/get-started/performance-and-comparison.md);
+scripts in [`benchmarks/`](https://github.com/antonellof/gpulayer/blob/main/benchmarks/README.md).
 
-Method, all charts and raw logs:
-[Performance and comparison](https://github.com/antonellof/gpulayer/blob/main/docs/get-started/performance-and-comparison.md). Reproduce them
-with [`benchmarks/`](https://github.com/antonellof/gpulayer/blob/main/benchmarks/README.md).
+## How it works
 
-## Why GPUlayer
+![Your training goes through GPUlayer to the machines you can reach](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/architecture-light.svg#gh-light-mode-only)
+![Your training goes through GPUlayer to the machines you can reach](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/architecture-dark.svg#gh-dark-mode-only)
 
-Most GPU code assumes the GPU is on the machine where you run it. With GPUlayer you describe
-what a workload needs (an accelerator, GPU memory, frameworks) and it runs on a machine that
-has it, wherever that machine is.
+The Trainer submits a run that says what it needs (accelerator, number of GPUs and machines,
+GPU memory). A control plane, inside your process or run as a server with `gpulayer up`,
+picks machines that can train it: the best-connected GPUs of a machine, and machines in one
+zone when it can. A worker on each machine starts the ranks, streams logs and uploads
+checkpoints. Workers open every connection themselves, so machines can sit behind NAT. More
+in the [Architecture overview](https://github.com/antonellof/gpulayer/blob/main/docs/architecture/overview.md).
 
-| Situation | Without GPUlayer | With GPUlayer |
-|---|---|---|
-| Code on a laptop, GPU elsewhere | ssh, copy code, rebuild the environment, tmux, copy results back | `gpulayer submit --target remote -- <cmd>` |
-| Several GPU machines | track free machines by hand; jobs crash on the wrong GPU or library | one queue; each job lands where it can run, or is rejected with the reason |
-| NVIDIA servers and Apple Silicon Macs | separate scripts and setup per machine | ask for `cuda` or `mps`; one interface |
-| Many independent tasks | loops and ad hoc scripts | `fn.map([...])` across free GPUs |
-| Multi-node training | `torchrun` on every node with matching ranks and addresses | `Trainer(num_nodes=2, devices=4)`; the machines are kept in one zone or rack when possible |
+The same engine runs plain commands and Python functions as jobs, and `gpulayer mcp` lets
+coding agents start runs and read their results
+([AI agents](https://github.com/antonellof/gpulayer/blob/main/docs/guides/ai-agents.md)).
 
-On one machine with one GPU, running your code directly is simpler. GPUlayer runs services
-without a load balancer in front of them, and is not a sandbox for untrusted code. More in
-[Why GPUlayer](https://www.gpulayer.dev/docs/#why-gpulayer).
-
-## For AI and coding agents
-
-`gpulayer mcp` is an MCP server, so Claude Code, Claude Desktop, Cursor, Codex and VS Code
-agents can list GPUs, submit jobs, wait, read logs and download outputs. An
-[Agent Skill](https://github.com/antonellof/gpulayer/blob/main/integrations/skills/gpulayer/SKILL.md) covers agents that use the CLI.
-
-```bash
-claude mcp add gpulayer -- gpulayer mcp
-```
-
-See [AI and coding agents](https://github.com/antonellof/gpulayer/blob/main/docs/guides/ai-agents.md).
-
-## Architecture
-
-![Your workloads go through GPUlayer to the machines you can reach](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/architecture-light.svg#gh-light-mode-only)
-![Your workloads go through GPUlayer to the machines you can reach](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/architecture-dark.svg#gh-dark-mode-only)
-
-GPUlayer has three parts:
-
-- **Clients** submit work: the `gpulayer` CLI, the Python SDK (`@gl.remote`, `gl.Client`), the
-  PyTorch `Trainer` and `launch()`, and the MCP server for AI agents. A job states what it
-  needs (accelerator, GPU count and memory, frameworks), not which machine to use.
-- **The control plane** keeps the job queue, picks a worker for each job and records the
-  reason when no worker fits. Distributed groups stay in one network group, zone or region
-  when possible, and multi-GPU jobs get the best-connected GPUs on a machine. It stores code bundles, inputs, outputs and logs, and checks
-  tokens. For work on one machine it runs inside your process; for several machines it runs
-  as a server (`gpulayer up`).
-- **Workers**, one per machine, report their GPUs and installed frameworks, ask the control
-  plane for tasks, run them as normal processes (one per rank for distributed jobs),
-  stream logs back and upload outputs. Workers open every connection themselves, so they can
-  sit behind NAT. A cloud VM is a worker that joined with `gpulayer join`.
-
-A job goes from `queued` to `scheduled` when a worker fits, then `running`, and ends as
-`succeeded`, `failed`, `cancelled` or `timed_out`. Frameworks such as PyTorch, JAX, MLX and
-CuPy still decide how the computation uses the GPU; GPUlayer decides which GPU runs it. More in
-[Architecture overview](https://github.com/antonellof/gpulayer/blob/main/docs/architecture/overview.md).
+With one GPU on the machine you are using, a plain training loop is simpler. Jobs are not
+sandboxed, so use GPUlayer among people who trust each other.
 
 ## Development
 

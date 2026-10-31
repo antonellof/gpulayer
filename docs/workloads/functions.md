@@ -1,7 +1,7 @@
 # Python functions and sweeps
 
 `@gl.remote` turns a top-level Python function into a job that runs on any compatible worker,
-or many times in parallel. The function can use any library: NumPy, MLX, JAX, CuPy, PyTorch,
+or many times in parallel. The function can use any library installed on the worker (PyTorch, NumPy, MLX,
 OpenCV or your own code.
 
 ```python

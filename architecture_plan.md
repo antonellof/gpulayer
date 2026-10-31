@@ -7,7 +7,7 @@
 ## 1. Vision
 
 **Product focus (2026-10-31, ADR-0023):** Train PyTorch on every GPU you can reach: one
-Trainer, from your laptop to many machines, faster than Lightning. The architecture below is
+Trainer, from your laptop to many machines. The architecture below is
 the engine under that Trainer: placement, workers, distributed launch and providers serve
 PyTorch training first, and remain usable for any job.
 

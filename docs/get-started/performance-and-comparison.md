@@ -7,12 +7,12 @@ comparisons with PyTorch Lightning.
 
 | Hardware | What ran | Result |
 |---|---|---|
-| 1x Tesla T4 (GCP) | Trainer vs Lightning, MLP and CNN | GPUlayer 1.14 to 1.39x faster per step |
-| 4x RTX 3070 (Vast.ai, PCIe) | Trainer vs Lightning on 1, 2 and 4 GPUs, DDP over NCCL | GPUlayer faster in 5 of 6 cases (1.11 to 1.76x), slower on the 1-GPU CNN (1.14x); starts faster in 4 of 6 |
+| 1x Tesla T4 (GCP) | Trainer vs Lightning, MLP and CNN | GPUlayer Trainer 1.14 to 1.39x faster per step |
+| 4x RTX 3070 (Vast.ai, PCIe) | Trainer vs Lightning on 1, 2 and 4 GPUs, DDP over NCCL | GPUlayer Trainer faster in 5 of 6 cases (1.11 to 1.76x), slower on the 1-GPU CNN (1.14x); starts faster in 4 of 6 |
 | 4x RTX 3070 (Vast.ai) | NCCL all-reduce across 4 GPUs, best-connected GPU choice | passed; with GPU 0 busy a 2-GPU job got GPUs 2-3 (`PHB`) instead of 1-2 (`SYS`) |
 | 2x A100 SXM4 (Vast.ai, NVLink) | NCCL all-reduce over NVLink, CUDA checks | passed; NVLink read as `NV4` |
 | 1x T4, 1x RTX 3070, 1x A100 | Trainer in fp32, bf16, fp16, `torch.compile`, as a job | passed |
-| Apple M2 Pro (Metal GPU and CPU) | Trainer vs Lightning, MLP and CNN on the GPU and the CPU, DDP on 2 CPU processes | GPUlayer faster in all 5 (1.05 to 1.75x) |
+| Apple M2 Pro (Metal GPU and CPU) | Trainer vs Lightning, MLP and CNN on the GPU and the CPU, DDP on 2 CPU processes | GPUlayer Trainer faster in all 5 (1.05 to 1.75x) |
 
 Not measured yet: NCCL across machines, more than 4 GPUs, and GPUs with NVLink for training
 speed. Every number comes from a script in
@@ -27,12 +27,12 @@ Lightning's `Trainer` on one Tesla T4.
 
 ![Training step time: GPUlayer and PyTorch Lightning](../assets/perf/training-step-light.svg)
 
-| Case (Tesla T4) | GPUlayer, ms per step | Lightning, ms per step | Result |
+| Case (Tesla T4) | GPUlayer Trainer, ms per step | Lightning, ms per step | Result |
 |---|---|---|---|
-| MLP, fp32, batch 256 | 4.06 | 5.64 | GPUlayer 1.39x faster |
-| MLP, fp16 mixed precision | 5.00 | 6.25 | GPUlayer 1.25x faster |
-| CNN, fp16 mixed precision, batch 128 | 10.82 | 12.33 | GPUlayer 1.14x faster |
-| DDP, 2 CPU processes | 3.20 | 9.56 | GPUlayer 2.99x faster |
+| MLP, fp32, batch 256 | 4.06 | 5.64 | GPUlayer Trainer 1.39x faster |
+| MLP, fp16 mixed precision | 5.00 | 6.25 | GPUlayer Trainer 1.25x faster |
+| CNN, fp16 mixed precision, batch 128 | 10.82 | 12.33 | GPUlayer Trainer 1.14x faster |
+| DDP, 2 CPU processes | 3.20 | 9.56 | GPUlayer Trainer 2.99x faster |
 
 - **Small models** (the MLPs) take a few milliseconds per step, so the trainer's own work per
   step matters. GPUlayer's loop does less of it, for example it does not wait for the GPU when
@@ -72,18 +72,18 @@ trains on more samples as GPUs are added.
 
 ![Several GPUs in one machine: GPUlayer and PyTorch Lightning](../assets/perf/multigpu-step-light.svg)
 
-| Case (4x RTX 3070) | GPUlayer, ms per step | Lightning, ms per step | Result | Start-up, GPUlayer / Lightning |
+| Case (4x RTX 3070) | GPUlayer Trainer, ms per step | Lightning, ms per step | Result | Start-up, GPUlayer / Lightning |
 |---|---|---|---|---|
 | CNN fp16, 1 GPU | 14.29 | 12.57 | Lightning 1.14x faster | 6.4 s / 7.3 s |
-| CNN fp16, 2 GPUs | 32.81 | 36.49 | GPUlayer 1.11x faster | 10.3 s / 11.0 s |
-| CNN fp16, 4 GPUs | 43.87 | 56.48 | GPUlayer 1.29x faster | 11.9 s / 12.8 s |
-| MLP fp32, 1 GPU | 5.66 | 6.64 | GPUlayer 1.17x faster | 6.2 s / 6.8 s |
-| MLP fp32, 2 GPUs | 10.68 | 17.50 | GPUlayer 1.64x faster | 11.2 s / 10.9 s |
-| MLP fp32, 4 GPUs | 17.46 | 30.73 | GPUlayer 1.76x faster | 12.4 s / 12.1 s |
+| CNN fp16, 2 GPUs | 32.81 | 36.49 | GPUlayer Trainer 1.11x faster | 10.3 s / 11.0 s |
+| CNN fp16, 4 GPUs | 43.87 | 56.48 | GPUlayer Trainer 1.29x faster | 11.9 s / 12.8 s |
+| MLP fp32, 1 GPU | 5.66 | 6.64 | GPUlayer Trainer 1.17x faster | 6.2 s / 6.8 s |
+| MLP fp32, 2 GPUs | 10.68 | 17.50 | GPUlayer Trainer 1.64x faster | 11.2 s / 10.9 s |
+| MLP fp32, 4 GPUs | 17.46 | 30.73 | GPUlayer Trainer 1.76x faster | 12.4 s / 12.1 s |
 
 ![Start-up on several GPUs: GPUlayer and PyTorch Lightning](../assets/perf/multigpu-startup-light.svg)
 
-- **GPUlayer is faster in five of six cases, by 1.11 to 1.76x, and the lead grows with the
+- **The GPUlayer Trainer is faster in five of six cases, by 1.11 to 1.76x, and the lead grows with the
   number of GPUs.** On this machine the GPUs are unevenly connected (GPU 0 on one CPU socket,
   GPUs 1 to 3 on the other, 2 and 3 behind one PCIe switch). GPUlayer gives a 2-GPU job the
   best-connected pair (2 and 3) and each process its share of the CPU cores; the two
@@ -94,7 +94,7 @@ trains on more samples as GPUs are added.
   the earlier RTX 3070 host the same case was 1.14x and 1.11x faster with GPUlayer.
 - **What was fixed on the way.** An earlier run showed the 2-GPU CNN 1.34x slower. Inside
   `fit()` the two trainers were within noise: the launching process built the benchmark's 6 s
-  dataset and threw it away, and that was counted per step. GPUlayer's Trainer now takes the
+  dataset and threw it away, and that was counted per step. The GPUlayer Trainer now takes the
   loader as a function, built only where training runs, and the benchmark uses it. CPU threads
   per process now follow the platform (one per process for CPU training, the cores divided
   among the processes for GPU training), and the per-step `torch.autocast` construction, which
@@ -115,13 +115,13 @@ The same comparison on an Apple M2 Pro, on its GPU (PyTorch MPS) and its CPU, fp
 
 ![CPU and Apple GPU: GPUlayer and PyTorch Lightning](../assets/perf/apple-cpu-step-light.svg)
 
-| Case (Apple M2 Pro) | GPUlayer, ms per step | Lightning, ms per step | Result | Start-up, GPUlayer / Lightning |
+| Case (Apple M2 Pro) | GPUlayer Trainer, ms per step | Lightning, ms per step | Result | Start-up, GPUlayer / Lightning |
 |---|---|---|---|---|
-| MLP, CPU (batch 64) | 0.55 | 0.89 | GPUlayer 1.62x faster | 1.3 s / 1.5 s |
-| CNN, CPU (batch 32) | 42.01 | 44.05 | GPUlayer 1.05x faster | 1.3 s / 1.8 s |
-| DDP, 2 CPU processes | 3.35 | 4.07 | GPUlayer 1.21x faster | 2.3 s / 3.2 s |
-| MLP, Apple GPU (batch 256) | 4.13 | 7.21 | GPUlayer 1.75x faster | 1.8 s / 2.0 s |
-| CNN, Apple GPU (batch 128) | 24.31 | 25.44 | GPUlayer 1.05x faster | 2.0 s / 2.2 s |
+| MLP, CPU (batch 64) | 0.55 | 0.89 | GPUlayer Trainer 1.62x faster | 1.3 s / 1.5 s |
+| CNN, CPU (batch 32) | 42.01 | 44.05 | GPUlayer Trainer 1.05x faster | 1.3 s / 1.8 s |
+| DDP, 2 CPU processes | 3.35 | 4.07 | GPUlayer Trainer 1.21x faster | 2.3 s / 3.2 s |
+| MLP, Apple GPU (batch 256) | 4.13 | 7.21 | GPUlayer Trainer 1.75x faster | 1.8 s / 2.0 s |
+| CNN, Apple GPU (batch 128) | 24.31 | 25.44 | GPUlayer Trainer 1.05x faster | 2.0 s / 2.2 s |
 
 - The gap is largest where the trainer's own work per step matters (the MLPs): GPUlayer's
   loop adds about 73 microseconds per step against Lightning's 330 (a one-weight model, one
@@ -185,7 +185,7 @@ torchrun on each machine, as its documentation describes.
 | 4 | 16 | 73.3 s | 77.4 s | 5.3% | 2.143, 2.137 |
 | 8 | 32 | 50.5 s | 57.3 s | 11.9% | 2.162, 2.164 |
 
-- GPUlayer trains 11.9% faster than Lightning on 8 machines. From 2 to 8 machines it gets
+- The GPUlayer Trainer trains 11.9% faster than Lightning on 8 machines. From 2 to 8 machines it gets
   2.35x faster, Lightning 2.11x.
 - The lead comes from two-level gradient sync (ADR-0020), the Trainer's default with gloo
   when a job has several machines and several processes per machine: gradients are summed

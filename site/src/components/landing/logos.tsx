@@ -1,9 +1,7 @@
-import { Cpu, Terminal } from "lucide-react";
+import { Cpu } from "lucide-react";
 import {
   siApple,
-  siNumpy,
   siNvidia,
-  siPytorch,
   type SimpleIcon,
 } from "simple-icons";
 
@@ -18,14 +16,6 @@ export type Item = {
   monogram?: { text: string; bg: string };
 };
 
-// Only what has been run as GPUlayer jobs (see the performance page and examples/). Other
-// libraries (JAX, CuPy, TensorFlow, ...) are detected on workers but not yet validated on a GPU.
-const FRAMEWORKS: Item[] = [
-  { label: "PyTorch", icon: siPytorch },
-  { label: "MLX", monogram: { text: "MX", bg: "#525252" } },
-  { label: "NumPy", icon: siNumpy },
-  { label: "any binary", lucide: Terminal },
-];
 
 const HARDWARE: Item[] = [
   { label: "NVIDIA CUDA", icon: siNvidia },
@@ -79,26 +69,11 @@ export function Mark({ item, size = 18 }: { item: Item; size?: number }) {
   return null;
 }
 
-function Chip({ item }: { item: Item }) {
-  return (
-    <span className="inline-flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground">
-      <Mark item={item} />
-      <span>{item.label}</span>
-    </span>
-  );
-}
-
 export function WorksWith() {
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5 px-6 py-8 text-sm">
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-        <span className="eyebrow w-24">Works with</span>
-        {FRAMEWORKS.map((f) => (
-          <Chip key={f.label} item={f} />
-        ))}
-      </div>
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-        <span className="eyebrow w-24">Runs on</span>
+        <span className="eyebrow w-24">Trains on</span>
         {HARDWARE.map((h) => (
           <span
             key={h.label}

@@ -23,10 +23,7 @@ const LAYERS: { title: string; icon: LucideIcon; tools: Chip[] }[] = [
       { label: "PyTorch", icon: siPytorch },
       { label: "PyTorch Lightning", icon: siLightning },
       { label: "Accelerate", icon: siHuggingface },
-      { label: "JAX", monogram: { text: "JX", bg: "#4285F4" } },
-      { label: "MLX", monogram: { text: "MX", bg: "#525252" } },
-      { label: "CuPy", monogram: { text: "Cp", bg: "#2E9E5B" } },
-      { label: "GPUlayer Trainer (small)", gpulayer: true, faded: true },
+      { label: "GPUlayer Trainer", gpulayer: true },
     ],
   },
   {

@@ -1,7 +1,7 @@
 # Status and roadmap
 
 GPUlayer's focus: train PyTorch on every GPU you can reach, with one Trainer, from your laptop
-to many machines, faster than Lightning ([ADR-0023](../decisions/ADR-0023-product-focus-pytorch-training.md)).
+to many machines ([ADR-0023](../decisions/ADR-0023-product-focus-pytorch-training.md)).
 
 ## What works today
 
@@ -13,12 +13,12 @@ machines named. Everything else says what is missing.
 | Commands, Python functions and the PyTorch Trainer on this machine: logs, results, artifacts, cancel, timeout | tested |
 | Scheduling by requirements, with a reason for every rejected worker; distributed groups placed all at once | tested |
 | A server with workers on other machines (`gpulayer up`, `join`), TLS with a pinned certificate, named tokens | validated on 30 GCP machines in two regions |
-| Distributed PyTorch with gloo | validated on up to 16 machines; DDP training on 8 machines 11.9% faster than Lightning |
+| Distributed PyTorch with gloo | validated on up to 16 machines; GPUlayer Trainer 11.9% faster than Lightning on 8 machines |
 | Distributed groups kept in one network group, zone or region | validated on GCP: placed by the scheduler, 42.5 s with `prefer` (one zone) against 58.8 s with `any` (two regions), median of five |
 | NVIDIA CUDA | validated on one Tesla T4, including the Trainer (1.14 to 1.39x faster per step than Lightning) |
 | Several GPUs per machine with NCCL, choosing the best-connected GPUs | validated on 4× RTX 3070 (PCIe) and 2× A100 SXM4 (NVLink) |
-| Trainer against Lightning on an Apple M2 Pro (GPU and CPU) | faster in all 5 cases (1.05 to 1.75x) |
-| Trainer on several GPUs against Lightning | measured on 1, 2 and 4 RTX 3070s: faster in 5 of 6 cases (1.11 to 1.76x), 1.14x slower on the 1-GPU CNN on one host |
+| GPUlayer Trainer against Lightning on an Apple M2 Pro (GPU and CPU) | GPUlayer Trainer faster in all 5 cases (1.05 to 1.75x) |
+| GPUlayer Trainer on several GPUs against Lightning | measured on 1, 2 and 4 RTX 3070s: GPUlayer Trainer faster in 5 of 6 cases (1.11 to 1.76x), 1.14x slower on the 1-GPU CNN on one host |
 | NCCL across machines | implemented; not run yet |
 | Apple Silicon (PyTorch MPS, MLX) | validated on an M2 Pro |
 | AMD ROCm | implemented (devices, `HIP_VISIBLE_DEVICES`, Trainer `accelerator="rocm"`, RCCL); not run on AMD hardware |

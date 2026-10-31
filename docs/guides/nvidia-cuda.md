@@ -11,7 +11,7 @@ gpulayer resources detect
 ```
 
 Each GPU is listed with its memory and compute capability. Any CUDA workload can use them once
-the driver works: CUDA binaries, CuPy, JAX, TensorRT, PyTorch. PyTorch jobs additionally need
+the driver works. PyTorch jobs additionally need
 the `torch.cuda` capability (a CUDA build of torch in the worker's Python); if it is missing,
 `resources detect` prints a note and PyTorch jobs are not placed there.
 

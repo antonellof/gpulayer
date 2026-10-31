@@ -16,8 +16,8 @@ export function ArchitectureDiagram() {
     >
       <title id="arch-title">GPUlayer architecture</title>
       <desc id="arch-desc">
-        The SDK and CLI talk to a control plane with a scheduler, worker registry, leases, provisioning and
-        storage. Local, existing and provider workers poll it and run commands, functions or distributed rank groups.
+        The Trainer talks to a control plane with a scheduler, worker registry, rank coordination, provisioning
+        and storage. Workers on this machine, your GPU servers and cloud VMs poll it and start the ranks of each run.
       </desc>
       <defs>
         <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -27,8 +27,8 @@ export function ArchitectureDiagram() {
 
       {/* clients */}
       <rect x="250" y="10" width="260" height="56" rx="8" className={box} />
-      <text x="380" y="34" textAnchor="middle" className={label}>CLI · Python SDK · PyTorch</text>
-      <text x="380" y="53" textAnchor="middle" className={sub}>gpulayer submit · gl.remote · gpulayer.pytorch</text>
+      <text x="380" y="34" textAnchor="middle" className={label}>Trainer · launch() · CLI</text>
+      <text x="380" y="53" textAnchor="middle" className={sub}>gpulayer.pytorch · gl.remote · gpulayer submit</text>
       <line x1="380" y1="66" x2="380" y2="96" className={arrow} strokeWidth="1.5" markerEnd="url(#arr)" />
 
       {/* control plane */}
@@ -62,7 +62,7 @@ export function ArchitectureDiagram() {
       {[
         ["Local worker", "this machine"],
         ["Existing worker", "your GPU boxes"],
-        ["Provider worker", "provisioned (simulated today)"],
+        ["Cloud worker", "a VM created for the run"],
       ].map(([t, s], i) => (
         <g key={t}>
           <rect x={45 + i * 230} y="292" width="210" height="56" rx="8" className={box} />
@@ -76,12 +76,12 @@ export function ArchitectureDiagram() {
 
       {/* execution */}
       <rect x="45" y="384" width="670" height="72" rx="8" className={accent} />
-      <text x="380" y="410" textAnchor="middle" className={label}>Process group per task</text>
+      <text x="380" y="410" textAnchor="middle" className={label}>One process per rank</text>
       <text x="380" y="432" textAnchor="middle" className={sub}>
-        any command · Python function · torchrun group, on CPU, CUDA or Apple Metal
+        DDP over NCCL or gloo, on NVIDIA CUDA, Apple Metal or CPU
       </text>
       <text x="380" y="448" textAnchor="middle" className={sub}>
-        outputs and checkpoints flow back as artifacts
+        logs stream back; checkpoints and metrics download when it ends
       </text>
     </svg>
   );

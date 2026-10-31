@@ -281,10 +281,9 @@ const BEHIND = [
 ];
 
 const FITS = [
-  "Your GPUs are spread over a laptop, a few servers and some rented VMs, and you want one queue for all of them.",
-  "Your team mixes NVIDIA boxes and Apple Silicon Macs and wants jobs to land on hardware that can run them.",
-  "Your workloads are not only training: rendering, inference batches, simulations, data jobs, in any language.",
-  "You want placement to explain itself: per-worker reasons when a job cannot run.",
+  "Your GPUs are spread over a laptop, a few servers and some rented VMs, and you want to train on all of them from one script.",
+  "Your team mixes NVIDIA servers and Apple Silicon Macs and wants each run on hardware that can train it.",
+  "You want a run that cannot start to fail at once, with a reason for each machine.",
   "You want to start small: `gpulayer up` on one machine, `gpulayer join` on the others, no cluster to operate.",
 ];
 
@@ -565,7 +564,7 @@ export default function ComparePage() {
               Try the quickstart <ArrowRight className="h-4 w-4" />
             </Link>
             <Link
-              href="/docs/#why-gpulayer"
+              href="/docs/#what-it-does-for-a-training-run"
               className="inline-flex items-center gap-1 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-secondary"
             >
               Why GPUlayer

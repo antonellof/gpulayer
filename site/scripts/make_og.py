@@ -21,8 +21,8 @@ FONTS = [
 BG, BLUE, GREY, WHITE, MUTED = "#0d1117", "#3987e5", "#9aa4b2", "#f0f3f6", "#9198a1"
 TITLE = "Train PyTorch on every GPU\nyou can reach."
 LEDE = (
-    "One Trainer, from your laptop to many machines, faster than\n"
-    "Lightning. NVIDIA CUDA, Apple Metal and CPU. Open source."
+    "One Trainer, from your laptop to many machines.\n"
+    "NVIDIA CUDA, Apple Metal and CPU. Open source."
 )
 
 

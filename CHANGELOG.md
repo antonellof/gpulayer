@@ -3,6 +3,18 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
+## Unreleased
+
+- Tagline is now "Train PyTorch on every GPU you can reach: one Trainer, from your laptop to
+  many machines." The comparison with PyTorch Lightning appears only in performance sections,
+  always as the GPUlayer Trainer.
+- Site, README and docs rewritten shorter and around training: quickstart starts with the
+  Trainer, the home page drops the positioning section and non-training features, the
+  architecture diagrams show training paths only.
+- Removed unverified claims: JAX, CuPy, TensorFlow and ONNX Runtime examples and mentions
+  (detected on workers, never run on a GPU), the ffmpeg/NVENC illustration, and "simulated"
+  cloud workers in the site diagram (Google Cloud VMs are created per run).
+
 ## 0.7.0 (2026-10-31)
 
 GPUlayer now has one focus: **train PyTorch on every GPU you can reach, with one Trainer, from

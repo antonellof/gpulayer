@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "gpulayer"
 version = "0.7.0"
-description = "Train PyTorch on every GPU you can reach: one Trainer, from your laptop to many machines, faster than Lightning. NVIDIA CUDA, Apple Metal and CPU."
+description = "Train PyTorch on every GPU you can reach: one Trainer, from your laptop to many machines. NVIDIA CUDA, Apple Metal and CPU; self-hosted, open source."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"

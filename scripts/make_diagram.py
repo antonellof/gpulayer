@@ -120,15 +120,15 @@ def render(theme: str) -> str:
     W, H = 980, 460
     parts = [f'<rect width="{W}" height="{H}" rx="16" fill="{t["bg"]}"/>']
     # Column headings
-    for x, label in ((30, "YOUR WORKLOAD"), (370, "GPULAYER"), (690, "MACHINES YOU CAN REACH")):
+    for x, label in ((30, "YOUR TRAINING"), (370, "GPULAYER"), (690, "MACHINES YOU CAN REACH")):
         parts.append(text(x, 44, label, t, size=11, weight=600, color="muted", mono=True))
 
     # Left: workloads
     work = [
-        (["pytorch"], "PyTorch training", "Trainer, DDP, many machines"),
-        (["pytorch"], "Your training scripts", "launch(), Runtime"),
-        (["python", "numpy"], "Python functions", "NumPy, MLX, ..."),
-        (["gnubash"], "Commands and scripts", "any language, any binary"),
+        (["pytorch"], "Trainer", "one GPU, many GPUs, many machines"),
+        (["pytorch"], "Your DDP script", "launch(), Runtime"),
+        (["pytorch"], "Sweeps", "@gl.remote(...).map([...])"),
+        (["gnubash"], "CLI and AI agents", "gpulayer, MCP server"),
     ]
     left_y = []
     for i, (icons, title, sub) in enumerate(work):
@@ -155,13 +155,13 @@ def render(theme: str) -> str:
         f'<tspan font-weight="500" fill="{t["muted"]}">layer</tspan></text>'
     )
     features = [
-        "Places each job where its GPU,",
-        "framework and memory fit",
-        "Runs one job per free GPU",
-        "Ships code and inputs, starts it",
-        "Coordinates distributed groups",
-        "Streams logs, returns results",
-        "Live dashboard and metrics",
+        "Picks machines whose GPUs,",
+        "memory and PyTorch fit",
+        "Best-connected GPUs, one zone",
+        "Ships code, starts every rank",
+        "Sets up DDP rendezvous",
+        "Streams logs while it trains",
+        "Returns checkpoints, metrics",
     ]
     fy = gy + 96
     for k, line in enumerate(features):
@@ -173,7 +173,7 @@ def render(theme: str) -> str:
         text(
             gx + gw / 2,
             gy + gh - 22,
-            "one interface: CLI, SDK, Trainer",
+            "one Trainer, any scale",
             t,
             size=12,
             color="muted",
@@ -185,7 +185,7 @@ def render(theme: str) -> str:
     machines = [
         (["apple", "nvidia"], "This machine", "CPU, Apple GPU, NVIDIA GPU"),
         (["linux", "nvidia"], "Servers that joined", "gpulayer join <url>"),
-        (["cloud"], "Cloud VMs", "joined like any server"),
+        (["cloud"], "Cloud VMs", "joined, or created per run"),
     ]
     right_y = []
     for i, (icons, title, sub) in enumerate(machines):

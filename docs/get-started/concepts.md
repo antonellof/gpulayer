@@ -54,7 +54,7 @@ tasks. Its origin decides which target it serves:
 | `provider` | `cloud` | booted by a provider adapter with a single-use token |
 
 Workers report **capabilities**: OS, CPU, RAM, disk, Python version, installed GPU frameworks
-(PyTorch, JAX, MLX, CuPy, ...), accelerator
+(PyTorch, MLX, NumPy, ...), accelerator
 devices with their memory and compute capability, distributed backends, and the address peers
 can reach. The scheduler also tracks **availability**: whether the worker is online and has a
 free task slot. A worker can be compatible but busy, or free but incompatible.
