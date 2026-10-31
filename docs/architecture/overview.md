@@ -97,6 +97,7 @@ worker heartbeats and task leases, enforces a deadline backstop, and advances pr
 |---|---|---|---|
 | Embedded (default) | in the SDK/CLI process, SQLite in `$GPULAYER_HOME` | in-process thread or `gpulayer worker start` sharing the same home | OS user owning `$GPULAYER_HOME` |
 | Self-hosted | `gpulayer server start` (HTTP/HTTPS) | `gpulayer --url ... worker start` anywhere reachable | client token, join token, per-worker session token |
+| Kubernetes | the [Helm chart](../guides/kubernetes.md): server StatefulSet with a persistent volume | CPU and NVIDIA GPU worker Deployments | same as self-hosted; tokens and TLS certificate in Secrets |
 | Hosted | planned | | |
 
 In self-hosted mode the network carries job specs, logs, events, artifacts (source bundles,

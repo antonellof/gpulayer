@@ -1,12 +1,15 @@
 import Link from "next/link";
 import {
   ArrowRight,
+  Bot,
   Boxes,
   Check,
   Cloud,
   Container,
   FileCode2,
   Flame,
+  KeyRound,
+  LayoutDashboard,
   Library,
   Minus,
   Network,
@@ -153,6 +156,21 @@ const FEATURES = [
     title: "PyTorch integration",
     body: "A small Trainer, launch() for existing scripts, and helpers for devices, DDP and precision.",
   },
+  {
+    icon: LayoutDashboard,
+    title: "Dashboard and metrics",
+    body: "A web dashboard for jobs, logs, workers and GPU use, and a Prometheus endpoint for Grafana and alerts.",
+  },
+  {
+    icon: Bot,
+    title: "AI agents",
+    body: "The gpulayer mcp server lets Claude Code, Cursor and other MCP clients submit jobs, wait for them and fetch results, with the same permissions as a person.",
+  },
+  {
+    icon: KeyRound,
+    title: "Tokens and TLS",
+    body: "Named, expiring, revocable tokens with admin, submitter and join roles. Servers use TLS with a pinned certificate. Jobs are not sandboxed.",
+  },
 ];
 
 const COMPARISON: { situation: string; without: string; with: string }[] = [
@@ -265,8 +283,8 @@ export default function Home() {
               and the results come back.
             </p>
             <p className="mt-4 max-w-2xl text-sm text-muted-foreground">
-              Its PyTorch Trainer ran up to 1.38x faster per step than PyTorch Lightning on an NVIDIA T4, and started
-              sooner.{" "}
+              Its PyTorch Trainer ran up to 1.38x faster per step than PyTorch Lightning on an NVIDIA T4, and trained
+              11.9% faster on 8 machines (CPU, gloo).{" "}
               <Link href="/docs/get-started/performance-and-comparison/" className="link-arrow">
                 Benchmarks and method <ArrowRight className="h-3 w-3" />
               </Link>

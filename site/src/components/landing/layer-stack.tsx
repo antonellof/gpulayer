@@ -46,7 +46,7 @@ const LAYERS: { title: string; icon: LucideIcon; tools: Chip[] }[] = [
       { label: "SkyPilot", monogram: { text: "SP", bg: "#3D5AFE" } },
       { label: "dstack", monogram: { text: "ds", bg: "#7C3AED" } },
       { label: "Ray autoscaler", icon: siRay },
-      { label: "GPUlayer (planned)", gpulayer: true, faded: true },
+      { label: "GPUlayer (Google Cloud)", gpulayer: true },
     ],
   },
   {
