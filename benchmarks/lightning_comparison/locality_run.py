@@ -68,6 +68,39 @@ def run(n: int, worker_ids: list[str] | None) -> tuple[float, float]:
     return took, float(m[-1]) if m else float("nan")
 
 
+def policy_main(n: int) -> None:
+    """Unpinned: the scheduler places the same job, alternating group_locality="prefer" (keep
+    the group together) and "any" (ignore location). Records the zones each run used."""
+    c = client()
+    by_id = {}
+    print(f"# policy mode: {n} nodes x {DEVICES} processes, {EPOCHS} epochs, {REPEAT} runs each")
+    results: dict[str, list[tuple[float, list[str]]]] = {"prefer": [], "any": []}
+    for _ in range(REPEAT):
+        for mode in ("prefer", "any"):
+            before = {j.job_id for j in c.jobs(limit=200)}
+            os.environ["GL_LOCALITY"] = mode
+            took, _ = run(n, None)
+            new = [j for j in c.jobs(limit=200) if j.job_id not in before]
+            by_id.update({w.worker_id: w for w in c.workers()})
+            zones = []
+            if new:
+                st = c.job(new[0].job_id).status()
+                zones = sorted(
+                    str(by_id[t.worker_id].capabilities.zone) for t in st.tasks if t.worker_id
+                )
+            results[mode].append((took, zones))
+            print(f"{mode:7} {took:7.1f} s  zones={zones}", flush=True)
+    os.environ.pop("GL_LOCALITY", None)
+    for mode, rs in results.items():
+        times = [t for t, _ in rs]
+        spans = sorted({len({region(z) for z in zs}) for _, zs in rs})
+        print(
+            f"{mode:7} median {statistics.median(times):6.1f} s over {len(rs)} runs; "
+            f"regions per group: {spans}",
+            flush=True,
+        )
+
+
 def main() -> None:
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 4
     c = client()
@@ -129,4 +162,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    if os.environ.get("MODE") == "policy":
+        policy_main(int(sys.argv[1]) if len(sys.argv) > 1 else 4)
+    else:
+        main()

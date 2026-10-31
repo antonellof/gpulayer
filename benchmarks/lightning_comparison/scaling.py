@@ -88,6 +88,8 @@ if fw == "gl":
             **(
                 {"worker_ids": os.environ["GL_WORKERS"].split(",")}
                 if os.environ.get("GL_WORKERS")
+                else {"group_locality": os.environ["GL_LOCALITY"]}
+                if os.environ.get("GL_LOCALITY")
                 else {}
             ),
         },
