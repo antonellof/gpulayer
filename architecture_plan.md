@@ -201,14 +201,14 @@ Workers execute workloads on local or remote compute resources.
 
 ### Worker state model
 
-A practical initial state model is:
+The implemented state model (`WorkerState`) is:
 
-- `offline`
-- `registering`
-- `idle`
-- `busy`
-- `draining`
-- `unhealthy`
+- `idle`, `busy`: online, with or without running tasks.
+- `draining`: finishing its tasks, taking no new ones.
+- `offline`: heartbeats stopped or the worker deregistered.
+- `registering`, `unhealthy`: defined in the contract but not produced yet. Registration is
+  atomic (one request), and there are no health checks beyond heartbeats; the scheduler
+  already skips `unhealthy` workers so health checks can be added without a contract change.
 
 Job state and worker state must remain separate. A worker can recover while a job has failed, and a job can continue through other workers after an individual worker fails if the workload's semantics allow it.
 
@@ -242,20 +242,19 @@ The final names and fields should be refined against the existing codebase befor
 
 ### Job lifecycle
 
-A proposed lifecycle is:
+The implemented job lifecycle (`JobState`) is:
 
-`submitted → validated → queued → preparing → running → finalizing → succeeded`
+`queued → [provisioning] → scheduled → running → succeeded | failed | cancelled | timed_out`
 
-Failure, cancellation, timeout, and retry states must be explicitly modeled.
+- Validation is synchronous at submission: an invalid spec is rejected and never stored, so
+  `submitted` and `validated` are not observable states.
+- `provisioning` is used when a provider adapter is creating capacity for the job.
+- Preparation (fetching source and inputs) and finalization (uploading outputs) are phases of
+  each task, reported as execution events, not job states.
+- Each task has its own state (`TaskState`: `assigned`, `running`, terminal states, and `lost`
+  when its lease expired). Retries create new task attempts under the same job.
 
-Possible terminal states include:
-
-- `succeeded`
-- `failed`
-- `cancelled`
-- `timed_out`
-
-The implementation may require additional intermediate states. State transitions must be validated, persisted, and observable.
+State transitions are validated, persisted, and observable through events.
 
 ### Job packaging
 
@@ -573,6 +572,9 @@ Do not invent missing pricing information. Report unknown cost when there is no 
 
 Adapt this layout to the existing repository. Do not create every module in advance merely to match the tree.
 
+The current layout is flatter than a module per box in the diagram, following the "no empty
+modules" rule:
+
 ```text
 gpulayer/
 ├── CLAUDE.md
@@ -582,25 +584,20 @@ gpulayer/
 ├── src/
 │   └── gpulayer/
 │       ├── __init__.py
-│       ├── cli/
-│       ├── sdk/
-│       ├── api/
-│       ├── contracts/
-│       ├── control_plane/
-│       │   ├── jobs/
-│       │   ├── workers/
-│       │   ├── scheduler/
-│       │   ├── coordination/
-│       │   └── auth/
-│       ├── worker/
-│       ├── runtime/
-│       ├── gpu/
-│       ├── distributed/
-│       ├── providers/
-│       ├── storage/
-│       ├── artifacts/
-│       ├── observability/
-│       └── accounting/
+│       ├── cli/            # gpulayer command
+│       ├── sdk/            # Client, @gl.remote, job builders
+│       ├── api/            # HTTP server and client, TLS, auth
+│       ├── contracts/      # versioned models (JobSpec, WorkerCapabilities, CostRecord, ...)
+│       ├── control_plane/  # service.py (jobs, workers, leases), scheduler.py, provisioning.py
+│       ├── worker/         # agent, channel, telemetry
+│       ├── runtime/        # processes, function runners, distributed.py (ranks, rendezvous)
+│       ├── gpu/            # discovery and the support matrix
+│       ├── providers/      # adapter interface, FakeProvider, Google Cloud
+│       ├── storage/        # metadata store (SQLite), events and logs
+│       ├── artifacts/      # content-addressed artifact store
+│       ├── observability/  # Prometheus metrics
+│       ├── pytorch/        # Trainer, Module, Runtime, launch()
+│       └── agents/         # MCP server
 ├── tests/
 │   ├── unit/
 │   ├── integration/
@@ -613,6 +610,12 @@ gpulayer/
 └── site/
     └── README.md
 ```
+
+Distributed execution lives in `runtime/distributed.py` and the scheduler rather than a
+`gpulayer.distributed` package, which would also shadow the public `gpulayer.distributed()`
+builder. Events and logs are kept in the metadata store, and cost records are contracts
+(`CostRecord`); separate `observability`/`accounting` modules grow only when there is code for
+them.
 
 The initial implementation may be a modular monolith. Split services only when deployment, scale, security, or operational requirements justify it.
 
@@ -774,18 +777,25 @@ Create an ADR index. Use `Proposed` for decisions that still need validation; do
 
 ## 20. Open questions
 
-Resolve these before the relevant milestone, rather than prematurely committing the entire project:
+Answered so far (see the ADRs):
 
-- Which license and contribution model should be used?
-- Which provider should receive the first real integration?
-- Which job packaging strategy should be the default?
-- Should the first remote protocol use an HTTP API, a persistent connection, or a combination?
-- What authentication mechanism should be used for workers?
-- Which database and object storage implementations are needed for the first multi-worker deployment?
+- License: Apache-2.0 (ADR-0012).
+- First real provider: Google Cloud Compute Engine (ADR-0010).
+- Default packaging: source bundle, with JSON arguments and results for functions (ADR-0002).
+- Remote protocol: HTTP and JSON, workers polling with long polls (ADR-0003, ADR-0016).
+- Worker and client authentication: bearer tokens: client, join, per-worker session, and
+  single-use instance tokens for provisioned workers (ADR-0003).
+- Distributed runtime: PyTorch distributed with static rendezvous, started by GPUlayer's direct
+  launcher or `torchrun` (ADR-0007); groups placed by network locality (ADR-0021).
+- Storage for a single control plane: SQLite and a local content-addressed store (ADR-0008).
+
+Still open; resolve before the relevant milestone, rather than prematurely committing the entire project:
+
+- Which database and object storage implementations are needed for a multi-node control plane?
 - What isolation guarantees are required for single-user, team, and hosted multi-tenant deployments?
-- Which cost and placement policies are necessary for the initial supported providers?
-- Which distributed runtime and network topology are supported first?
-- Which website stack best fits the documentation and product needs?
+- Which cost and placement policies are necessary as more providers are added?
+- Record the website stack: the site is built with Next.js as a static export, but ADR-0013
+  still lists the options as Proposed.
 
 Decisions should be made using implementation cost, security, operability, compatibility, and user needs—not by maximizing abstraction.
 

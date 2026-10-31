@@ -26,7 +26,7 @@ The initial implementation may support a limited subset of execution backends, b
 ## 2. Core design principles
 
 1. **Unified interface:** Developers submit and manage jobs through one SDK and CLI, regardless of execution target.
-2. **Multiple execution targets:** Local, cloud, and distributed execution are explicit scheduling choices.
+2. **Multiple execution targets:** Local, remote, and cloud are explicit scheduling choices. Distributed is a workload type that can run on any of them (CLAUDE.md §2.2).
 3. **Local development without cloud dependencies:** Local execution must work without an account or hosted control plane.
 4. **Cloud is a first-class target:** Provider adapters, remote provisioning boundaries, authentication interfaces, and remote worker communication must be designed into the platform.
 5. **Distributed execution is a first-class workload type:** The system must model worker groups, ranks, rendezvous, communication requirements, health, and coordinated failure.
@@ -99,7 +99,7 @@ Implement scheduling as a separate logical component.
 
 It should consider:
 
-- Execution target: local, cloud, or distributed.
+- Execution target: local, remote, or cloud; and the workload type: independent or distributed.
 - GPU vendor and architecture.
 - GPU count and memory requirements.
 - CPU, RAM, disk, and network requirements.
@@ -269,7 +269,7 @@ gpulayer worker status
 gpulayer resources list
 gpulayer submit --target local ...
 gpulayer submit --target cloud ...
-gpulayer submit --target distributed ...
+gpulayer submit --distributed --nodes N --target local|remote|cloud ...
 gpulayer job status <job-id>
 gpulayer job logs <job-id>
 gpulayer job result <job-id>
