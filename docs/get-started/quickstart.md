@@ -7,18 +7,19 @@ on any machine.
 
 ## 1. Install
 
-The examples live in the repository, so clone it and install with the examples extra:
+Install from PyPI with the `examples` extra (PyTorch, NumPy, and MLX on Apple Silicon). The
+examples themselves live in the repository, so clone it too:
 
 ```bash
+pip install 'gpulayer[examples]'
 git clone https://github.com/antonellof/gpulayer.git && cd gpulayer
-uv venv && source .venv/bin/activate
-uv pip install -e '.[dev,examples]'
 gpulayer resources detect
 ```
 
-To use GPUlayer without the examples, the
-[install script](installation.md#with-the-install-script) or the
-[Docker image](installation.md#with-docker) is enough.
+Use a virtual environment if you prefer (`uv venv && source .venv/bin/activate`, then
+`uv pip install 'gpulayer[examples]'`). To use GPUlayer without the examples,
+`pip install gpulayer` is enough; see [Installation](installation.md) for the install script,
+Docker and installing from source.
 
 ## 2. Run a command as a job
 
@@ -195,7 +196,7 @@ gpulayer worker status
 
 If a job is rejected with `framework 'numpy' not installed` (or `mlx`, `torch`), the Python
 that runs the job does not have that package. For local jobs that is the Python running your
-script, so install it there (`uv pip install -e '.[dev,examples]'` covers every example), then
+script, so install it there (`pip install 'gpulayer[examples]'` covers every example), then
 run the command again.
 
 `gpulayer worker status` lists workers that are online. Each script run starts in-process

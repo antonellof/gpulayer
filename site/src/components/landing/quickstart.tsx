@@ -17,9 +17,9 @@ const TRACKS: Track[] = [
     steps: [
       {
         title: "Install",
-        body: "Python 3.10 or newer. PyTorch is optional for the core.",
+        body: "Python 3.10 or newer, from PyPI. PyTorch is optional for the core; the `examples` extra adds PyTorch, NumPy and MLX. Clone the repo for the examples used below.",
         command:
-          "git clone https://github.com/antonellof/gpulayer && cd gpulayer\nuv venv && source .venv/bin/activate && uv pip install -e '.[dev,examples]'",
+          "pip install \"gpulayer[examples]\"\ngit clone https://github.com/antonellof/gpulayer && cd gpulayer",
       },
       {
         title: "See what this machine offers",

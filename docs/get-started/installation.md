@@ -8,6 +8,7 @@ everything in `gpulayer.pytorch`.
 ```bash
 pip install gpulayer                # the CLI and SDK
 pip install 'gpulayer[torch]'       # with PyTorch, for gpulayer.pytorch and distributed jobs
+pip install 'gpulayer[examples]'    # what the examples need: PyTorch, NumPy, MLX on Apple Silicon
 uv tool install gpulayer            # the CLI in its own environment, with uv
 ```
 
@@ -77,6 +78,8 @@ Notes:
 - Images are built locally for now. Published images (GitHub Container Registry) are planned.
 
 ## From source
+
+For development on GPUlayer itself, install an editable checkout:
 
 ```bash
 git clone https://github.com/antonellof/gpulayer.git
