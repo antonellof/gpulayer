@@ -5,6 +5,11 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- GPU benchmarks: Trainer against Lightning on 1, 2 and 4 RTX 3070s (Vast.ai), DDP over NCCL.
+  GPUlayer faster in 4 of 6 cases (1.10 to 1.30x), the same on the 4-GPU CNN, slower on the
+  2-GPU CNN with defaults (1.34x; `benchmark=True` closes it). New charts
+  (`multigpu-step`, `multigpu-startup`), a "GPU results at a glance" table on the performance
+  page, and a GPU benchmarks section on the home page.
 - Fix: jobs now receive `LD_LIBRARY_PATH` and the other library and CUDA paths. Where the GPU
   driver is found through them (Kaggle), a worker saw its GPUs but the job's processes saw
   none, and NCCL failed with "no GPUs found". Proxy and package-index URLs are still not

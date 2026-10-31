@@ -488,6 +488,11 @@ export default function ComparePage() {
                 thread and Lightning leaves PyTorch&apos;s default, which likely explains much of the gap.
               </p>
               <p>
+                On 1, 2 and 4 RTX 3070 GPUs of one machine (DDP over NCCL, each trainer&apos;s defaults), GPUlayer was
+                faster in 4 of 6 cases (1.10 to 1.30x), the same on the 4-GPU CNN, and 1.34x slower on the 2-GPU CNN,
+                where <code className="font-mono">benchmark=True</code> brings it level.
+              </p>
+              <p>
                 One CNN training job on 2, 4 and 8 GCP machines (4 processes each, gloo, same machines and
                 interleaved runs for both trainers) took 118.9, 73.3 and 50.5 s with GPUlayer and 120.8, 77.4
                 and 57.3 s with Lightning under torchrun: 11.9% faster on 8 machines, from summing gradients

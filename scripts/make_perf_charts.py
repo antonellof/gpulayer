@@ -21,6 +21,7 @@ DEFAULT = [
     ROOT / "benchmarks" / "results" / "2026-10-30-gcp" / "summary.json",
     ROOT / "benchmarks" / "results" / "2026-10-30-gcp-two-level" / "summary.json",
     ROOT / "benchmarks" / "results" / "2026-10-31-gcp-t4" / "summary.json",
+    ROOT / "benchmarks" / "results" / "2026-10-31-vast-4x3070-multigpu" / "summary.json",
 ]
 
 THEMES = {
@@ -148,6 +149,28 @@ def charts(d: dict) -> dict[str, dict]:
                 for r in sc["rows"]
             ],
             unit="seconds to train",
+            fmt="{:.1f} s",
+            note="lower is better",
+        )
+    if "multi_gpu" in d:
+        mg = d["multi_gpu"]
+        out["multigpu-step"] = dict(
+            title="Several GPUs in one machine: GPUlayer and PyTorch Lightning",
+            subtitle=mg["subtitle"],
+            series=("GPUlayer Trainer", "Lightning Trainer"),
+            rows=[(r["case"], r["gpulayer_ms"], r["lightning_ms"]) for r in mg["rows"]],
+            unit="milliseconds per step",
+            fmt="{:.1f}",
+            note="lower is better",
+        )
+        out["multigpu-startup"] = dict(
+            title="Start-up on several GPUs: GPUlayer and PyTorch Lightning",
+            subtitle="Same runs: Python start, imports, process start-up and fit() set-up",
+            series=("GPUlayer Trainer", "Lightning Trainer"),
+            rows=[
+                (r["case"], r["gpulayer_startup_s"], r["lightning_startup_s"]) for r in mg["rows"]
+            ],
+            unit="seconds",
             fmt="{:.1f} s",
             note="lower is better",
         )

@@ -117,14 +117,21 @@ without a load balancer in front of them, and is not a sandbox for untrusted cod
 
 ## Performance and comparison
 
-Measured on one NVIDIA Tesla T4 against PyTorch Lightning, with the same model, data and
-optimizer:
+Measured on NVIDIA GPUs against PyTorch Lightning, with the same model, data and optimizer
+and each trainer's defaults:
 
 ![Training step time: GPUlayer and PyTorch Lightning](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/perf/training-step-light.svg#gh-light-mode-only)
 ![Training step time: GPUlayer and PyTorch Lightning](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/perf/training-step-dark.svg#gh-dark-mode-only)
+![Several GPUs in one machine](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/perf/multigpu-step-light.svg#gh-light-mode-only)
+![Several GPUs in one machine](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/perf/multigpu-step-dark.svg#gh-dark-mode-only)
 
-- GPUlayer's Trainer is 1.25 to 1.39x faster per step on small models and 1.14x on a
-  compute-bound CNN, and starts 0.1 to 0.7 s sooner.
+- One Tesla T4: GPUlayer's Trainer is 1.25 to 1.39x faster per step on small models and 1.14x
+  on a compute-bound CNN, and starts 0.1 to 0.7 s sooner.
+- 1, 2 and 4 RTX 3070s (DDP over NCCL): GPUlayer is faster in 4 of 6 cases (1.10 to 1.30x),
+  the same on the 4-GPU CNN, and 1.34x slower on the 2-GPU CNN with default settings
+  (`benchmark=True` closes that gap); it starts sooner on 1 and 2 GPUs.
+- NCCL across 4 GPUs and over NVLink (2x A100), and the best-connected GPU choice, validated
+  on rented machines.
 - One training job across machines on CPUs (gloo): GPUlayer trains 11.9% faster than
   Lightning under torchrun on 8 machines (50.5 s vs 57.3 s; 5.3% on 4, 1.6% on 2), and it
   starts every machine from one `Trainer(num_nodes=N)` call.

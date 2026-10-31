@@ -110,6 +110,16 @@ trainer.fit(model, train_loader, val_loader)`,
   },
 ];
 
+const GPU_RESULTS: { gpu: string; result: string }[] = [
+  { gpu: "Tesla T4", result: "1.14 to 1.39x faster per step than Lightning; Trainer in fp32, bf16, fp16 and torch.compile" },
+  {
+    gpu: "4x RTX 3070 (PCIe)",
+    result: "Faster than Lightning in 4 of 6 cases on 1, 2 and 4 GPUs; NCCL across 4 GPUs; best-connected GPU choice checked",
+  },
+  { gpu: "2x A100 SXM4 (NVLink)", result: "NCCL over NVLink (NV4); CUDA checks passed" },
+  { gpu: "Apple M2 Pro (Metal)", result: "PyTorch MPS and MLX jobs; Trainer on MPS" },
+];
+
 const FEATURES = [
   {
     icon: FileCode2,
@@ -284,8 +294,8 @@ export default function Home() {
               and the results come back.
             </p>
             <p className="mt-4 max-w-2xl text-sm text-muted-foreground">
-              Its PyTorch Trainer ran 1.14 to 1.39x faster per step than PyTorch Lightning on an NVIDIA T4, and trained
-              11.9% faster on 8 machines (CPU, gloo).{" "}
+              Its PyTorch Trainer ran 1.14 to 1.39x faster per step than PyTorch Lightning on an NVIDIA T4, was faster
+              in 4 of 6 cases on 1 to 4 RTX 3070s, and trained 11.9% faster on 8 machines.{" "}
               <Link href="/docs/get-started/performance-and-comparison/" className="link-arrow">
                 Benchmarks and method <ArrowRight className="h-3 w-3" />
               </Link>
@@ -307,6 +317,54 @@ export default function Home() {
 
         <section className="border-b border-border bg-card">
           <WorksWith />
+        </section>
+
+        {/* GPU benchmarks */}
+        <section id="gpu-benchmarks" className="border-b border-border">
+          <div className="mx-auto max-w-6xl px-6 py-24">
+            <SectionHeader
+              eyebrow="Measured on GPUs"
+              title="Benchmarked against PyTorch Lightning on NVIDIA GPUs"
+              lede="Same model, data and optimizer, each trainer with its defaults, one run at a time. Every number has a script and a log in the repository, including the cases where GPUlayer is slower."
+            />
+            <div className="mt-12 grid gap-6 lg:grid-cols-2">
+              {[
+                ["training-step", "Training step time on one Tesla T4: GPUlayer and PyTorch Lightning"],
+                ["multigpu-step", "Step time on 1, 2 and 4 RTX 3070 GPUs: GPUlayer and PyTorch Lightning"],
+              ].map(([name, alt]) => (
+                <div key={name}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`/docs-assets/perf/${name}-light.svg`}
+                    alt={alt}
+                    className="w-full rounded-xl border border-border dark:hidden"
+                    width={760}
+                    height={352}
+                  />
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`/docs-assets/perf/${name}-dark.svg`}
+                    alt=""
+                    aria-hidden
+                    className="hidden w-full rounded-xl border border-border dark:block"
+                    width={760}
+                    height={352}
+                  />
+                </div>
+              ))}
+            </div>
+            <dl className="mt-10 grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
+              {GPU_RESULTS.map((g) => (
+                <div key={g.gpu} className="bg-background p-6">
+                  <dt className="text-sm font-medium">{g.gpu}</dt>
+                  <dd className="mt-2 text-sm text-muted-foreground">{g.result}</dd>
+                </div>
+              ))}
+            </dl>
+            <Link href="/docs/get-started/performance-and-comparison/" className="link-arrow mt-8">
+              All results, method and logs <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
         </section>
 
         {/* Quickstart */}

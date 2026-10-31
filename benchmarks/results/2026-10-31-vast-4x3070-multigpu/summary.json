@@ -1,0 +1,50 @@
+{
+  "_about": "Several GPUs in one machine, GPUlayer Trainer vs PyTorch Lightning 2.6.6 (multigpu-bench-v3-final.log). Vast.ai 4x RTX 3070 8 GB (PCIe: 0-1 and 2-3 PHB, rest SYS), AMD EPYC 7551, torch 2.15.0+cu132. DDP over NCCL, batch per GPU (CNN 128, MLP 256), defaults for both trainers. Read by scripts/make_perf_charts.py.",
+  "multi_gpu": {
+    "subtitle": "4x RTX 3070 (Vast.ai), DDP over NCCL, batch per GPU, each trainer's defaults",
+    "rows": [
+      {
+        "case": "CNN fp16, 1 GPU",
+        "gpulayer_ms": 13.63,
+        "lightning_ms": 15.11,
+        "gpulayer_startup_s": 5.48,
+        "lightning_startup_s": 5.95
+      },
+      {
+        "case": "CNN fp16, 2 GPUs",
+        "gpulayer_ms": 40.4,
+        "lightning_ms": 30.11,
+        "gpulayer_startup_s": 8.64,
+        "lightning_startup_s": 10.04
+      },
+      {
+        "case": "CNN fp16, 4 GPUs",
+        "gpulayer_ms": 50.43,
+        "lightning_ms": 50.1,
+        "gpulayer_startup_s": 10.62,
+        "lightning_startup_s": 10.7
+      },
+      {
+        "case": "MLP fp32, 1 GPU",
+        "gpulayer_ms": 5.03,
+        "lightning_ms": 6.52,
+        "gpulayer_startup_s": 5.18,
+        "lightning_startup_s": 5.69
+      },
+      {
+        "case": "MLP fp32, 2 GPUs",
+        "gpulayer_ms": 14.36,
+        "lightning_ms": 15.78,
+        "gpulayer_startup_s": 9.23,
+        "lightning_startup_s": 10.11
+      },
+      {
+        "case": "MLP fp32, 4 GPUs",
+        "gpulayer_ms": 60.65,
+        "lightning_ms": 70.23,
+        "gpulayer_startup_s": 11.36,
+        "lightning_startup_s": 10.21
+      }
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+case       trainer   ms/step start-up s
+cnn-gpu1   gl          13.23       7.62
+cnn-gpu1   gl-noprefetch    13.89       7.37
+cnn-gpu1   pl          14.91       6.03
+cnn-gpu1   ratio    gl faster x1.13
+mlp-gpu1   gl           7.18       5.29
+mlp-gpu1   gl-noprefetch     5.26       5.18
+mlp-gpu1   pl           6.55       5.72
+mlp-gpu1   ratio    pl faster x1.10

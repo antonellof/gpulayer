@@ -1,0 +1,19 @@
+case       trainer   ms/step start-up s
+cnn-gpu1   gl          15.75       7.29
+cnn-gpu1   pl          14.61       6.10
+cnn-gpu1   ratio    pl faster x1.08
+cnn-gpu2   gl          31.05      17.38
+cnn-gpu2   pl          31.94      10.00
+cnn-gpu2   ratio    gl faster x1.03
+cnn-gpu4   gl          41.26      19.09
+cnn-gpu4   pl          49.45      10.65
+cnn-gpu4   ratio    gl faster x1.20
+mlp-gpu1   gl           5.79       5.22
+mlp-gpu1   pl           6.53       5.67
+mlp-gpu1   ratio    gl faster x1.13
+mlp-gpu2   gl          13.89      13.16
+mlp-gpu2   pl          16.35      10.04
+mlp-gpu2   ratio    gl faster x1.18
+mlp-gpu4   gl          60.69      14.75
+mlp-gpu4   pl          70.43      10.24
+mlp-gpu4   ratio    gl faster x1.16
