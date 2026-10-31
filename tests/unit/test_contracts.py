@@ -145,3 +145,18 @@ def test_runtime_profile_conflicts_are_rejected():
         ResourceRequest(profile="mlx", accelerator="cuda")
     with pytest.raises(ValidationError, match="unknown profile"):
         ResourceRequest(profile="tensorflow-tpu")
+
+
+def test_unvalidated_profiles_warn_but_still_apply():
+    import warnings
+
+    from gpulayer.contracts import ResourceRequest
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        r = ResourceRequest(profile="jax-cuda")
+    assert any(issubclass(x.category, DeprecationWarning) for x in w)
+    assert r.accelerator.value == "cuda" and "jax" in r.frameworks
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        ResourceRequest(profile="pytorch-cuda")  # validated profiles do not warn

@@ -8,6 +8,7 @@ carried on job specifications and ``PROTOCOL_VERSION`` on every HTTP request.
 from __future__ import annotations
 
 import re
+import warnings
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import PurePosixPath
@@ -179,6 +180,9 @@ RUNTIME_PROFILES: dict[str, dict[str, Any]] = {
     "cupy-cuda": {"accelerator": "cuda", "frameworks": {"cupy": ">=12"}},
     "mlx": {"accelerator": "mps", "frameworks": {"mlx": ">=0.10"}},
 }
+# Never run on a GPU (ADR-0023); kept so existing specs still validate, removed in 0.9.0.
+# Spell the requirement out instead: accelerator="cuda", frameworks={"jax": ">=0.4"}.
+DEPRECATED_PROFILES = frozenset({"jax-cuda", "cupy-cuda"})
 
 
 class ResourceRequest(_Model):
@@ -215,6 +219,13 @@ class ResourceRequest(_Model):
         name = data["profile"]
         if name not in RUNTIME_PROFILES:
             raise ValueError(f"unknown profile {name!r}; known: {sorted(RUNTIME_PROFILES)}")
+        if name in DEPRECATED_PROFILES:
+            warnings.warn(
+                f"profile {name!r} is deprecated and will be removed in 0.9.0; set "
+                f"accelerator and frameworks directly: {RUNTIME_PROFILES[name]}",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         prof = RUNTIME_PROFILES[name]
         out = dict(data)
         given = out.get("accelerator")

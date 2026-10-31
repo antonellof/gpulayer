@@ -69,8 +69,8 @@ report, so a profile never makes an incompatible worker eligible.
 | `pytorch-cpu` | `cpu` | `torch>=2.1` |
 | `pytorch-cuda` | `cuda` | `torch>=2.1`, `torch.cuda` |
 | `pytorch-mps` | `mps` | `torch>=2.1`, `torch.mps` |
-| `jax-cuda` | `cuda` | `jax>=0.4`, `jaxlib>=0.4` (not run on a GPU yet) |
-| `cupy-cuda` | `cuda` | `cupy>=12` (not run on a GPU yet) |
+| `jax-cuda` | `cuda` | `jax>=0.4`, `jaxlib>=0.4` (deprecated, removed in 0.9.0; never run on a GPU) |
+| `cupy-cuda` | `cuda` | `cupy>=12` (deprecated, removed in 0.9.0; never run on a GPU) |
 | `mlx` | `mps` | `mlx>=0.10` |
 
 ```python

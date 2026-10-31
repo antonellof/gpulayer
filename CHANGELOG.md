@@ -3,6 +3,13 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
+## Unreleased
+
+- Deprecated the `jax-cuda` and `cupy-cuda` runtime profiles (never run on a GPU). They still
+  work and warn; they are removed in 0.9.0. Migration: replace `profile="jax-cuda"` with
+  `accelerator="cuda", frameworks={"jax": ">=0.4", "jaxlib": ">=0.4"}` (and `cupy>=12` for
+  `cupy-cuda`).
+
 ## 0.7.1 (2026-10-31)
 
 - Fix: after a server restart behind the same address (a Kubernetes server pod), a worker's
