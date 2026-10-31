@@ -378,8 +378,20 @@ class WorkerAgent:
             # Number GPUs like nvidia-smi does (the indices above); CUDA's default order is
             # fastest first, which picks a different GPU on machines with mixed models.
             env.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
+        elif spec.resources.accelerator == Accelerator.ROCM:
+            # AMD GPUs: HIP reads HIP_VISIBLE_DEVICES (rocm-smi numbering); a ROCm build of torch
+            # then sees them through the torch.cuda API.
+            indices = (
+                a.devices
+                if a.devices is not None
+                else [d.index for d in self.caps.devices(Accelerator.ROCM)][
+                    : spec.resources.gpu_count
+                ]
+            )
+            env["HIP_VISIBLE_DEVICES"] = ",".join(str(i) for i in indices)
         elif spec.resources.accelerator == Accelerator.CPU:
             env["CUDA_VISIBLE_DEVICES"] = ""  # CPU jobs must not grab a GPU by accident
+            env["HIP_VISIBLE_DEVICES"] = ""
         if isinstance(spec.workload, DistributedJob):
             env["GPULAYER_COMM_BACKEND"] = spec.workload.comm_backend
             # CPU threads per rank, by platform (ADR-0016). CPU training: 1, measured faster

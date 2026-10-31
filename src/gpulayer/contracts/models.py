@@ -540,8 +540,11 @@ class JobSpec(_Model):
                 )
             if self.resources.accelerator == Accelerator.MPS:
                 raise ValueError("distributed execution on MPS is unsupported (ADR-0006)")
-            if w.comm_backend == "nccl" and self.resources.accelerator != Accelerator.CUDA:
-                raise ValueError("comm_backend 'nccl' requires accelerator 'cuda'")
+            if w.comm_backend == "nccl" and self.resources.accelerator not in (
+                Accelerator.CUDA,
+                Accelerator.ROCM,
+            ):
+                raise ValueError("comm_backend 'nccl' requires accelerator 'cuda' or 'rocm'")
             if (
                 self.resources.accelerator != Accelerator.CPU
                 and w.procs_per_worker > self.resources.gpu_count

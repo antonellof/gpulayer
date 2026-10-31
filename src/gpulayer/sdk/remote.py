@@ -195,7 +195,7 @@ class RemoteFunction:
         source = self._source()
         if self.distributed:
             backend = self.comm_backend or (
-                "nccl" if resources.accelerator.value == "cuda" else "gloo"
+                "nccl" if resources.accelerator.value in ("cuda", "rocm") else "gloo"
             )
             workload: Any = DistributedJob(
                 function=self.ref,

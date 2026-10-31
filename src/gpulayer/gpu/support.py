@@ -43,9 +43,10 @@ SUPPORT: dict[Accelerator, BackendSupport] = {
         "multi-process and multi-Mac runs are out of scope (ADR-0006).",
     ),
     Accelerator.ROCM: BackendSupport(
-        SupportLevel.DETECTION_ONLY,
-        SupportLevel.UNSUPPORTED,
-        "rocm-smi presence is detected; no execution path exists yet.",
+        SupportLevel.IMPLEMENTED,
+        SupportLevel.IMPLEMENTED,
+        "AMD GPUs through a ROCm build of PyTorch (torch.cuda API, RCCL as the nccl backend); "
+        "GPUs are given to jobs with HIP_VISIBLE_DEVICES. Not yet run on AMD hardware.",
     ),
 }
 

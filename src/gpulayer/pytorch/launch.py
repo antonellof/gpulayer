@@ -109,6 +109,8 @@ def launch(
     required = {"torch": ">=0"}
     if accel == Accelerator.CUDA:
         required["torch.cuda"] = ">=0"
+    elif accel == Accelerator.ROCM:
+        required["torch.rocm"] = ">=0"
     elif accel == Accelerator.MPS:
         required["torch.mps"] = ">=0"
     resources = ResourceRequest(
@@ -123,7 +125,8 @@ def launch(
             source=source,
             num_workers=nodes,
             procs_per_worker=devices,
-            comm_backend="nccl" if accel == Accelerator.CUDA else "gloo",
+            # RCCL answers to the "nccl" backend name on ROCm builds of torch.
+            comm_backend="nccl" if accel in (Accelerator.CUDA, Accelerator.ROCM) else "gloo",
         )
     else:
         workload = CommandJob(command=["python", script_path.name, *args], source=source)

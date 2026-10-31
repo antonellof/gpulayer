@@ -332,3 +332,45 @@ def test_torch_compile_needs_a_c_compiler(monkeypatch):
     )
     assert "torch.compile" not in caps.frameworks
     assert any("C compiler" in n for n in caps.notes)
+
+
+ROCM_SMI = json.dumps(
+    {
+        "card0": {"Card series": "AMD Instinct MI300X"},
+        "card1": {"Card series": "AMD Instinct MI300X"},
+    }
+)
+
+
+def test_rocm_build_reports_amd_gpus_never_cuda(monkeypatch):
+    monkeypatch.setattr("gpulayer.gpu.discovery.apple_silicon", lambda: False)
+    caps = detect_capabilities(
+        runner=runner_for({"rocm-smi": (0, ROCM_SMI)}),
+        torch_probe=lambda: TorchProbe(
+            torch_version="2.15.0",
+            cuda_available=True,
+            hip="6.4",
+            nccl=True,
+            gloo=True,
+            cuda_devices=[{"name": "AMD Instinct MI300X", "memory_bytes": 192 * 1024**3}] * 2,
+        ),
+        location_probe=None,
+        c_compiler=lambda: None,
+    )
+    assert caps.devices(Accelerator.CUDA) == []
+    rocm = caps.devices(Accelerator.ROCM)
+    assert len(rocm) == 2 and all(d.execution_supported for d in rocm)
+    assert caps.frameworks["torch.rocm"] == "2.15.0" and "torch.cuda" not in caps.frameworks
+    assert "nccl" in caps.distributed_backends
+
+
+def test_amd_gpu_without_a_rocm_torch_is_not_executable(monkeypatch):
+    monkeypatch.setattr("gpulayer.gpu.discovery.apple_silicon", lambda: False)
+    caps = detect_capabilities(
+        runner=runner_for({"rocm-smi": (0, ROCM_SMI)}),
+        torch_probe=lambda: TorchProbe(torch_version="2.15.0", gloo=True),
+        location_probe=None,
+        c_compiler=lambda: None,
+    )
+    assert [d.execution_supported for d in caps.devices(Accelerator.ROCM)] == [False, False]
+    assert any("no ROCm support" in n for n in caps.notes)

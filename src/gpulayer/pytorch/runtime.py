@@ -33,20 +33,28 @@ def _mps_available() -> bool:
     return bool(mps and mps.is_available())
 
 
+def _rocm_build() -> bool:
+    return bool(getattr(torch.version, "hip", None))
+
+
 def resolve_accelerator(accelerator: str = "auto") -> str:
-    """'auto' -> the accelerator GPUlayer granted this job, else cuda > mps > cpu."""
+    """'auto' -> the accelerator GPUlayer granted this job, else cuda/rocm > mps > cpu."""
     if accelerator == "auto":
         granted = os.environ.get("GPULAYER_ACCELERATOR")
         if granted:
             return granted
         if torch.cuda.is_available():
-            return "cuda"
+            return "rocm" if _rocm_build() else "cuda"
         return "mps" if _mps_available() else "cpu"
-    if accelerator == "cuda" and not torch.cuda.is_available():
+    if accelerator == "cuda" and not (torch.cuda.is_available() and not _rocm_build()):
         raise ValidationFailed("accelerator='cuda' requested but torch.cuda is not available")
+    if accelerator == "rocm" and not (torch.cuda.is_available() and _rocm_build()):
+        raise ValidationFailed(
+            "accelerator='rocm' requested but this torch is not a ROCm build with an AMD GPU"
+        )
     if accelerator == "mps" and not _mps_available():
         raise ValidationFailed("accelerator='mps' requested but torch MPS is not available")
-    if accelerator not in ("cpu", "cuda", "mps"):
+    if accelerator not in ("cpu", "cuda", "rocm", "mps"):
         raise ValidationFailed(f"unknown accelerator {accelerator!r}")
     return accelerator
 
@@ -156,11 +164,13 @@ class Runtime:
         )
         if self.accelerator == "mps" and self.world_size > 1:
             raise ValidationFailed("MPS supports a single process only (ADR-0006)")
-        if precision == "16-mixed" and self.accelerator != "cuda":
-            raise ValidationFailed("precision '16-mixed' is only supported on CUDA")
+        # ROCm builds of torch drive AMD GPUs through the same torch.cuda API and devices.
+        self.gpu = self.accelerator in ("cuda", "rocm")
+        if precision == "16-mixed" and not self.gpu:
+            raise ValidationFailed("precision '16-mixed' is only supported on CUDA and ROCm")
         if precision == "bf16-mixed" and self.accelerator == "mps":
             raise ValidationFailed("precision 'bf16-mixed' is not supported on MPS yet")
-        if self.accelerator == "cuda":
+        if self.gpu:
             self.device = torch.device("cuda", self.local_rank)
         else:
             self.device = torch.device(self.accelerator)
@@ -179,12 +189,10 @@ class Runtime:
         return self.global_rank == 0
 
     def setup(self) -> Runtime:
-        if self.accelerator == "cuda":
+        if self.gpu:
             torch.cuda.set_device(self.device)
         if self.distributed and not dist.is_initialized():
-            backend = os.environ.get("GPULAYER_COMM_BACKEND") or (
-                "nccl" if self.accelerator == "cuda" else "gloo"
-            )
+            backend = os.environ.get("GPULAYER_COMM_BACKEND") or ("nccl" if self.gpu else "gloo")
             dist.init_process_group(backend)
             self._owns_group = True
         return self
@@ -206,7 +214,7 @@ class Runtime:
             return model
         from torch.nn.parallel import DistributedDataParallel as DDP
 
-        ddp = DDP(model, device_ids=[self.local_rank] if self.accelerator == "cuda" else None)
+        ddp = DDP(model, device_ids=[self.local_rank] if self.gpu else None)
         if self.uses_two_level_sync():
             from gpulayer.pytorch.hierarchical import HierarchicalAllReduce
 
@@ -459,18 +467,14 @@ class Runtime:
         """True on every rank if ``flag`` is true on any rank."""
         if not (self.distributed and dist.is_initialized()):
             return bool(flag)
-        t = torch.tensor(
-            [1.0 if flag else 0.0], device=self.device if self.accelerator == "cuda" else "cpu"
-        )
+        t = torch.tensor([1.0 if flag else 0.0], device=self.device if self.gpu else "cpu")
         dist.all_reduce(t, op=dist.ReduceOp.MAX)
         return bool(t.item() > 0)
 
     def mean(self, value: float) -> float:
         if not (self.distributed and dist.is_initialized()):
             return float(value)
-        t = torch.tensor(
-            [float(value)], device=self.device if self.accelerator == "cuda" else "cpu"
-        )
+        t = torch.tensor([float(value)], device=self.device if self.gpu else "cpu")
         dist.all_reduce(t)
         return float(t.item()) / self.world_size
 

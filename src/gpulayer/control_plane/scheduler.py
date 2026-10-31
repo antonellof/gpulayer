@@ -82,7 +82,7 @@ def locality(caps: WorkerCapabilities, level: str) -> str | None:
 
 
 # Pseudo-frameworks reported by discovery: "this worker's torch can drive that GPU".
-_TORCH_GPU = {"torch.cuda": "CUDA", "torch.mps": "MPS"}
+_TORCH_GPU = {"torch.cuda": "CUDA", "torch.mps": "MPS", "torch.rocm": "ROCm (AMD)"}
 
 
 def compatibility_reasons(

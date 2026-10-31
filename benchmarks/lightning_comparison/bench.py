@@ -37,6 +37,9 @@ from torch.utils.data import DataLoader, TensorDataset  # noqa: E402
 CASES = {
     # name: (model kind, batch, accelerator, devices, precision)
     "mlp-cpu": ("mlp-small", 64, "cpu", 1, "32"),
+    "cnn-cpu": ("cnn", 32, "cpu", 1, "32"),
+    "mlp-mps": ("mlp", 256, "mps", 1, "32"),
+    "cnn-mps": ("cnn", 128, "mps", 1, "32"),
     "mlp-fp32": ("mlp", 256, "cuda", 1, "32"),
     "mlp-fp16": ("mlp", 256, "cuda", 1, "16-mixed"),
     "cnn-fp16": ("cnn", 128, "cuda", 1, "16-mixed"),
@@ -186,6 +189,8 @@ if "RANK" in os.environ or fw == "pl" or devices * nodes == 1:
     print(f"FIT {os.environ.get('RANK', '0')} {time.perf_counter() - _t_fit:.4f}", flush=True)
 if torch.cuda.is_initialized():  # not in GPUlayer's launcher, which never used the GPU
     torch.cuda.synchronize()
+if accel == "mps" and torch.backends.mps.is_available():
+    torch.mps.synchronize()
 if fw == "pl" and trainer.global_rank != 0:
     sys.exit(0)
 print(f"ELAPSED {time.perf_counter() - T0:.4f}", flush=True)

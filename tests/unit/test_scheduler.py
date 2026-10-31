@@ -81,13 +81,19 @@ def test_unified_memory_is_explicit():
     assert not d.placed
 
 
-def test_rocm_detected_but_never_scheduled():
-    dev = AcceleratorDevice(
+def test_rocm_needs_a_usable_device_and_a_rocm_torch():
+    detected = AcceleratorDevice(
         index=0, accelerator="rocm", vendor="amd", name="MI300", execution_supported=False
     )
-    d = schedule(spec(ResourceRequest(accelerator="rocm")), [view("w", accelerators=[dev])])
-    assert not d.placed
-    assert any("detection-only" in r for r in d.candidates[0].reasons)
+    d = schedule(spec(ResourceRequest(accelerator="rocm")), [view("w", accelerators=[detected])])
+    assert not d.placed and "usable rocm device" in d.candidates[0].reasons[0]
+    usable = detected.model_copy(update={"execution_supported": True})
+    r = ResourceRequest(accelerator="rocm", frameworks={"torch.rocm": ">=0"})
+    no_rocm_torch = view("a", accelerators=[usable], frameworks={"torch": "2.15.0"})
+    ok = view("b", accelerators=[usable], frameworks={"torch": "2.15.0", "torch.rocm": "2.15.0"})
+    d = schedule(spec(r), [no_rocm_torch, ok])
+    assert d.worker_ids == ["b"]
+    assert "cannot use ROCm" in " ".join(d.candidates[0].reasons)
 
 
 def test_framework_and_python_constraints():
