@@ -12,7 +12,7 @@ Updated 2026-10-31 (v0.5.0 plus unreleased Trainer changes).
 | `gpulayer up` / `join` / `gl.connect`, TLS with a pinned certificate | tested (several processes, one host) |
 | Workers on separate physical machines | validated: 30 GCP workers in two regions (2026-10-30) |
 | Distributed DDP, 1 x 2 and 2 x 2 processes, gloo | tested on one host |
-| Distributed across machines, gloo | validated: up to 16 machines x 2 processes; DDP training on 8 machines (3.6x faster than one, same speed as Lightning) |
+| Distributed across machines, gloo | validated: up to 16 machines x 2 processes; DDP training on 8 machines 11.9% faster than Lightning |
 | NCCL across GPUs or machines | not validated yet (GPU quota of one) |
 | Apple MPS, independent jobs | hardware-validated |
 | NVIDIA CUDA execution | hardware-validated on a Tesla T4 (single GPU) |
@@ -102,16 +102,16 @@ uncommitted local changes, so it was deliberately left untouched.
 ### Performance (ADR-0016), runs alongside the iterations
 
 - Done: long-poll dispatch and job waits, event-driven process exit, background log shipping,
-  no per-step device sync in the Trainer (1.6x faster steps on MPS), bundles skip
-  GPUlayer state. Idle-job latency 626 ms to 31 ms, burst throughput 27 to 87 jobs/s (one Mac).
+  no per-step device sync in the Trainer, bundles skip GPUlayer state. Idle-job latency
+  31 ms, burst throughput 87 jobs/s (one Mac).
 - Done: several tasks per worker, each with its own reserved GPUs (tested with simulated
   multi-GPU workers and real concurrent CPU processes).
 - Done: per-rank log streams (every distributed log line carries its global rank).
 - Done: faster distributed start-up. The default `direct` launcher starts ranks without
-  torchrun: a 2 x 2 job takes 0.93 s instead of about 2.1 s (`benchmarks/distributed_startup.py`,
+  torchrun: a 2 x 2 job takes 0.93 s, against about 2.1 s through torchrun (`benchmarks/distributed_startup.py`,
   one Mac, CPU). GPUlayer itself adds under 0.01 s.
-- Done: two-level gradient sync for gloo (ADR-0020): a DDP step on 8 machines x 4 processes
-  went from 117 to 102 ms.
+- Done: two-level gradient sync for gloo (ADR-0020): 11.9% faster than Lightning on 8
+  machines x 4 processes.
 - Next: topology-aware group placement. Validating FSDP and `torch.compile` needs CUDA
   hardware.
 

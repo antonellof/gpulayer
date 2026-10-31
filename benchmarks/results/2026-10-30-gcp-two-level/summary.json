@@ -1,0 +1,12 @@
+{
+  "_about": "Strong scaling with two-level gradient sync (ADR-0020), from strong-scaling-two-level.log in this directory. Read by scripts/make_perf_charts.py.",
+  "strong_scaling": {
+    "subtitle": "A CNN on 32,768 images, 2 epochs; GCP n1-standard-4, 4 processes per machine, gloo; same machines for both",
+    "method": "Wall time from start until the last process exits, median of 3 interleaved runs, both trainers on the same machines (GPUlayer pinned with worker_ids). GPUlayer uses two-level gradient sync (the default with gloo); Lightning its default DDP under torchrun.",
+    "rows": [
+      {"nodes": 2, "procs": 8, "gpulayer_s": 118.9, "lightning_s": 120.8, "gpulayer_loss": 2.1289, "lightning_loss": 2.1249},
+      {"nodes": 4, "procs": 16, "gpulayer_s": 73.3, "lightning_s": 77.4, "gpulayer_loss": 2.1429, "lightning_loss": 2.1367},
+      {"nodes": 8, "procs": 32, "gpulayer_s": 50.5, "lightning_s": 57.3, "gpulayer_loss": 2.1622, "lightning_loss": 2.1643}
+    ]
+  }
+}

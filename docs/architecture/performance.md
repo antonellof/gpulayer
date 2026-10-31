@@ -26,10 +26,10 @@ python benchmarks/dispatch.py --jobs 40 --workers 4
 
 Measured on an Apple Silicon Mac (10 CPU cores), Python 3.12, embedded control plane:
 
-| | before ADR-0016 | after |
-|---|---|---|
-| one job on an idle worker, submit until `wait()` returns | 626 ms | 31 ms |
-| burst of 40 jobs on 4 local workers | 26.8 jobs/s | 87.1 jobs/s |
+| | |
+|---|---|
+| one job on an idle worker, submit until `wait()` returns | 31 ms |
+| burst of 40 jobs on 4 local workers | 87.1 jobs/s |
 
 Starting the Python interpreter takes about 30 ms on the same machine, so almost all of the
 remaining time for a single job is the job's own start-up.
@@ -40,21 +40,21 @@ start, logs and finish.
 ## HTTP API
 
 Clients and remote workers keep one connection open per thread, so a request costs one round
-trip, not a new TCP and TLS handshake. The server sets `TCP_NODELAY`, without which Linux held
-every response for about 40 ms (Nagle's algorithm waiting for a delayed ACK), and runs TLS
-handshakes in each connection's thread instead of the accept loop. Idle connections close after
+trip, not a new TCP and TLS handshake. The server sets `TCP_NODELAY`, so Linux does not hold
+responses back waiting for a delayed ACK, and runs TLS handshakes in each connection's thread
+instead of the accept loop. Idle connections close after
 120 seconds and clients reconnect transparently.
 
 `benchmarks/http_requests.py` times `GET /v1/jobs` over TLS on loopback:
 
-| | Linux (GCP e2-standard-8) before | after | macOS (M2 Pro) before | after |
-|---|---|---|---|---|
-| one request, p50 | 43.0 ms | 0.60 ms | 1.04 ms | 0.24 ms |
-| one thread | 23 req/s | 1555 req/s | 869 req/s | 4114 req/s |
-| 8 threads | 112 req/s | 853 req/s | 1355 req/s | 2781 req/s |
+| | Linux (GCP e2-standard-8) | macOS (M2 Pro) |
+|---|---|---|
+| one request, p50 | 0.60 ms | 0.24 ms |
+| one thread | 1555 req/s | 4114 req/s |
+| 8 threads | 853 req/s | 2781 req/s |
 
 On two GCP VMs (a server with two workers on one, a third worker on the other; 15 slots),
-500 jobs of 0.02 s each took 64.4 s before (7.8 jobs/s) and 9.0 s after (55.6 jobs/s).
+500 jobs of 0.02 s each took 9.0 s (55.6 jobs/s).
 
 ## Distributed job start-up
 
@@ -86,10 +86,8 @@ The PyTorch `Trainer` avoids work that slows each step:
 - `accumulate_grad_batches=N` applies the optimizer every N batches, and DDP exchanges
   gradients only on those batches.
 
-Removing the per-step read made each step 1.6 times faster on an Apple GPU (MPS) for a
-three-layer MLP: 0.89 to 0.57 ms at width 256, and 1.37 to 0.83 ms at width 2048. On CPU the
-change is within noise, since there is no device to wait for. The same effect is expected on
-NVIDIA GPUs but has not been measured yet.
+How this compares with PyTorch Lightning on an NVIDIA T4 is in
+[Performance and comparison](../get-started/performance-and-comparison.md).
 
 Distributed CPU jobs keep one thread per rank (torchrun's default). Giving each rank a share of
 the cores was measured and was slower for small models; set `OMP_NUM_THREADS` in the job's

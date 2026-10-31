@@ -265,12 +265,10 @@ const NOTES: Note[] = [
 // Measured with the same model, data, optimizer and torch version in both trainers; see the
 // method note under the table. Filled from the benchmark run of 2026-10-29.
 const PERF_ROWS: { case: string; gl: number; pl: number; glOver: number; plOver: number }[] = [
-  { case: "CPU, 1 process, width 256", gl: 0.51, pl: 0.83, glOver: 1.06, plOver: 1.14 },
-  { case: "CPU, 1 process, width 2048", gl: 3.59, pl: 3.99, glOver: 1.07, plOver: 1.17 },
-  { case: "Apple GPU (MPS), width 256", gl: 0.57, pl: 1.26, glOver: 1.16, plOver: 1.25 },
-  { case: "Apple GPU (MPS), width 2048", gl: 0.83, pl: 3.33, glOver: 1.23, plOver: 1.14 },
-  { case: "DDP, 2 CPU processes, width 256", gl: 1.82, pl: 3.52, glOver: 3.79, plOver: 2.46 },
-  { case: "DDP, 2 CPU processes, width 2048", gl: 40.17, pl: 41.03, glOver: 3.72, plOver: 2.7 },
+  { case: "MLP, fp32, batch 256", gl: 3.93, pl: 5.41, glOver: 4.83, plOver: 5.39 },
+  { case: "MLP, fp16 mixed precision", gl: 5.04, pl: 6.54, glOver: 5.11, plOver: 5.8 },
+  { case: "CNN, fp16 mixed precision, batch 128", gl: 12.18, pl: 12.27, glOver: 5.19, plOver: 5.74 },
+  { case: "DDP, 2 CPU processes", gl: 3.39, pl: 7.46, glOver: 9.25, plOver: 9.01 },
 ];
 
 const BEHIND = [
@@ -440,7 +438,7 @@ export default function ComparePage() {
             <h2 className="section-title">Training speed: GPUlayer and PyTorch Lightning</h2>
             <p className="mt-2 max-w-3xl text-muted-foreground">
               The same model, data and optimizer, trained with GPUlayer&apos;s Trainer and with
-              Lightning&apos;s Trainer on one Apple Silicon Mac. Lower is better.
+              Lightning&apos;s Trainer on one NVIDIA Tesla T4. Lower is better.
             </p>
             <div className="mt-8 overflow-x-auto rounded-lg border border-border">
               <table className="w-full min-w-[760px] text-sm">
@@ -480,36 +478,21 @@ export default function ComparePage() {
             </div>
             <div className="mt-4 max-w-3xl space-y-2 text-xs text-muted-foreground">
               <p>
-                Method: Apple Silicon Mac with 10 CPU cores, Python 3.12, torch 2.15.0, Lightning
-                2.6.6. A three-layer MLP (width 256 or 2048), batch 64, SGD, one logged loss per
-                step. Lightning runs without logger, progress bar, model summary or checkpoints;
-                GPUlayer runs without checkpoints. Each case runs 100 and 600 steps, three times
-                each in fresh processes; ms per step is the median difference divided by 500
+                Method: GCP n1-standard-8 with one Tesla T4 (driver 580), Ubuntu 22.04, Python 3.12, torch
+                2.15.0 with CUDA 13.2, Lightning 2.6.6. SGD with momentum and one logged loss per step;
+                Lightning runs without logger, progress bar, model summary or checkpoints, GPUlayer without
+                checkpoints. Each case runs 100 and 600 steps, three times each in fresh processes, one run
+                at a time with nothing else on the GPU; ms per step is the median difference divided by 500
                 steps. Start-up is the import time plus the fixed time inside{" "}
-                <code className="font-mono">fit</code>.
+                <code className="font-mono">fit</code>. For DDP on CPU, GPUlayer gives each process one
+                thread and Lightning leaves PyTorch&apos;s default, which likely explains much of the gap.
               </p>
               <p>
-                Differences under about 10% are within run-to-run noise on this machine, so the
-                larger DDP case is a tie. GPUlayer ran DDP as a local GPUlayer job (packaged,
-                scheduled and started with torchrun), which is why its DDP start-up was about a
-                second longer. These runs used the torchrun launcher; the direct launcher, now
-                the default, removes about 1.1 s from a distributed job&apos;s start-up and
-                shutdown, and the comparison has not been re-run with it. These are CPU and Apple GPU results on one machine.
-              </p>
-              <p>
-                On 1, 2, 4 and 8 GCP machines (4 processes each, same machines and interleaved runs for both trainers),
-                one CNN training job took 145.9, 83.0, 52.9 and 40.5 s with GPUlayer and 145.8, 84.1, 53.3 and 41.2 s
-                with Lightning under torchrun: the same speed. With two-level gradient sync (summing inside each
-                machine before crossing the network, now the default with gloo), a rerun on new VMs took 118.9, 73.3
-                and 50.5 s on 2, 4 and 8 machines against 120.8, 77.4 and 57.3 s for Lightning: 11.9% faster on 8.
-                GPUlayer starts every node from one{" "}
-                <code className="font-mono">Trainer(num_nodes=N)</code> call.
-              </p>
-              <p>
-                On an NVIDIA Tesla T4 (2026-10-30, same method, direct launcher), GPUlayer was 1.38x faster per step on an
-                fp32 MLP, 1.30x faster with fp16 mixed precision, the same on a compute-bound CNN, and 2.2x faster for
-                2-process CPU DDP with each trainer&apos;s defaults; it started 0.55 to 0.7 s sooner on one GPU. Charts,
-                method and logs:{" "}
+                One CNN training job on 2, 4 and 8 GCP machines (4 processes each, gloo, same machines and
+                interleaved runs for both trainers) took 118.9, 73.3 and 50.5 s with GPUlayer and 120.8, 77.4
+                and 57.3 s with Lightning under torchrun: 11.9% faster on 8 machines, from summing gradients
+                inside each machine before crossing the network. GPUlayer starts every node from one{" "}
+                <code className="font-mono">Trainer(num_nodes=N)</code> call. Charts, method and logs:{" "}
                 <Link href="/docs/get-started/performance-and-comparison/" className="underline underline-offset-2">
                   Performance and comparison
                 </Link>

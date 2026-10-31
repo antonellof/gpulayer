@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs" / "assets" / "perf"
 DEFAULT = [
     ROOT / "benchmarks" / "results" / "2026-10-30-gcp" / "summary.json",
-    ROOT / "benchmarks" / "results" / "2026-10-30-gcp-fleet" / "summary.json",
+    ROOT / "benchmarks" / "results" / "2026-10-30-gcp-two-level" / "summary.json",
 ]
 
 THEMES = {
@@ -147,17 +147,6 @@ def charts(d: dict) -> dict[str, dict]:
                 for r in sc["rows"]
             ],
             unit="seconds to train",
-            fmt="{:.1f} s",
-            note="lower is better",
-        )
-    if "submit" in d:
-        sb = d["submit"]
-        out["fleet-throughput"] = dict(
-            title="Submitting thousands of jobs to 30 workers",
-            subtitle=sb["subtitle"],
-            series=("After the scheduling fix", "Before"),
-            rows=[(r["name"], r["after_s"], r["before_s"]) for r in sb["rows"]],
-            unit="seconds, submit until every job finished",
             fmt="{:.1f} s",
             note="lower is better",
         )
