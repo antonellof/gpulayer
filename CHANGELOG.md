@@ -5,6 +5,10 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Workers report a `torch.compile` capability only when a C compiler is present; a job that
+  asks for it is not placed on a worker without one, and the reason says so. Found on rented
+  GPU containers, which often have no compiler: `torch.compile` failed mid-run with an
+  Inductor error.
 - Validated on multi-GPU machines rented on Vast.ai: 4× RTX 3070 (PCIe, two `PHB` pairs) and
   2× A100 SXM4 (NVLink `NV4`). NCCL all-reduce across all GPUs as a GPUlayer distributed job;
   with GPU 0 busy a 2-GPU job got GPUs 2–3 (`PHB`) instead of 1–2 (`SYS`). New

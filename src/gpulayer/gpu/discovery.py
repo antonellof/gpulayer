@@ -383,6 +383,14 @@ def gce_region(zone: str) -> str | None:
     return region if sep else None
 
 
+def detect_c_compiler() -> str | None:
+    """Path of the C compiler torch.compile (Inductor) would use: $CC, else cc, gcc or clang."""
+    cc = os.environ.get("CC")
+    if cc:
+        return shutil.which(cc)
+    return next((p for p in map(shutil.which, ("cc", "gcc", "clang")) if p), None)
+
+
 def apple_silicon() -> bool:
     return platform.system() == "Darwin" and platform.machine().lower() in ("arm64", "aarch64")
 
@@ -400,6 +408,7 @@ def detect_capabilities(
     region: str | None = None,
     zone: str | None = None,
     location_probe: Callable[[], tuple[str | None, str | None]] | None = detect_location,
+    c_compiler: Callable[[], str | None] = detect_c_compiler,
 ) -> WorkerCapabilities:
     """``max_concurrent_tasks`` defaults to one task per usable discrete GPU (at least 1).
 
@@ -488,6 +497,13 @@ def detect_capabilities(
             frameworks["torch.cuda"] = tp.torch_version
         if tp.mps_available:
             frameworks["torch.mps"] = tp.torch_version
+        # torch.compile generates and builds C++/Triton code at run time, so it needs a C
+        # compiler on the worker; rented containers often have none. Reported as its own
+        # capability so a job that compiles is never placed where it would crash mid-run.
+        if c_compiler():
+            frameworks["torch.compile"] = tp.torch_version
+        else:
+            notes.append("no C compiler (cc, gcc or clang): torch.compile cannot run here")
         if tp.gloo:
             backends.append("gloo")
         if tp.nccl:

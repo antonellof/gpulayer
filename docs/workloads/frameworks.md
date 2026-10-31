@@ -25,6 +25,7 @@ and `gpulayer worker status --json` includes, for example:
 | AMD GPU (`rocm`) | `rocm-smi` is present; reported but never scheduled yet |
 | Frameworks | installed package versions, read from package metadata without importing: `torch`, `jax`, `jaxlib`, `tensorflow`, `mlx`, `cupy`, `onnxruntime`, `tensorrt`, `triton`, `vllm`, `transformers`, `numpy` |
 | `torch.cuda`, `torch.mps` | torch in that environment can actually drive the GPU |
+| `torch.compile` | torch is installed and a C compiler (`cc`, `gcc` or `clang`, or `$CC`) is present, so `torch.compile` can build its kernels; ask for it with `frameworks={"torch.compile": ">=0"}` |
 
 A GPU counts as usable when its driver or platform is, so a CUDA box without PyTorch can still
 run CUDA binaries, CuPy or JAX jobs.

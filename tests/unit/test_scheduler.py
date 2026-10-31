@@ -369,3 +369,13 @@ def test_regions_filter_also_accepts_a_zone():
         assert compatibility_reasons(s, caps) == []
     s = spec(placement=PlacementPolicy(regions=["us-east1"]))
     assert compatibility_reasons(s, caps)
+
+
+def test_torch_compile_job_is_rejected_without_a_compiler_with_the_reason():
+    s = spec(ResourceRequest(frameworks={"torch.compile": ">=0"}))
+    no_cc = view("no-cc", frameworks={"torch": "2.15.0"})
+    cc = view("cc", frameworks={"torch": "2.15.0", "torch.compile": "2.15.0"})
+    d = schedule(s, [no_cc, cc])
+    assert d.worker_ids == ["cc"]
+    reasons = {c.worker_id: " ".join(c.reasons) for c in d.candidates}
+    assert "needs a C compiler" in reasons["no-cc"]

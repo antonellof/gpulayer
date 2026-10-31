@@ -136,6 +136,8 @@ def compatibility_reasons(
         if have is None:
             if fw in _TORCH_GPU:
                 reasons.append(f"torch on this worker cannot use {_TORCH_GPU[fw]}")
+            elif fw == "torch.compile":
+                reasons.append("torch.compile needs a C compiler on this worker (install gcc)")
             else:
                 reasons.append(f"framework '{fw}' not installed")
         elif not _spec_ok(wanted, have):

@@ -61,7 +61,7 @@ class Trainer:
         max_time: float | None = None,
         deterministic: bool = False,
         benchmark: bool | None = None,
-        prefetch: bool = True,
+        prefetch: bool = False,
         enable_checkpointing: bool = True,
         default_root_dir: str | Path = "gpulayer_runs",
         launch_options: dict[str, Any] | None = None,

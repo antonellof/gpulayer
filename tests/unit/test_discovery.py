@@ -42,6 +42,7 @@ def test_mps_available_reports_unified_memory():
         torch_probe=lambda: TorchProbe(
             torch_version="2.4.0", mps_built=True, mps_available=True, gloo=True
         ),
+        c_compiler=lambda: None,
     )
     mps = caps.devices(Accelerator.MPS)
     assert len(mps) == 1 and mps[0].memory_kind == MemoryKind.UNIFIED
@@ -314,3 +315,20 @@ def test_explicit_location_skips_the_probe(monkeypatch):
         location_probe=lambda: ("r1", "r1-a"),
     )
     assert (caps.region, caps.zone) == ("r1", "r1-a")
+
+
+def test_torch_compile_needs_a_c_compiler(monkeypatch):
+    monkeypatch.setattr("gpulayer.gpu.discovery.apple_silicon", lambda: False)
+    tp = lambda: TorchProbe(torch_version="2.15.0", gloo=True)  # noqa: E731
+    caps = detect_capabilities(
+        runner=runner_for({}),
+        torch_probe=tp,
+        location_probe=None,
+        c_compiler=lambda: "/usr/bin/gcc",
+    )
+    assert caps.frameworks["torch.compile"] == "2.15.0"
+    caps = detect_capabilities(
+        runner=runner_for({}), torch_probe=tp, location_probe=None, c_compiler=lambda: None
+    )
+    assert "torch.compile" not in caps.frameworks
+    assert any("C compiler" in n for n in caps.notes)

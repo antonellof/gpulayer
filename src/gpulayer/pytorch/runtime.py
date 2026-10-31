@@ -51,6 +51,17 @@ def resolve_accelerator(accelerator: str = "auto") -> str:
     return accelerator
 
 
+def _pin(batch: Any) -> Any:
+    """Page-locked copies of the CPU tensors in a batch, so the GPU copy can run asynchronously."""
+    if isinstance(batch, torch.Tensor):
+        return batch.pin_memory() if batch.device.type == "cpu" and not batch.is_pinned() else batch
+    if isinstance(batch, (list, tuple)):
+        return type(batch)(_pin(b) for b in batch)
+    if isinstance(batch, dict):
+        return {k: _pin(v) for k, v in batch.items()}
+    return batch
+
+
 def _record_stream(batch: Any, stream: Any) -> None:
     if isinstance(batch, torch.Tensor):
         if batch.device.type == "cuda":
@@ -315,37 +326,60 @@ class Runtime:
     def batches(self, loader: Any, *, prefetch: bool = True) -> Iterator[Any]:
         """Iterate ``loader`` with each batch on the device.
 
-        On CUDA (with ``prefetch``) the next batch is pinned and copied on a side stream while
-        the current step runs, so neither the copy nor the CPU work of loading the next batch
-        waits for the GPU. A copy from ordinary (pageable) memory with ``non_blocking=True``
-        does not overlap: it runs on the compute stream and the CPU waits for the previous
-        step's kernels before it can copy and load the next batch. Elsewhere this is
-        ``to_device`` per batch.
+        On CUDA (with ``prefetch``) a background thread loads the next batches and pins them,
+        and each one is copied to the GPU on a side stream while the current step runs. The
+        training loop then only starts the copy: collating, pinning and copying overlap with
+        GPU work. Elsewhere this is ``to_device`` per batch.
         """
         if not prefetch or self.device.type != "cuda":
             for batch in loader:
                 yield self.to_device(batch)
             return
+        import queue
+        import threading
+
         stream = torch.cuda.Stream(self.device)
         compute = torch.cuda.current_stream(self.device)
-        it = iter(loader)
-        end = object()
+        ready: queue.Queue[tuple[str, Any]] = queue.Queue(maxsize=2)
+        stop = threading.Event()
 
-        def load() -> Any:
+        def produce() -> None:
             try:
-                batch = next(it)
-            except StopIteration:
-                return end
-            with torch.cuda.stream(stream):
-                return self._to_device(batch, pin=True)
+                for batch in loader:
+                    ready.put(("batch", _pin(batch)))
+                    if stop.is_set():
+                        return
+                ready.put(("end", None))
+            except BaseException as e:  # re-raised in the training loop
+                ready.put(("error", e))
 
-        nxt = load()
-        while nxt is not end:
-            compute.wait_stream(stream)  # the copy of this batch is done before it is used
-            cur = nxt
-            _record_stream(cur, compute)  # memory from the side stream, used on this one
-            nxt = load()
-            yield cur
+        thread = threading.Thread(target=produce, name="gpulayer-prefetch", daemon=True)
+        thread.start()
+
+        def copy_next() -> Any:
+            kind, value = ready.get()
+            if kind == "error":
+                raise value
+            if kind == "end":
+                return None
+            with torch.cuda.stream(stream):
+                return self._to_device(value), True
+
+        try:
+            nxt = copy_next()
+            while nxt is not None:
+                compute.wait_stream(stream)  # the copy of this batch is done before it is used
+                cur = nxt[0]
+                _record_stream(cur, compute)  # memory from the side stream, used on this one
+                nxt = copy_next()
+                yield cur
+        finally:
+            stop.set()
+            while True:  # unblock the producer if it waits on a full queue
+                try:
+                    ready.get_nowait()
+                except queue.Empty:
+                    break
 
     def _to_device(self, batch: Any, pin: bool = False) -> Any:
         if isinstance(batch, torch.Tensor):
