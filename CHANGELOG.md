@@ -5,6 +5,11 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Fix: jobs now receive `LD_LIBRARY_PATH` and the other library and CUDA paths. Where the GPU
+  driver is found through them (Kaggle), a worker saw its GPUs but the job's processes saw
+  none, and NCCL failed with "no GPUs found". Proxy and package-index URLs are still not
+  passed, as they can carry credentials. `validate_multigpu.py` now checks that torch inside
+  the job sees the GPUs it was given.
 - Per-job requirements (ADR-0022): `JobSpec.environment` (`requirements`, `requirements_file`),
   `requirements=` in the SDK builders, `@gl.remote`, `launch()` and the Trainer's
   `launch_options`, and `gpulayer submit --requirement/--requirements-file`. Each worker builds

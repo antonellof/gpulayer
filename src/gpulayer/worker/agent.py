@@ -45,8 +45,18 @@ from gpulayer.worker.environments import EnvironmentCache, PreparedEnvironment
 log = logging.getLogger("gpulayer.worker")
 
 # Only these variables leak from the worker's environment into workloads; everything
-# else (including credentials in the worker's env) must be passed explicitly.
-_ENV_ALLOWLIST = ("PATH", "HOME", "USER", "LANG", "LC_ALL", "TMPDIR", "SYSTEMROOT", "TERM")
+# else (including credentials in the worker's env) must be passed explicitly. Library and
+# CUDA paths are included: without them a job cannot load the GPU driver where it is found
+# through LD_LIBRARY_PATH (found on Kaggle: the worker saw both GPUs, the job's ranks saw
+# none). Certificate paths let jobs verify TLS as the worker does. Proxy and package-index
+# URLs are left out on purpose: they can embed credentials (user:token@host); pass them per job
+# with `env` if needed (per-job environment builds run with the worker's own environment).
+_ENV_ALLOWLIST = (
+    "PATH", "HOME", "USER", "LANG", "LC_ALL", "TMPDIR", "SYSTEMROOT", "TERM",
+    "LD_LIBRARY_PATH", "LIBRARY_PATH", "CUDA_HOME", "CUDA_PATH",
+    "NVIDIA_VISIBLE_DEVICES", "NVIDIA_DRIVER_CAPABILITIES",
+    "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE",
+)  # fmt: skip
 MAX_OUTPUT_FILES = 1000
 MAX_OUTPUT_BYTES = 512 * 1024**2
 

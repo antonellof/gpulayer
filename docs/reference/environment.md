@@ -30,4 +30,7 @@ Distributed jobs also get torchrun's variables, with either launcher: `RANK`, `W
 `TORCHELASTIC_RUN_ID` (the job id with the direct launcher).
 
 Jobs do not inherit the worker's environment, except `PATH`, `HOME`, `USER`, `LANG`, `LC_ALL`,
-`TMPDIR` and `TERM`. Pass anything else with `env` or `secrets`.
+`TMPDIR`, `TERM`, the library and CUDA paths (`LD_LIBRARY_PATH`, `LIBRARY_PATH`, `CUDA_HOME`,
+`CUDA_PATH`, `NVIDIA_VISIBLE_DEVICES`, `NVIDIA_DRIVER_CAPABILITIES`) and the certificate paths
+(`SSL_CERT_FILE`, `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`). Pass anything else, including
+proxies, with `env` or `secrets`.

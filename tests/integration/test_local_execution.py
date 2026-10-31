@@ -168,3 +168,17 @@ def test_two_workers_share_queue(real_cp, tmp_path):
     assert all(real_cp.get_job(j.job_id).state == JobState.SUCCEEDED for j in jobs)
     assert len(workers_used) == 2
     assert json.loads(real_cp.get_job(jobs[0].job_id).model_dump_json())["attempts"] == 1
+
+
+def test_library_paths_reach_jobs_but_credentials_do_not(client, monkeypatch):
+    # Found on Kaggle: the GPU driver is located through LD_LIBRARY_PATH; without it the
+    # worker saw two GPUs and the job's ranks saw none.
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/opt/driver/lib64")
+    monkeypatch.setenv("HTTPS_PROXY", "http://user:token@proxy:3128")
+    script = (
+        "import os; print(os.environ.get('LD_LIBRARY_PATH'), "
+        "'proxy' if 'HTTPS_PROXY' in os.environ else 'no-proxy')"
+    )
+    job = client.submit(gl.command(["python", "-c", script]))
+    assert job.wait(60).state == JobState.SUCCEEDED
+    assert job.logs_text() == "/opt/driver/lib64 no-proxy"

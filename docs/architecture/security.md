@@ -26,8 +26,11 @@ its active tasks.
   never enters the job record or the database and is never sent over the network.
 - Secret values are redacted (`***`) from streamed logs and function error messages.
 - Workloads receive an allow-listed environment (`PATH`, `HOME`, `USER`, `LANG`, `LC_ALL`,
-  `TMPDIR`, `TERM`) plus the job's `env` and `secrets`. They do not inherit the worker's
-  credentials.
+  `TMPDIR`, `TERM`, the library and CUDA paths `LD_LIBRARY_PATH`, `LIBRARY_PATH`, `CUDA_HOME`,
+  `CUDA_PATH`, `NVIDIA_VISIBLE_DEVICES`, `NVIDIA_DRIVER_CAPABILITIES`, and the certificate
+  paths `SSL_CERT_FILE`, `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`) plus the job's `env` and
+  `secrets`. They do not inherit the worker's credentials. Proxy and package-index URLs are not
+  passed, because they can embed credentials.
 - `env` values are stored and transmitted in the job spec, so they are not secret.
 
 ## Validation

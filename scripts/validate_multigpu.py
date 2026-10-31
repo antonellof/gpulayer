@@ -54,7 +54,12 @@ assert t.item() == want
 dist.destroy_process_group()
 """
 
-VISIBLE_SCRIPT = "import os; print('VISIBLE', os.environ.get('CUDA_VISIBLE_DEVICES'))"
+# Prints the GPUs the job was given and how many torch can actually use: a job can be given
+# GPUs and still fail to reach the driver (Kaggle: LD_LIBRARY_PATH was not passed through).
+VISIBLE_SCRIPT = (
+    "import os, torch; "
+    "print('VISIBLE', os.environ.get('CUDA_VISIBLE_DEVICES'), torch.cuda.device_count())"
+)
 
 
 def check_topology(caps: WorkerCapabilities) -> dict[int, list[int]]:
@@ -122,14 +127,17 @@ def main() -> int:
             )
         )
         st = job.wait(300)
-        got = next(
-            (ln.split()[1] for ln in job.logs_text().splitlines() if ln.startswith("VISIBLE")), ""
+        line = next(
+            (ln.split() for ln in job.logs_text().splitlines() if ln.startswith("VISIBLE")),
+            ["", "", "0"],
         )
+        got, usable = line[1], int(line[2])
         want = ",".join(str(i) for i in chosen_for[k])
         check(
             "assigned",
-            st.state == JobState.SUCCEEDED and got == want,
-            f"CUDA_VISIBLE_DEVICES={got} expected {want} ({st.state.value})",
+            st.state == JobState.SUCCEEDED and got == want and usable == k,
+            f"CUDA_VISIBLE_DEVICES={got} expected {want}, torch sees {usable} GPU(s) "
+            f"({st.state.value})",
         )
 
         # 4. nccl
