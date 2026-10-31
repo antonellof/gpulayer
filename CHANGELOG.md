@@ -3,6 +3,12 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
+## Unreleased
+
+- Zone placement measured with the scheduler choosing: the same 4-machine job took 42.5 s with
+  `group_locality="prefer"` (one zone, every run) and 58.8 s with `"any"` (two regions, every
+  run), median of five on GCP. `locality_run.py MODE=policy` reproduces it.
+
 ## 0.6.0 (2026-10-31)
 
 GPUs first: validated on several GPUs per machine, benchmarked against PyTorch Lightning on

@@ -135,8 +135,8 @@ and each trainer's defaults:
 - One training job across machines on CPUs (gloo): GPUlayer trains 11.9% faster than
   Lightning under torchrun on 8 machines (50.5 s vs 57.3 s; 5.3% on 4, 1.6% on 2), and it
   starts every machine from one `Trainer(num_nodes=N)` call.
-- A distributed job split across two GCP regions ran 16 to 24% slower than in one region;
-  GPUlayer keeps a group in one zone or region when it can.
+- Placement: the same 4-machine job took 42.5 s when GPUlayer kept it in one zone and 58.8 s
+  when it was spread across two GCP regions (median of five, placed by the scheduler).
 - Distributed jobs start 1.1 to 2.3 s faster than through torchrun; tested on up to 16
   machines (32 processes) and 30 workers across two GCP regions.
 - Across two machines: a distributed job spanning both, fail-fast in 2.7 s, and 55.6 small

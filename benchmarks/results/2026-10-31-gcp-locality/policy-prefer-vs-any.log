@@ -1,0 +1,15 @@
+# policy mode: 4 nodes x 4 processes, 2 epochs, 5 runs each
+prefer     66.7 s  zones=['europe-west4-a', 'europe-west4-a', 'europe-west4-a', 'europe-west4-a']
+any        72.9 s  zones=['europe-west1-b', 'europe-west1-c', 'europe-west4-a', 'europe-west4-a']
+prefer     42.5 s  zones=['europe-west4-a', 'europe-west4-a', 'europe-west4-a', 'europe-west4-a']
+any        59.1 s  zones=['europe-west1-b', 'europe-west1-c', 'europe-west4-a', 'europe-west4-a']
+prefer     42.6 s  zones=['europe-west4-a', 'europe-west4-a', 'europe-west4-a', 'europe-west4-a']
+any        58.8 s  zones=['europe-west1-b', 'europe-west1-c', 'europe-west4-a', 'europe-west4-a']
+prefer     41.3 s  zones=['europe-west4-a', 'europe-west4-a', 'europe-west4-a', 'europe-west4-a']
+any        58.5 s  zones=['europe-west1-b', 'europe-west1-c', 'europe-west4-a', 'europe-west4-a']
+prefer     41.9 s  zones=['europe-west4-a', 'europe-west4-a', 'europe-west4-a', 'europe-west4-a']
+any        58.3 s  zones=['europe-west1-b', 'europe-west1-c', 'europe-west4-a', 'europe-west4-a']
+prefer  median   42.5 s over 5 runs; regions per group: [1]
+any     median   58.8 s over 5 runs; regions per group: [2]
+
+[exited with code 0]

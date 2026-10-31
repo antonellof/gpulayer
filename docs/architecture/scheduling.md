@@ -46,7 +46,9 @@ example `placed on worker group [...] (same zone europe-west1-b, ...)`. Workers 
 no location are placed as before.
 
 Measured on Google Cloud, a 4-machine gloo training job split across two regions ran 16 to
-24% slower than in one region, while two zones of one region were as fast as one zone
+24% slower than in one region, while two zones of one region were as fast as one zone. Placed
+by the scheduler, the same job took 42.5 s with `prefer` (one zone every time) and 58.8 s with
+`any` (two regions every time), median of five
 ([Performance and comparison](../get-started/performance-and-comparison.md#one-distributed-job-in-one-region)).
 
 ```bash

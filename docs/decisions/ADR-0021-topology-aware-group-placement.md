@@ -70,7 +70,9 @@ Code: `control_plane/scheduler.py` (`locality`, `_pick_group`, `ever_schedulable
   `europe-west4` took 56.2 s, against 45.0 to 48.6 s in one region. Two zones of one region
   were as fast as one zone. So the region level carries the measured benefit; preferring one
   zone inside a region costs nothing and is kept for providers where zones are farther apart.
-  Logs: `benchmarks/results/2026-10-31-gcp-locality/`.
+  Placed by the scheduler (unpinned, alternating, five runs each): `prefer` kept the group in
+  one zone every time, 42.5 s median; `any` split it across two regions every time, 58.8 s;
+  1.38x faster with `prefer`. Logs: `benchmarks/results/2026-10-31-gcp-locality/`.
 
 ## Addendum: GPUs inside a machine
 

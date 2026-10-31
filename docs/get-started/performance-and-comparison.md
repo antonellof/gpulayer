@@ -194,6 +194,11 @@ each layout, runs alternated between layouts, median of five
 
 - Splitting the job across two regions made it 16 to 24% slower than keeping it in one
   region.
+- **Placed by the scheduler, not pinned:** the same job submitted with
+  `group_locality="prefer"` (the default) and `"any"` (location ignored, the behaviour before
+  0.6.0), alternating, five runs each. `prefer` put the group in one zone every time and took
+  42.5 s (median); `any` split it across two regions every time and took 58.8 s. Keeping the
+  group together made the job 1.38x faster (`policy-prefer-vs-any.log`).
 - Two zones of one region cost nothing measurable: 45.0 s against 45.4 s for one of those
   zones alone. The gap between the two single-zone runs comes from the machines, not the
   network.

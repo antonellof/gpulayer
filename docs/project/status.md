@@ -11,7 +11,7 @@ machines named. Everything else says what is missing.
 | Scheduling by requirements, with a reason for every rejected worker; distributed groups placed all at once | tested |
 | A server with workers on other machines (`gpulayer up`, `join`), TLS with a pinned certificate, named tokens | validated on 30 GCP machines in two regions |
 | Distributed PyTorch with gloo | validated on up to 16 machines; DDP training on 8 machines 11.9% faster than Lightning |
-| Distributed groups kept in one network group, zone or region | validated on GCP: a job split across two regions ran 16 to 24% slower than in one region; the scheduler kept it in one zone |
+| Distributed groups kept in one network group, zone or region | validated on GCP: placed by the scheduler, 42.5 s with `prefer` (one zone) against 58.8 s with `any` (two regions), median of five |
 | NVIDIA CUDA | validated on one Tesla T4, including the Trainer (1.14 to 1.39x faster per step than Lightning) |
 | Several GPUs per machine with NCCL, choosing the best-connected GPUs | validated on 4× RTX 3070 (PCIe) and 2× A100 SXM4 (NVLink) |
 | Trainer on several GPUs against Lightning | measured on 1, 2 and 4 RTX 3070s: faster in 5 of 6 cases (1.11 to 1.76x), 1.14x slower on the 1-GPU CNN on one host |
