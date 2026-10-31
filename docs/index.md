@@ -26,7 +26,7 @@ functions in any language or library run the same way:
 gpulayer submit --accelerator cuda --source ./app -- ./render.sh
 ```
 
-> **Status: v0.6.0.** Local execution, scheduling, the server and worker
+> **Status: v0.7.0.** Local execution, scheduling, the server and worker
 > protocol, and distributed jobs are implemented and tested on CPU and Apple Silicon, and
 > validated on an NVIDIA Tesla T4 and across machines on Google Cloud (30 workers; distributed
 > PyTorch with gloo on up to 16 machines). Long-running services, a Helm chart for
@@ -119,7 +119,7 @@ flow in detail.
   balancer, public entry point, rolling updates or autoscaling.
 - **Untrusted users.** Workloads run as normal processes on workers, not in a sandbox. Use
   GPUlayer among people who trust each other.
-- **Validated scale today.** GPUlayer is at v0.6.0. It has been validated
+- **Validated scale today.** GPUlayer is at v0.7.0. It has been validated
   on machines with up to 4 NVIDIA GPUs and across up to 30 machines (CPU, gloo); NCCL across
   machines is not validated yet, distributed jobs support PyTorch only, and automatic cloud provisioning covers Google Cloud only. Cloud VMs you start yourself can join
   with `gpulayer join`.

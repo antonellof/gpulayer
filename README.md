@@ -29,7 +29,7 @@ validation on AMD hardware. Under the Trainer is a general job engine, so comman
 Python functions in any language or library run the same way.
 Documentation: [gpulayer.dev/docs](https://www.gpulayer.dev/docs/).
 
-> **v0.6.0.** Tested on CPU, Apple Silicon (PyTorch MPS and MLX) and an
+> **v0.7.0.** Tested on CPU, Apple Silicon (PyTorch MPS and MLX) and an
 > NVIDIA Tesla T4, on machines with several GPUs (4× RTX 3070, 2× A100 with NVLink: NCCL across all
 > GPUs of a machine), and on up to 30 machines on Google Cloud. NCCL across machines is implemented
 > but not validated yet; cloud provisioning covers Google Cloud. See
@@ -56,7 +56,7 @@ To train with PyTorch, install it too: `pip install "gpulayer[torch]"`.
 |---|---|
 | As a standalone CLI with [uv](https://docs.astral.sh/uv/) | `uv tool install gpulayer` |
 | Install script (own virtual environment, no sudo) | `curl -fsSL https://raw.githubusercontent.com/antonellof/gpulayer/main/install.sh \| sh` |
-| Docker | `docker pull ghcr.io/antonellof/gpulayer:0.6.0` (also `:0.6.0-torch`; see [deploy/docker](https://github.com/antonellof/gpulayer/tree/main/deploy/docker)) |
+| Docker | `docker pull ghcr.io/antonellof/gpulayer:0.7.0` (also `:0.7.0-torch`; see [deploy/docker](https://github.com/antonellof/gpulayer/tree/main/deploy/docker)) |
 | Kubernetes (Helm) | `helm install gpulayer deploy/kubernetes/helm/gpulayer -n gpulayer --create-namespace` (see [Kubernetes](https://github.com/antonellof/gpulayer/blob/main/docs/guides/kubernetes.md)) |
 | From source, to run the examples | `git clone https://github.com/antonellof/gpulayer && cd gpulayer && pip install -e ".[dev,examples]"` |
 

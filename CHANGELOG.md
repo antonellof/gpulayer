@@ -3,21 +3,27 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
-## Unreleased
+## 0.7.0 (2026-10-31)
 
-- Product focus (ADR-0023): "Train PyTorch on every GPU you can reach: one Trainer, from your
-  laptop to many machines, faster than Lightning." Site, README, docs, package metadata and the
-  repository description lead with PyTorch training; the job engine is presented second.
+GPUlayer now has one focus: **train PyTorch on every GPU you can reach, with one Trainer, from
+your laptop to many machines, faster than Lightning** (ADR-0023).
+
+- Against PyTorch Lightning, with the same model, data and optimizer, the Trainer was faster in
+  10 of 11 GPU benchmarks (Tesla T4; 1, 2 and 4 RTX 3070s; Apple M2 Pro GPU) and in every CPU
+  benchmark. New on an Apple M2 Pro: faster in all 5 cases (MLP 1.62x on the CPU and 1.75x on
+  the GPU, CNN 1.05x on both, DDP on 2 CPU processes 1.21x).
 - AMD ROCm execution path (implemented, not yet run on AMD hardware): ROCm builds of torch are
-  recognised (`torch.rocm` capability; AMD GPUs are no longer reported as CUDA), jobs get their
-  GPUs with `HIP_VISIBLE_DEVICES`, and the Trainer accepts `accelerator="rocm"` (RCCL for DDP).
-- Trainer against Lightning on an Apple M2 Pro: faster in all 5 cases (MLP 1.62x on CPU and
-  1.75x on the GPU, CNN 1.05x on both, DDP on 2 CPU processes 1.21x). New chart.
-- Removed: the Blender, ffmpeg and JAX/CuPy examples (never validated on NVIDIA), the Kaggle
-  runner and the library-validation script. "Works with" lists only what has been run.
+  recognised (`torch.rocm` capability; AMD GPUs are no longer reported as CUDA devices), jobs
+  get their GPUs with `HIP_VISIBLE_DEVICES`, and the Trainer accepts `accelerator="rocm"`
+  (RCCL for DDP).
 - Zone placement measured with the scheduler choosing: the same 4-machine job took 42.5 s with
   `group_locality="prefer"` (one zone, every run) and 58.8 s with `"any"` (two regions, every
-  run), median of five on GCP. `locality_run.py MODE=policy` reproduces it.
+  run), median of five on GCP.
+- Site, README, docs, package metadata and repository description lead with PyTorch training;
+  the job engine (commands, functions, services) is presented second. "Works with" lists only
+  what has been run as GPUlayer jobs.
+- Removed: the Blender, ffmpeg and JAX/CuPy examples (never validated on NVIDIA), the Kaggle
+  runner and the library-validation script.
 
 ## 0.6.0 (2026-10-31)
 
