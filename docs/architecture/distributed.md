@@ -68,6 +68,7 @@ workload controls, then resubmit with an input that points at them.
 |---|---|
 | Rank planning, gang scheduling, rendezvous gating, fail-fast, worker loss | tested (simulated workers) |
 | 2 nodes × 2 procs, gloo, all_reduce + DDP, real processes, one host over loopback | tested |
-| Multiple machines | validated with gloo on two GCP VMs, both launchers |
-| NCCL multi-GPU | implemented, not hardware-validated |
+| Multiple machines | validated with gloo on up to 16 GCP VMs, both launchers |
+| NCCL, several GPUs in one machine | validated on 4× RTX 3070 (PCIe) and 2× A100 SXM4 (NVLink), 2026-10-31 |
+| NCCL across machines | implemented, not validated yet |
 | MPS | unsupported |
