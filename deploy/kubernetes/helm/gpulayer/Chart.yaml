@@ -2,8 +2,8 @@ apiVersion: v2
 name: gpulayer
 description: GPUlayer server and workers on Kubernetes (run any workload on every GPU (and CPU) you can reach)
 type: application
-version: 0.3.0
-appVersion: "0.5.0"
+version: 0.3.1
+appVersion: "0.6.0"
 home: https://www.gpulayer.dev
 sources:
   - https://github.com/antonellof/gpulayer

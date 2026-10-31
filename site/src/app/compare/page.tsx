@@ -277,7 +277,7 @@ const BEHIND = [
   "A small PyTorch Trainer: FSDP is experimental (CPU-tested), and there is no DeepSpeed or logger integration, unlike PyTorch Lightning.",
   "Multi-node speed against PyTorch Lightning is measured on CPUs with gloo only: 11.9% faster on 8 machines with two-level gradient sync, the same on one machine. NCCL on GPUs is not measured yet.",
   "Distributed jobs support PyTorch process groups only; no JAX multi-host or MPI launcher yet.",
-  "v0.5.0: validated on machines with up to 4 NVIDIA GPUs (NCCL) and on up to 30 machines; NCCL across machines is not validated yet. Not a sandbox for untrusted users.",
+  "v0.6.0: validated on machines with up to 4 NVIDIA GPUs (NCCL) and on up to 30 machines; NCCL across machines is not validated yet. Not a sandbox for untrusted users.",
 ];
 
 const FITS = [

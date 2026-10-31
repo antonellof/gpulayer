@@ -3,90 +3,80 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
-## Unreleased
+## 0.6.0 (2026-10-31)
 
-- The Trainer builds its `torch.autocast` context once per run instead of once per step: each
-  construction queried the CUDA driver (1,000 driver calls in a 1,000-step profile).
-- Multi-GPU results rerun with these fixes on 4x RTX 3070: GPUlayer faster than Lightning in 5
-  of 6 cases (1.11 to 1.76x), 1.14x slower on the 1-GPU CNN on that host.
-- Trainer `fit`, `validate`, `test` and `predict` accept a function that returns the loader;
-  it is called only in the processes that train. When a Trainer launches a job, data built in
-  the launching process is thrown away: a 6 s synthetic dataset built that way made a 2-GPU
-  run look 25% slower per step than Lightning, whose launching process becomes rank 0. Inside
-  `fit()` the two were within noise (21.98 vs 20.32 ms/step on 2x RTX 3070).
-- CPU threads per rank are now set by platform: 1 for CPU training (measured faster), and the
-  machine's cores divided among the ranks for GPU training, as Lightning does.
-- GPU benchmarks: Trainer against Lightning on 1, 2 and 4 RTX 3070s (Vast.ai), DDP over NCCL.
-  GPUlayer faster in 4 of 6 cases (1.10 to 1.30x), the same on the 4-GPU CNN, slower on the
-  2-GPU CNN with defaults (1.34x; `benchmark=True` closes it). New charts
-  (`multigpu-step`, `multigpu-startup`), a "GPU results at a glance" table on the performance
-  page, and a GPU benchmarks section on the home page.
-- Fix: jobs now receive `LD_LIBRARY_PATH` and the other library and CUDA paths. Where the GPU
-  driver is found through them (Kaggle), a worker saw its GPUs but the job's processes saw
-  none, and NCCL failed with "no GPUs found". Proxy and package-index URLs are still not
-  passed, as they can carry credentials. `validate_multigpu.py` now checks that torch inside
-  the job sees the GPUs it was given.
+GPUs first: validated on several GPUs per machine, benchmarked against PyTorch Lightning on
+1 to 4 GPUs, with faster start-up, placement by network and GPU interconnect, and per-job
+packages.
+
+**GPU results**
+
+- Against Lightning (same model, data and optimizer, each trainer's defaults), the Trainer was
+  faster in 8 of 9 GPU cases: 1.14 to 1.39x per step on a Tesla T4, and 1.11 to 1.76x in 5 of 6
+  cases on 1, 2 and 4 RTX 3070s (DDP over NCCL); 1.14x slower on the 1-GPU CNN on that host,
+  where both run the same GPU kernels. Charts and logs on the performance page.
+- Validated on rented multi-GPU machines (Vast.ai): NCCL across 4x RTX 3070 (PCIe) and over
+  NVLink on 2x A100 SXM4; the full test suite and every CUDA test passed on a 4x RTX 3070.
+  New `scripts/validate_multigpu.py` (run by `validate_gpu.sh` on 2+ GPUs) and
+  `benchmarks/cloud/vast.sh`, `aws.sh`, `kaggle.sh`.
+
+**Placement**
+
+- Multi-GPU tasks get the best-connected free GPUs on a machine, read from
+  `nvidia-smi topo -m` (`AcceleratorDevice.links`, `numa_node`). On a 4x RTX 3070 server a
+  2-GPU job got GPUs 2-3 behind one PCIe switch instead of 0-1 across CPU sockets.
+- Distributed groups stay in one network group, else zone, else region (ADR-0021):
+  `PlacementPolicy.group_locality` (`--group-locality`), `WorkerCapabilities.zone`, the label
+  `gpulayer.dev/network-group`, `--zone`/`--region`/`--network-group` on `up`, `join` and
+  `worker start` (read from GCE metadata on Google Cloud). On GCP a 4-machine job split across
+  two regions took 56.2 s against 45.0 to 48.6 s in one region.
+- Workers report `torch.compile` only when a C compiler is present, so such jobs are not placed
+  where they would fail mid-run (rented GPU containers often have none).
+
+**Trainer and start-up**
+
+- Start-up on several GPUs is now faster than Lightning's in most cases: the local worker reads
+  torch in-process instead of importing it again (0.69 s to 0.01 s on an M2 Pro), and cuDNN
+  autotuning (`benchmark=None`) turns on only for runs of 1,000+ steps (a 5-step 2-GPU run went
+  from 14.9 to 10.7 s).
+- `fit`, `validate`, `test` and `predict` accept a function that returns the loader, built only
+  in the processes that train; data built in the launching process is otherwise thrown away.
+- CPU threads per process follow the platform: 1 for CPU training, the cores divided among the
+  processes for GPU training.
+- `torch.autocast` is built once per run instead of once per step (each build queried the CUDA
+  driver).
+- `prefetch` (default `False`): a background thread loads and pins batches and copies them on a
+  side stream; it helped a CNN by 5% and slowed an MLP by 36% on an RTX 3070, so it is opt-in.
+  `Runtime.batches(loader)` exposes it.
+- `num_sanity_val_steps` (default 2), `fast_dev_run`, `max_time`,
+  `gradient_clip_algorithm="value"` and `deterministic`.
+
+**Jobs**
+
 - Per-job requirements (ADR-0022): `JobSpec.environment` (`requirements`, `requirements_file`),
-  `requirements=` in the SDK builders, `@gl.remote`, `launch()` and the Trainer's
-  `launch_options`, and `gpulayer submit --requirement/--requirements-file`. Each worker builds
-  an environment on top of its own Python once and reuses it; the worker's packages (PyTorch,
-  CUDA libraries) are not installed again. Preparation is reported apart from the run
-  (`prepare_seconds`, `prepare_cached` on the task's finish event). New optional fields on
-  `JobSpec` and `TaskOutcome`; older control planes and workers ignore them.
-- Trainer `benchmark=None` turns on cuDNN autotuning only for runs that plan at least 1,000
-  steps: it costs 1 to 3 s at the start (a 5-step, 2-GPU run went from 14.9 to 10.7 s without
-  it) and pays back only on longer runs. `benchmark=True` or `False` still force it.
-- Faster start for the Trainer and `launch()` on one machine: the local worker reads torch's
-  details in the launching process, which already imported it, instead of starting Python and
-  importing torch again (0.69 s to 0.01 s on an M2 Pro; seconds on a GPU machine).
-- Trainer `prefetch` now defaults to `False` and runs in a background thread when turned on.
-  Measured on an RTX 3070: a CNN 5% faster with it, an MLP 36% slower, so it is opt-in.
-- Workers report a `torch.compile` capability only when a C compiler is present; a job that
-  asks for it is not placed on a worker without one, and the reason says so. Found on rented
-  GPU containers, which often have no compiler: `torch.compile` failed mid-run with an
-  Inductor error.
-- Validated on multi-GPU machines rented on Vast.ai: 4× RTX 3070 (PCIe, two `PHB` pairs) and
-  2× A100 SXM4 (NVLink `NV4`). NCCL all-reduce across all GPUs as a GPUlayer distributed job;
-  with GPU 0 busy a 2-GPU job got GPUs 2–3 (`PHB`) instead of 1–2 (`SYS`). New
-  `scripts/validate_multigpu.py`, run by `validate_gpu.sh` on 2+ GPUs; `benchmarks/cloud/vast.sh`,
-  `aws.sh` and `kaggle.sh` rent GPU machines. The CUDA check for one job per GPU now works on
-  any GPU count.
-- Topology-aware placement of distributed groups (ADR-0021). Workers report a `zone` (new
-  `WorkerCapabilities` field) and an optional `gpulayer.dev/network-group` label: read from
-  the GCE metadata server on Google Cloud, or set with `--zone`, `--region`
-  (`$GPULAYER_ZONE`, `$GPULAYER_REGION`) and `--network-group` on `up`, `join` and
-  `worker start`. New `PlacementPolicy.group_locality` (`--group-locality`): `prefer`
-  (default) keeps a group in one network group, else zone, else region; `network_group`,
-  `zone` or `region` require it; `any` ignores location. Workers without a location place as
-  before. On a simulated fleet of 5 zones in 2 regions an 8-node group now stays in one zone
-  instead of spanning both regions; `schedule()` costs 1 to 15% more
-  (`benchmarks/placement.py`). On GCP, a 4-machine training job split across two regions
-  took 56.2 s against 45.0 to 48.6 s in one region; two zones of one region were as fast as
-  one zone. Workers on Google Cloud read their zone from the metadata server (checked on 12
-  VMs in three zones).
-- Lightning comparison, DDP on 2 CPU processes (`n1-standard-8`, rerun 2026-10-31): 3.20 against
-  9.56 ms per step.
-- Multi-GPU tasks get the best-connected free GPUs on a machine: workers read
-  `nvidia-smi topo -m` into `AcceleratorDevice.links` and `numa_node`, and a task asking for
-  several GPUs gets the set whose slowest link is fastest (an NVLink island, or GPUs behind one
-  PCIe switch) instead of the lowest indices. Tested with recorded topology output; not yet run
-  on a multi-GPU machine.
-- Trainer on CUDA: `prefetch=True` (default) pins the next batch and copies it on a side stream
-  while the current step runs; `benchmark=None` (default) turns on cuDNN autotuning unless
-  `deterministic=True`. `Runtime.batches(loader)` exposes the prefetch for custom loops.
-  On a Tesla T4: a compute-bound CNN step went from 12.67 to 10.93 ms (cuDNN autotuning about
-  9%, prefetch about 5%); small MLPs unchanged within run-to-run variation. Against Lightning
-  the Trainer is now 1.14x faster on that CNN (1.25 to 1.39x on the MLPs).
-- Migration: the GCP adapter now reports `region="europe-west1"` and `zone="europe-west1-b"`
-  (it used to put the zone in `region`). `placement.regions` matches either, so existing
-  policies keep working.
-- Trainer: `num_sanity_val_steps` (default 2, as in Lightning: a broken `validation_step`
-  fails before training), `fast_dev_run`, `max_time`, `gradient_clip_algorithm="value"` and
-  `deterministic`. Per-step time unchanged (about 102 us/step for a small MLP on one CPU
-  thread, before and after).
-- Examples run on an Apple M2 Pro: the Blender example now fails the job when the requested GPU
-  device is missing (Blender exited 0 on a script error), the ffmpeg example uses VideoToolbox
-  on a Mac and works with macOS `date`, and the inference service also uses MPS.
+  `requirements=` in the SDK, `launch()` and the Trainer's `launch_options`, and
+  `gpulayer submit --requirement/--requirements-file`. Each worker builds the environment once
+  on top of its own Python and reuses it; PyTorch and the CUDA libraries are not installed
+  again. Preparation is reported apart from the run (`prepare_seconds`, `prepare_cached`).
+- Fix: jobs receive `LD_LIBRARY_PATH` and the other library and CUDA paths. Where the GPU
+  driver is found through them (Kaggle), a job's processes saw no GPUs. Proxy and package-index
+  URLs are still not passed (they can carry credentials).
+
+**Migration**
+
+- New optional fields on `JobSpec` (`environment`), `PlacementPolicy` (`group_locality`),
+  `WorkerCapabilities` (`zone`), `AcceleratorDevice` (`links`, `numa_node`) and `TaskOutcome`
+  (`prepare_seconds`, `prepare_cached`); older control planes and workers ignore them.
+- The GCP adapter reports `region="europe-west1"` and `zone="europe-west1-b"` (it used to put
+  the zone in `region`); `placement.regions` matches either.
+- The Trainer's `prefetch` defaults to `False`.
+
+**Other**
+
+- Lightning comparison, DDP on 2 CPU processes rerun on an `n1-standard-8`: 3.20 against 9.56
+  ms per step.
+- Examples run on an Apple M2 Pro (Blender fails the job when the GPU device is missing, ffmpeg
+  uses VideoToolbox on a Mac, the inference service uses MPS).
 
 ## 0.5.0 (2026-10-30)
 
