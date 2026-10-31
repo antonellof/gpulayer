@@ -84,6 +84,19 @@ $A fetch gl-gpu4 benchmarks/results/$(date +%F)-aws/
 $A down gl-gpu4
 ```
 
+## Run on Vast.ai
+
+`cloud/vast.sh` rents GPU machines on Vast.ai (needs the `vastai` CLI with credit). It is the
+quickest way to get several GPUs in one machine, including NVLink (`A100_SXM4`). NCCL across
+two Vast.ai instances is not expected to work (NAT, few open ports). Not yet run end to end.
+
+```bash
+V=benchmarks/cloud/vast.sh
+$V offers 3                        # 3+ GPUs, cheapest first; `$V offers 2 A100_SXM4` for NVLink
+$V up gl-gpu OFFER_ID && $V push gl-gpu && $V validate gl-gpu
+$V fetch gl-gpu benchmarks/results/$(date +%F)-vast/ && $V down gl-gpu
+```
+
 ## Results
 
 | Directory | Contents |
