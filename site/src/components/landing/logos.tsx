@@ -1,14 +1,9 @@
 import { Cpu, Terminal } from "lucide-react";
 import {
   siApple,
-  siBlender,
-  siFfmpeg,
-  siHuggingface,
   siNumpy,
   siNvidia,
-  siOnnx,
   siPytorch,
-  siTensorflow,
   type SimpleIcon,
 } from "simple-icons";
 
@@ -23,17 +18,12 @@ export type Item = {
   monogram?: { text: string; bg: string };
 };
 
+// Only what has been run as GPUlayer jobs (see the performance page and examples/). Other
+// libraries (JAX, CuPy, TensorFlow, ...) are detected on workers but not yet validated on a GPU.
 const FRAMEWORKS: Item[] = [
   { label: "PyTorch", icon: siPytorch },
-  { label: "JAX", monogram: { text: "JX", bg: "#4285F4" } },
   { label: "MLX", monogram: { text: "MX", bg: "#525252" } },
-  { label: "CuPy", monogram: { text: "Cp", bg: "#2E9E5B" } },
   { label: "NumPy", icon: siNumpy },
-  { label: "TensorFlow", icon: siTensorflow },
-  { label: "ONNX Runtime", icon: siOnnx },
-  { label: "Transformers", icon: siHuggingface },
-  { label: "Blender", icon: siBlender },
-  { label: "FFmpeg", icon: siFfmpeg },
   { label: "any binary", lucide: Terminal },
 ];
 

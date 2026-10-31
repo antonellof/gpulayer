@@ -2,6 +2,16 @@
 
 ## 1. Project mission
 
+**Product focus (ADR-0023): Train PyTorch on every GPU you can reach: one Trainer, from your
+laptop to many machines, faster than Lightning.**
+
+The PyTorch `Trainer` is the product people adopt; the platform below is what makes it run on
+every GPU and machine. Prioritise work that makes training faster, simpler or able to reach
+more hardware, and keep every public claim backed by a measurement in `benchmarks/results/`.
+"Every GPU" means the backends validated on hardware (today NVIDIA CUDA and Apple Metal, plus
+CPU); others (AMD ROCm) are named as implemented until validated. "Faster than Lightning" is
+stated with the cases measured, including any where GpuLayer is not faster.
+
 GpuLayer is an open-source GPU execution and orchestration platform that unifies **local, cloud, and distributed GPU compute** behind a consistent developer interface.
 
 The goal is to let developers package, submit, schedule, execute, observe, and manage GPU workloads across different environments without writing separate orchestration logic for each infrastructure provider.

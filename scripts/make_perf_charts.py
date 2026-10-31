@@ -22,6 +22,7 @@ DEFAULT = [
     ROOT / "benchmarks" / "results" / "2026-10-30-gcp-two-level" / "summary.json",
     ROOT / "benchmarks" / "results" / "2026-10-31-gcp-t4" / "summary.json",
     ROOT / "benchmarks" / "results" / "2026-10-31-vast-4x3070-xeon" / "summary.json",
+    ROOT / "benchmarks" / "results" / "2026-10-31-m2pro" / "summary.json",
 ]
 
 THEMES = {
@@ -172,6 +173,17 @@ def charts(d: dict) -> dict[str, dict]:
             ],
             unit="seconds",
             fmt="{:.1f} s",
+            note="lower is better",
+        )
+    if "apple_cpu" in d:
+        ac = d["apple_cpu"]
+        out["apple-cpu-step"] = dict(
+            title="CPU and Apple GPU: GPUlayer and PyTorch Lightning",
+            subtitle=ac["subtitle"],
+            series=("GPUlayer Trainer", "Lightning Trainer"),
+            rows=[(r["case"], r["gpulayer_ms"], r["lightning_ms"]) for r in ac["rows"]],
+            unit="milliseconds per step",
+            fmt="{:.2f}",
             note="lower is better",
         )
     return out

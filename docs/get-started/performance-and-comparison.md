@@ -12,6 +12,7 @@ comparisons with PyTorch Lightning.
 | 4x RTX 3070 (Vast.ai) | NCCL all-reduce across 4 GPUs, best-connected GPU choice | passed; with GPU 0 busy a 2-GPU job got GPUs 2-3 (`PHB`) instead of 1-2 (`SYS`) |
 | 2x A100 SXM4 (Vast.ai, NVLink) | NCCL all-reduce over NVLink, CUDA checks | passed; NVLink read as `NV4` |
 | 1x T4, 1x RTX 3070, 1x A100 | Trainer in fp32, bf16, fp16, `torch.compile`, as a job | passed |
+| Apple M2 Pro (Metal GPU and CPU) | Trainer vs Lightning, MLP and CNN on the GPU and the CPU, DDP on 2 CPU processes | GPUlayer faster in all 5 (1.05 to 1.75x) |
 
 Not measured yet: NCCL across machines, more than 4 GPUs, and GPUs with NVLink for training
 speed. Every number comes from a script in
@@ -107,6 +108,31 @@ Python 3.12, torch 2.15.0 with CUDA 13.2, Lightning 2.6.6, run on 2026-10-31. Sc
 steps, three times each in fresh processes, interleaved; GPUlayer passes its loader as a
 function, Lightning the loader. Logs: `benchmarks/results/2026-10-31-vast-4x3070-xeon/`; the
 earlier run on an AMD EPYC 7551 host is in `2026-10-31-vast-4x3070-multigpu/`.
+
+## CPU and Apple GPU (M2 Pro)
+
+The same comparison on an Apple M2 Pro, on its GPU (PyTorch MPS) and its CPU, fp32.
+
+![CPU and Apple GPU: GPUlayer and PyTorch Lightning](../assets/perf/apple-cpu-step-light.svg)
+
+| Case (Apple M2 Pro) | GPUlayer, ms per step | Lightning, ms per step | Result | Start-up, GPUlayer / Lightning |
+|---|---|---|---|---|
+| MLP, CPU (batch 64) | 0.55 | 0.89 | GPUlayer 1.62x faster | 1.3 s / 1.5 s |
+| CNN, CPU (batch 32) | 42.01 | 44.05 | GPUlayer 1.05x faster | 1.3 s / 1.8 s |
+| DDP, 2 CPU processes | 3.35 | 4.07 | GPUlayer 1.21x faster | 2.3 s / 3.2 s |
+| MLP, Apple GPU (batch 256) | 4.13 | 7.21 | GPUlayer 1.75x faster | 1.8 s / 2.0 s |
+| CNN, Apple GPU (batch 128) | 24.31 | 25.44 | GPUlayer 1.05x faster | 2.0 s / 2.2 s |
+
+- The gap is largest where the trainer's own work per step matters (the MLPs): GPUlayer's
+  loop adds about 73 microseconds per step against Lightning's 330 (a one-weight model, one
+  CPU thread). On compute-heavy CNNs both are close to the hardware's speed.
+- Start-up is faster in every case.
+- The CPU CNN's GPUlayer runs overlapped a test-suite run on the same Mac, which can only have
+  slowed them.
+
+**Method.** Apple M2 Pro (10 CPU cores, 32 GB), macOS, Python 3.12, torch 2.15.0, Lightning
+2.6.6, run on 2026-10-31, same script and measurement as above (`mlp-cpu`, `cnn-cpu`,
+`ddp-cpu-2`, `mlp-mps`, `cnn-mps`). Logs: `benchmarks/results/2026-10-31-m2pro/`.
 
 ## Distributed job start-up
 

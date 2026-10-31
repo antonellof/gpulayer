@@ -5,6 +5,16 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Product focus (ADR-0023): "Train PyTorch on every GPU you can reach: one Trainer, from your
+  laptop to many machines, faster than Lightning." Site, README, docs, package metadata and the
+  repository description lead with PyTorch training; the job engine is presented second.
+- AMD ROCm execution path (implemented, not yet run on AMD hardware): ROCm builds of torch are
+  recognised (`torch.rocm` capability; AMD GPUs are no longer reported as CUDA), jobs get their
+  GPUs with `HIP_VISIBLE_DEVICES`, and the Trainer accepts `accelerator="rocm"` (RCCL for DDP).
+- Trainer against Lightning on an Apple M2 Pro: faster in all 5 cases (MLP 1.62x on CPU and
+  1.75x on the GPU, CNN 1.05x on both, DDP on 2 CPU processes 1.21x). New chart.
+- Removed: the Blender, ffmpeg and JAX/CuPy examples (never validated on NVIDIA), the Kaggle
+  runner and the library-validation script. "Works with" lists only what has been run.
 - Zone placement measured with the scheduler choosing: the same 4-machine job took 42.5 s with
   `group_locality="prefer"` (one zone, every run) and 58.8 s with `"any"` (two regions, every
   run), median of five on GCP. `locality_run.py MODE=policy` reproduces it.

@@ -12,7 +12,7 @@ const code = JetBrains_Mono({ subsets: ["latin"], variable: "--font-code", displ
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "GPUlayer | Run any workload on every GPU (and CPU) you can reach",
+    default: "GPUlayer | Train PyTorch on every GPU you can reach",
     template: "%s | GPUlayer",
   },
   description: SITE_DESCRIPTION,
@@ -35,13 +35,13 @@ export const metadata: Metadata = {
     type: "website",
     siteName: SITE_NAME,
     url: "/",
-    title: "GPUlayer | Run any workload on every GPU (and CPU) you can reach",
+    title: "GPUlayer | Train PyTorch on every GPU you can reach",
     description: SITE_DESCRIPTION,
     images: [OG_IMAGE],
   },
   twitter: {
     card: "summary_large_image",
-    title: "GPUlayer | Run any workload on every GPU (and CPU) you can reach",
+    title: "GPUlayer | Train PyTorch on every GPU you can reach",
     description: SITE_DESCRIPTION,
     images: [OG_IMAGE.url],
   },

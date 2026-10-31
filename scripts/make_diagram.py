@@ -125,10 +125,10 @@ def render(theme: str) -> str:
 
     # Left: workloads
     work = [
+        (["pytorch"], "PyTorch training", "Trainer, DDP, many machines"),
+        (["pytorch"], "Your training scripts", "launch(), Runtime"),
+        (["python", "numpy"], "Python functions", "NumPy, MLX, ..."),
         (["gnubash"], "Commands and scripts", "any language, any binary"),
-        (["python", "numpy"], "Python functions", "NumPy, JAX, MLX, CuPy, ..."),
-        (["pytorch"], "PyTorch training", "Trainer, launch(), DDP"),
-        (["blender", "ffmpeg"], "Rendering and media", "Blender, FFmpeg, ..."),
     ]
     left_y = []
     for i, (icons, title, sub) in enumerate(work):

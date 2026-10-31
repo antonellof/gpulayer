@@ -6,6 +6,11 @@
 
 ## 1. Vision
 
+**Product focus (2026-10-31, ADR-0023):** Train PyTorch on every GPU you can reach: one
+Trainer, from your laptop to many machines, faster than Lightning. The architecture below is
+the engine under that Trainer: placement, workers, distributed launch and providers serve
+PyTorch training first, and remain usable for any job.
+
 GpuLayer provides a unified way to execute GPU workloads across local machines, existing remote workers, cloud GPU providers, and distributed GPU clusters.
 
 It aims to make infrastructure selection and execution management consistent while preserving access to the capabilities and limitations of each underlying environment.

@@ -3,30 +3,7 @@
 Each example is one file. Data is generated or embedded, so nothing is downloaded. All of them
 have been run on an Apple Silicon Mac.
 
-## Any workload
-
-| Example | What it shows | Try |
-|---|---|---|
-| [`shell_job/`](shell_job) | a shell script as a job, with an input file and an output artifact | see its README |
-| [`numpy_batch/`](numpy_batch/estimate.py) | a NumPy function split into eight parallel jobs with `@gl.remote` and `.map()` | `python estimate.py` |
-| [`mlx_metal/`](mlx_metal/matmul.py) | MLX on the Apple GPU (no PyTorch); the job requires `mps` and `mlx` | `pip install mlx`, then `python matmul.py` |
-
-## On a GPU (NVIDIA or Apple)
-
-Run as GPUlayer jobs on an Apple M2 Pro (Metal / MPS): Blender (3 frames, about 1.3 s each,
-outputs returned; an unavailable device such as OptiX fails the job), ffmpeg with VideoToolbox,
-and the inference service (endpoint reported, about 1.1 ms per request, stopped on cancel).
-**Not run on an NVIDIA GPU yet** (OptiX/CUDA in Blender, NVENC, JAX and CuPy on CUDA): that
-validation is pending GPU capacity.
-
-| Example | What it shows | Try |
-|---|---|---|
-| [`blender_render/`](blender_render) | Blender Cycles renders on the GPU (OptiX, CUDA or Metal), frames returned as outputs; fails rather than falling back to the CPU | see its README |
-| [`ffmpeg_transcode/`](ffmpeg_transcode/transcode.sh) | a GPU encode (NVENC, or VideoToolbox on a Mac) and an x264 encode of a generated clip, timed side by side | `gpulayer submit --target remote --accelerator cuda --gpus 1 --source examples/ffmpeg_transcode -- ./transcode.sh` |
-| [`jax_cupy_cuda/`](jax_cupy_cuda/matmul.py) | JAX and CuPy matmuls without PyTorch; the job requires `jax.cuda` and `cupy.cuda` | see the file's docstring |
-| [`gpu_service/`](gpu_service/serve.py) | a PyTorch model served over HTTP from a GPU as a long-running service | see the file's docstring |
-
-## PyTorch integration
+## PyTorch training
 
 These need `torch`.
 
@@ -44,3 +21,12 @@ Every training example accepts `--accelerator`, `--devices`, `--nodes` and `--ta
 (set `GPULAYER_URL`, `GPULAYER_TOKEN` and `GPULAYER_FINGERPRINT` first).
 
 Outputs (checkpoints, metrics) land in `gpulayer_runs/` in the directory you run from.
+
+## Not only PyTorch
+
+| Example | What it shows | Try |
+|---|---|---|
+| [`shell_job/`](shell_job) | a shell script as a job, with an input file and an output artifact | see its README |
+| [`numpy_batch/`](numpy_batch/estimate.py) | a NumPy function split into eight parallel jobs with `@gl.remote` and `.map()` | `python estimate.py` |
+| [`mlx_metal/`](mlx_metal/matmul.py) | MLX on the Apple GPU (no PyTorch); the job requires `mps` and `mlx` | `pip install mlx`, then `python matmul.py` |
+| [`gpu_service/`](gpu_service/serve.py) | a PyTorch model served over HTTP from a GPU as a long-running service; run on an Apple M2 Pro (about 1.1 ms per request) | see the file's docstring |

@@ -1,0 +1,17 @@
+case       trainer   ms/step start-up s
+mlp-cpu    gl           0.55       1.34
+mlp-cpu    pl           0.89       1.46
+mlp-cpu    ratio    gl faster x1.62
+cnn-cpu    gl          42.01       1.33
+cnn-cpu    pl          44.05       1.84
+cnn-cpu    ratio    gl faster x1.05
+ddp-cpu-2  gl           3.35       2.33
+ddp-cpu-2  pl           4.07       3.21
+ddp-cpu-2  ratio    gl faster x1.21
+mlp-mps    gl           4.13       1.80
+mlp-mps    pl           7.21       2.00
+mlp-mps    ratio    gl faster x1.75
+cnn-mps    gl          24.31       2.03
+cnn-mps    pl          25.44       2.22
+cnn-mps    ratio    gl faster x1.05
+done

@@ -26,27 +26,6 @@
       ]
     },
     {
-      "title": "Workloads",
-      "pages": [
-        {
-          "slug": "workloads/commands",
-          "title": "Commands and scripts"
-        },
-        {
-          "slug": "workloads/functions",
-          "title": "Python functions and sweeps"
-        },
-        {
-          "slug": "workloads/frameworks",
-          "title": "Any GPU framework"
-        },
-        {
-          "slug": "workloads/distributed",
-          "title": "Distributed jobs"
-        }
-      ]
-    },
-    {
       "title": "PyTorch integration",
       "pages": [
         {
@@ -64,6 +43,27 @@
         {
           "slug": "pytorch/runtime",
           "title": "Runtime helpers"
+        }
+      ]
+    },
+    {
+      "title": "Workloads",
+      "pages": [
+        {
+          "slug": "workloads/commands",
+          "title": "Commands and scripts"
+        },
+        {
+          "slug": "workloads/functions",
+          "title": "Python functions and sweeps"
+        },
+        {
+          "slug": "workloads/frameworks",
+          "title": "Any GPU framework"
+        },
+        {
+          "slug": "workloads/distributed",
+          "title": "Distributed jobs"
         }
       ]
     },

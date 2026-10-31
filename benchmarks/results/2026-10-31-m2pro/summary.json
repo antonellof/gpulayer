@@ -1,0 +1,43 @@
+{
+  "_about": "Apple M2 Pro (10 CPU cores, 32 GB), macOS, Python 3.12, torch 2.15.0, Lightning 2.6.6, 2026-10-31 (lightning-comparison.log). Same script and method as the GPU comparisons; fp32. The CPU CNN's GPUlayer runs overlapped a test-suite run, which can only have slowed them. Read by scripts/make_perf_charts.py.",
+  "apple_cpu": {
+    "subtitle": "Apple M2 Pro, torch 2.15.0, Lightning 2.6.6, fp32, each trainer's defaults",
+    "rows": [
+      {
+        "case": "MLP, CPU",
+        "gpulayer_ms": 0.55,
+        "lightning_ms": 0.89,
+        "gpulayer_startup_s": 1.34,
+        "lightning_startup_s": 1.46
+      },
+      {
+        "case": "CNN, CPU",
+        "gpulayer_ms": 42.01,
+        "lightning_ms": 44.05,
+        "gpulayer_startup_s": 1.33,
+        "lightning_startup_s": 1.84
+      },
+      {
+        "case": "DDP, 2 CPU processes",
+        "gpulayer_ms": 3.35,
+        "lightning_ms": 4.07,
+        "gpulayer_startup_s": 2.33,
+        "lightning_startup_s": 3.21
+      },
+      {
+        "case": "MLP, Apple GPU (MPS)",
+        "gpulayer_ms": 4.13,
+        "lightning_ms": 7.21,
+        "gpulayer_startup_s": 1.8,
+        "lightning_startup_s": 2.0
+      },
+      {
+        "case": "CNN, Apple GPU (MPS)",
+        "gpulayer_ms": 24.31,
+        "lightning_ms": 25.44,
+        "gpulayer_startup_s": 2.03,
+        "lightning_startup_s": 2.22
+      }
+    ]
+  }
+}

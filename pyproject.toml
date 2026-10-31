@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "gpulayer"
 version = "0.6.0"
-description = "Run any workload on every GPU (and CPU) you can reach: job orchestration across local, remote and cloud machines, distributed PyTorch, a web dashboard and an MCP server for AI agents."
+description = "Train PyTorch on every GPU you can reach: one Trainer, from your laptop to many machines, faster than Lightning. NVIDIA CUDA, Apple Metal and CPU."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"

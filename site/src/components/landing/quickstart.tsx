@@ -13,7 +13,7 @@ const TRACKS: Track[] = [
     id: "local",
     label: "On this machine",
     icon: Laptop,
-    blurb: "No server, no account. GPUlayer runs a control plane and a worker inside your process.",
+    blurb: "No server, no account. Train in your process first; GPUlayer runs its control plane and worker inside it.",
     steps: [
       {
         title: "Install",
@@ -31,13 +31,6 @@ const TRACKS: Track[] = [
         ],
       },
       {
-        title: "Run any command as a job",
-        body: "Inputs are staged, output files come back, logs stream to your terminal.",
-        command:
-          "gpulayer submit --source examples/shell_job \\\n  --input examples/shell_job/sales.csv:sales.csv -- bash report.sh",
-        output: ["running on my-mac, accelerator=cpu", "east,99.99", "job-88eeb3960503 succeeded"],
-      },
-      {
         title: "Train PyTorch, then scale the same file",
         body: "One process, then DDP on two processes. Only the flags change.",
         command:
@@ -46,6 +39,13 @@ const TRACKS: Track[] = [
           "[gpulayer] training on mps, precision 32-true, 5 epoch(s)",
           "[gpulayer] job-5cc477d4ffad succeeded; 2 output file(s) in gpulayer_runs/job-5cc477d4ffad",
         ],
+      },
+      {
+        title: "Run any command as a job",
+        body: "Inputs are staged, output files come back, logs stream to your terminal.",
+        command:
+          "gpulayer submit --source examples/shell_job \\\n  --input examples/shell_job/sales.csv:sales.csv -- bash report.sh",
+        output: ["running on my-mac, accelerator=cpu", "east,99.99", "job-88eeb3960503 succeeded"],
       },
     ],
   },
@@ -79,8 +79,8 @@ const TRACKS: Track[] = [
           "export GPULAYER_URL=https://192.168.1.56:8470 \\\n  GPULAYER_TOKEN=glc_… \\\n  GPULAYER_FINGERPRINT=sha256:…",
       },
       {
-        title: "Run anything there",
-        body: "A command, a Python function or a PyTorch Trainer. Jobs land where they fit.",
+        title: "Train there",
+        body: "The same Trainer script, now on the machines that joined. A command or a Python function works the same way.",
         command:
           "gpulayer submit --accelerator cuda -- python infer.py\npython examples/trainer_regression/train.py \\\n  --accelerator cpu --nodes 2",
         output: [

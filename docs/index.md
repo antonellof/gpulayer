@@ -1,25 +1,29 @@
 # GPUlayer
 
-GPUlayer runs your workloads on every GPU (and CPU) you can reach: the ones in your laptop, remote
-servers, clusters, data centers, or cloud VMs. A workload can be a command in any
-language, a Python function using any library, or a distributed job across several machines.
-GPUlayer finds a machine that can run it, starts it there, and brings back the logs, outputs and
-results.
+**Train PyTorch on every GPU you can reach: one Trainer, from your laptop to many machines,
+faster than Lightning.**
+
+GPUlayer's `Trainer` runs the same PyTorch script in your process, as DDP on every GPU of a
+machine, or across many machines: laptops, workstations, servers, clusters and cloud VMs. It
+picks machines and GPUs that can run the job, keeps a distributed group on the best-connected
+GPUs and in one zone, starts every process, and brings back logs, checkpoints and metrics.
+Against PyTorch Lightning, with the same model, data and optimizer, it was faster in 10 of 11
+GPU benchmarks (NVIDIA and Apple) and in every CPU benchmark
+([Performance and comparison](get-started/performance-and-comparison.md)).
+
+```python
+import gpulayer.pytorch as glt
+
+trainer = glt.Trainer(max_epochs=5, accelerator="cuda", devices=4, num_nodes=2)
+trainer.fit(model, train_loader)        # 2 machines x 4 GPUs, DDP over NCCL
+```
+
+NVIDIA CUDA, Apple Metal (MPS) and CPU are validated; AMD ROCm is implemented and awaits
+validation on AMD hardware. Under the Trainer is a general job engine, so commands and Python
+functions in any language or library run the same way:
 
 ```bash
-gpulayer submit --accelerator cuda --source ./app -- ./render.sh        # any command
-```
-
-```python
-@gl.remote(accelerator="mps", frameworks={"mlx": ">=0.10"})             # any library
-def benchmark(n: int) -> dict: ...
-
-benchmark.map([1024, 2048, 4096])
-```
-
-```python
-trainer = glt.Trainer(accelerator="cuda", devices=4, num_nodes=2, target="remote")
-trainer.fit(model, train_loader)                                         # PyTorch integration
+gpulayer submit --accelerator cuda --source ./app -- ./render.sh
 ```
 
 > **Status: v0.6.0.** Local execution, scheduling, the server and worker
