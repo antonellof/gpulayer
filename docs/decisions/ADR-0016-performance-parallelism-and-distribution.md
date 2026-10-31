@@ -5,7 +5,7 @@
 
 ## Context
 
-GPUlayer sits between a user's code and the GPUs that run it. Every millisecond it adds to
+GPUlayer runs on the path between a user's code and the GPUs that execute it. Every millisecond it adds to
 starting a job, every idle GPU it fails to fill, and every synchronisation it forces inside a
 training step is paid on every run. Users choose a layer like this to finish work sooner, so
 speed has to be a design input and not a later optimisation.

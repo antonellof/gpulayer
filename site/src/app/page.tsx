@@ -289,9 +289,9 @@ export default function Home() {
               Run any workload on every GPU (and CPU) you can reach.
             </h1>
             <p className="lede mt-6 max-w-2xl sm:text-xl">
-              GPUlayer sits between your code and your GPUs and CPUs: your laptop, remote servers, clusters, data
-              centers and cloud VMs. Commands, Python functions and PyTorch training go to a machine that can run them,
-              and the results come back.
+              GPUlayer schedules commands, Python functions and PyTorch training across the GPUs and CPUs you have:
+              workstations, on-premises servers, clusters and cloud VMs. Each job is matched to hardware that can run
+              it, launched there, and its logs, outputs and results are returned to you.
             </p>
             <p className="mt-4 max-w-2xl text-sm text-muted-foreground">
               Its PyTorch Trainer ran 1.14 to 1.39x faster per step than PyTorch Lightning on an NVIDIA T4, was faster
