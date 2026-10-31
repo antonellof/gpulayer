@@ -35,6 +35,10 @@ from gpulayer.sdk.remote import RemoteError, default_client, default_target, exp
 CHECKPOINT = "checkpoints/last.ckpt"
 
 
+# cuDNN autotuning (benchmark=None) turns on for runs planning at least this many steps.
+AUTOTUNE_MIN_STEPS = 1000
+
+
 class Trainer:
     def __init__(
         self,
@@ -252,9 +256,14 @@ class Trainer:
         rt = Runtime(self.accelerator, self.precision, self.gradient_sync).setup()
         self.runtime = rt
         if rt.device.type == "cuda" and not self.deterministic:
-            # cuDNN times its algorithms for each new input shape and keeps the fastest. Faster
-            # for fixed shapes (the usual case); varying shapes pay the timing again each time.
-            torch.backends.cudnn.benchmark = self.benchmark is not False
+            # cuDNN times its algorithms for each new input shape and keeps the fastest: 5 to
+            # 9% faster CNN steps measured, for 1 to 3 s of timing at the start. Worth it only
+            # on longer runs, so by default it is on from AUTOTUNE_MIN_STEPS planned steps.
+            torch.backends.cudnn.benchmark = (
+                self.benchmark
+                if self.benchmark is not None
+                else self._planned_steps(train_dataloaders) >= AUTOTUNE_MIN_STEPS
+            )
         try:
             self._fit_loop(rt, model, train_dataloaders, val_dataloaders, _resume_path(ckpt_path))
         finally:
@@ -262,6 +271,18 @@ class Trainer:
         if is_launcher_process():
             # Same result as a submitted run: the trained model comes back on the CPU.
             model.cpu()
+
+    def _planned_steps(self, train: Any) -> int:
+        """Optimizer steps this fit plans (0 when the loader's length is unknown)."""
+        if self.max_steps is not None:
+            return self.max_steps
+        try:
+            n = len(train)
+        except TypeError:
+            return 0
+        if self.limit_train_batches is not None:
+            n = min(n, self.limit_train_batches)
+        return self.max_epochs * n // max(1, self.accumulate_grad_batches)
 
     def _optimizers(self, model: Module) -> tuple[torch.optim.Optimizer, Any, str]:
         cfg = model.configure_optimizers()

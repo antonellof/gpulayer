@@ -142,7 +142,7 @@ else:
 torch.manual_seed(0)
 model = M()
 trainer.fit(model, loader())
-if torch.cuda.is_available():
+if torch.cuda.is_initialized():  # not in GPUlayer's launcher, which never used the GPU
     torch.cuda.synchronize()
 if fw == "pl" and trainer.global_rank != 0:
     sys.exit(0)

@@ -84,7 +84,7 @@ dicts of tensors, before calling your step.
 | `fast_dev_run` | `False` | `True` or N: one epoch of N training and N validation batches, no checkpoints, to check the whole pipeline quickly |
 | `max_time` | `None` | stop after this many seconds of training; checked every step in one process, at the end of each epoch when distributed (so all processes stop together) |
 | `deterministic` | `False` | use deterministic algorithms (with `seed_everything(n)`, runs repeat exactly; usually slower) |
-| `benchmark` | `None` | cuDNN autotuning (`torch.backends.cudnn.benchmark`) on CUDA: on unless `deterministic`; `False` turns it off (useful when input shapes change every batch). Lightning leaves it off by default |
+| `benchmark` | `None` | cuDNN autotuning (`torch.backends.cudnn.benchmark`) on CUDA. `None`: on for runs that plan at least 1,000 steps (it costs 1 to 3 s at the start and made CNN steps 5 to 9% faster), off for shorter runs and with `deterministic`. `True` or `False` force it. Lightning leaves it off by default |
 | `prefetch` | `False` | on CUDA, a background thread loads and pins the next batches and each is copied to the GPU on a side stream while the current step runs. Helps compute-heavy models (a CNN 5% faster per step on an RTX 3070); slows short steps, where the thread competes with the training loop for the Python interpreter (an MLP 36% slower), so it is off by default |
 | `enable_checkpointing` | `True` | save `checkpoints/last.ckpt` after every epoch |
 | `default_root_dir` | `"gpulayer_runs"` | where local checkpoints and downloaded job outputs go |

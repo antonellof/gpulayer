@@ -5,6 +5,9 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Trainer `benchmark=None` turns on cuDNN autotuning only for runs that plan at least 1,000
+  steps: it costs 1 to 3 s at the start (a 5-step, 2-GPU run went from 14.9 to 10.7 s without
+  it) and pays back only on longer runs. `benchmark=True` or `False` still force it.
 - Faster start for the Trainer and `launch()` on one machine: the local worker reads torch's
   details in the launching process, which already imported it, instead of starting Python and
   importing torch again (0.69 s to 0.01 s on an M2 Pro; seconds on a GPU machine).

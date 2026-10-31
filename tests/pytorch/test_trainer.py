@@ -531,4 +531,13 @@ def test_cuda_prefetch_matches_plain_copies(tmp_path):
         t.fit(Lin(), train, val)
         results.append(t.callback_metrics["val_loss"])
     assert results[0] == pytest.approx(results[1], rel=1e-5)
-    assert torch.backends.cudnn.benchmark is True
+    assert torch.backends.cudnn.benchmark is False  # 32 planned steps: too short to autotune
+
+
+def test_autotuning_follows_the_planned_steps():
+    train, _ = loaders()  # 16 batches
+    assert glt.Trainer(max_epochs=2)._planned_steps(train) == 32
+    assert glt.Trainer(max_epochs=100, accumulate_grad_batches=2)._planned_steps(train) == 800
+    assert glt.Trainer(max_steps=5000)._planned_steps(train) == 5000
+    assert glt.Trainer(max_epochs=1000, limit_train_batches=2)._planned_steps(train) == 2000
+    assert glt.Trainer()._planned_steps(iter([])) == 0  # no length: unknown
