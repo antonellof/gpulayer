@@ -144,3 +144,17 @@ def test_links_survive_the_wire():
     caps = caps_from(PCIE, 4)
     again = type(caps).model_validate_json(caps.model_dump_json())
     assert again.accelerators[0].links == {1: "PIX", 2: "SYS", 3: "SYS"}
+
+
+def test_multigpu_validation_checks_pass_on_a_recorded_nvlink_machine(capsys):
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).parents[2] / "scripts" / "validate_multigpu.py"
+    spec = importlib.util.spec_from_file_location("validate_multigpu", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    chosen = mod.check_topology(caps_from(DGX1, 8))
+    out = capsys.readouterr().out
+    assert mod.failures == 0 and "CHECK topology PASS" in out
+    assert chosen[2] == [0, 3] and chosen[4] == [0, 1, 2, 3] and chosen[8] == list(range(8))

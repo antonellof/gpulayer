@@ -51,6 +51,11 @@ nothing better is free. When splitting a machine with `--gpus`, keep GPUs that s
 or a PCIe switch in the same worker. See
 [Scheduling](../architecture/scheduling.md#gpus-inside-a-machine).
 
+On a machine with two or more GPUs, `python scripts/validate_multigpu.py` checks the parsed
+interconnect against `nvidia-smi topo -m`, which GPUs a multi-GPU job is given, and an NCCL
+all-reduce across all of them (`scripts/validate_gpu.sh` runs it automatically). It has not
+been run yet: the cloud project used so far has a quota of one GPU.
+
 To split a machine between workers, for example separate queues or Python environments, give
 each worker its own GPUs with `--gpus`, so no GPU is offered twice:
 

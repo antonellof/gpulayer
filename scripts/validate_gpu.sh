@@ -5,7 +5,7 @@
 #
 # Needs an NVIDIA driver (nvidia-smi) and network access to PyPI. Installs uv and a venv in
 # .venv-validate, then runs: hardware details, the full test suite, the CUDA hardware tests,
-# scripts/validate_cuda.py, and the benchmarks.
+# scripts/validate_cuda.py, scripts/validate_multigpu.py (with 2 or more GPUs), and the benchmarks.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 status=0
@@ -40,6 +40,11 @@ run pytest -v -p no:cacheprovider -m hardware_cuda tests/hardware
 
 step "CUDA checks"
 run python scripts/validate_cuda.py
+
+if [ "$(nvidia-smi -L | wc -l)" -ge 2 ]; then
+  step "several GPUs: interconnect, GPU choice, NCCL"
+  run python scripts/validate_multigpu.py
+fi
 
 step "benchmarks"
 run python benchmarks/dispatch.py
