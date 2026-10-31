@@ -45,6 +45,10 @@ first location to have enough of them wins. The choice is shown in `gpulayer job
 example `placed on worker group [...] (same zone europe-west1-b, ...)`. Workers that report
 no location are placed as before.
 
+Measured on Google Cloud, a 4-machine gloo training job split across two regions ran 16 to
+24% slower than in one region, while two zones of one region were as fast as one zone
+([Performance and comparison](../get-started/performance-and-comparison.md#one-distributed-job-in-one-region)).
+
 ```bash
 gpulayer join https://server:8470 --token ... --zone dc1-row3 --network-group rack-7
 gpulayer submit --distributed --nodes 8 --group-locality zone -- ...

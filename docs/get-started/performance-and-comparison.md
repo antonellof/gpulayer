@@ -18,7 +18,7 @@ Lightning's `Trainer` on one Tesla T4.
 | MLP, fp32, batch 256 | 4.06 | 5.64 | GPUlayer 1.39x faster |
 | MLP, fp16 mixed precision | 5.00 | 6.25 | GPUlayer 1.25x faster |
 | CNN, fp16 mixed precision, batch 128 | 10.82 | 12.33 | GPUlayer 1.14x faster |
-| DDP, 2 CPU processes (2026-10-30 run) | 3.39 | 7.46 | GPUlayer 2.20x faster |
+| DDP, 2 CPU processes | 3.20 | 9.56 | GPUlayer 2.99x faster |
 
 - **Small models** (the MLPs) take a few milliseconds per step, so the trainer's own work per
   step matters. GPUlayer's loop does less of it, for example it does not wait for the GPU when
@@ -36,12 +36,12 @@ Lightning's `Trainer` on one Tesla T4.
 ![Start-up time: GPUlayer and PyTorch Lightning](../assets/perf/startup-light.svg)
 
 Start-up is Python start, imports and the fixed cost inside `fit()`. GPUlayer starts 0.1 to
-0.7 s sooner on one GPU, and 0.24 s later for DDP, where the job is packaged and scheduled
+0.7 s sooner on one GPU, and 0.97 s later for DDP, where the job is packaged and scheduled
 first.
 
 **Method.** GCP `n1-standard-8` with one Tesla T4 (driver 580, Spot VM), Ubuntu 22.04,
-Python 3.12, torch 2.15.0 with CUDA 13.2, Lightning 2.6.6, run on 2026-10-31 (the DDP row on
-2026-10-30). SGD with momentum and one logged loss per step;
+Python 3.12, torch 2.15.0 with CUDA 13.2, Lightning 2.6.6, run on 2026-10-31. The DDP row ran
+the same day on an `n1-standard-8` without a GPU (8 vCPUs, CPU-only torch 2.15.0). SGD with momentum and one logged loss per step;
 Lightning runs without logger, progress bar, model summary or checkpoints, GPUlayer without
 checkpoints. Each case runs 100 and 600 steps, three times each in fresh processes, one run
 at a time with nothing else on the GPU. Milliseconds per step is the difference of the median
@@ -118,6 +118,32 @@ Method: both trainers on the same machines (GPUlayer's job pinned with `worker_i
 alternating between the two, wall time from start until the last process exits, median of
 three runs. Scripts: `benchmarks/lightning_comparison/scaling.py` and `scaling_run.py`; logs
 in `benchmarks/results/2026-10-30-gcp-two-level/`.
+
+## One distributed job in one region
+
+The same 4-machine training job as above (4 processes per machine, gloo, two-level gradient
+sync, 2 epochs) on 12 GCP `n1-standard-4` workers, all on Intel Skylake: 4 in
+`europe-west1-b`, 4 in `europe-west1-c`, 4 in `europe-west4-a`. The machines were pinned to
+each layout, runs alternated between layouts, median of five
+(`benchmarks/lightning_comparison/locality_run.py`).
+
+| Machines | Median | Compared with one zone |
+|---|---|---|
+| 4 in one zone (`europe-west1-b`) | 48.6 s | 1.00x |
+| 4 in another zone (`europe-west1-c`) | 45.4 s | 0.93x |
+| 2 + 2 in two zones of one region | 45.0 s | 0.93x |
+| 2 + 2 in two regions (`europe-west1`, `europe-west4`) | 56.2 s | 1.16x |
+
+- Splitting the job across two regions made it 16 to 24% slower than keeping it in one
+  region.
+- Two zones of one region cost nothing measurable: 45.0 s against 45.4 s for one of those
+  zones alone. The gap between the two single-zone runs comes from the machines, not the
+  network.
+- Submitted without pinning, the scheduler put the job in one zone by itself (`placed on
+  worker group [...] (same zone europe-west4-a, ...)`).
+- The first run of each layout was 8 to 12 s slower (cold start) and is part of the median's
+  five runs. Final losses were identical. Logs: `benchmarks/results/2026-10-31-gcp-locality/`
+  (an earlier run on mixed Haswell and Skylake machines is kept there too).
 
 ## Thirty machines
 

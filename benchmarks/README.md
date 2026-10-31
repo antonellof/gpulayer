@@ -9,6 +9,7 @@ in [Performance](../docs/architecture/performance.md).
 | `dispatch.py` | time GPUlayer adds around a job, burst throughput | nothing |
 | `distributed_startup.py` | where a distributed job's start-up goes, direct launcher vs torchrun | torch |
 | `http_requests.py` | HTTP API latency and throughput over TLS | nothing |
+| `lightning_comparison/locality_run.py` | one distributed training job in one zone, two zones and two regions | a fleet in three zones (`gcp.sh fleet-up`) |
 | `placement.py` | time to place a distributed group, and the zones it spans, on a simulated fleet | nothing |
 | `lightning_comparison/` | GPUlayer `Trainer` vs PyTorch Lightning: ms per step and start-up | torch, `lightning`, a CUDA GPU for the GPU cases |
 | `multi_machine.py` | placement, distributed jobs and failure across machines; hundreds of jobs | a server with workers on 2+ machines |
@@ -81,6 +82,8 @@ Notes:
 | `results/2026-10-30-gcp-two-level/` | 9 VMs: per-step profile on 8 x 4 processes, and strong scaling against Lightning with two-level gradient sync |
 | `results/2026-10-31-placement/` | one Mac: cost of placing a distributed group and of choosing GPUs by interconnect, and the zones a group spans |
 | `results/2026-10-31-gcp-t4/` | Tesla T4: validation, Lightning comparison with device prefetch and cuDNN autotuning (and a run with each turned off), `nvidia-smi`, package versions |
+| `results/2026-10-31-gcp-locality/` | 12 VMs in three zones: one training job in one zone, two zones and two regions, and where the scheduler put it unpinned |
+| `results/2026-10-31-gcp-ddp-cpu/` | `n1-standard-8` without GPU: Lightning comparison, DDP on 2 CPU processes |
 | `results/2026-10-30-gcp-provider/` | Google Cloud adapter: CPU VM created, joined, ran a job, deleted |
 | `results/2026-10-30-gcp-provider-t4/` | Google Cloud adapter: Spot T4 VM created, ran `Trainer` on CUDA, deleted |
 

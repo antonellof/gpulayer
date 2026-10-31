@@ -20,6 +20,7 @@
 #   benchmarks/cloud/gcp.sh image gl-img                 # build an image with this checkout
 #   benchmarks/cloud/gcp.sh server-up gl-server gl-img [n1-standard-4]
 #   benchmarks/cloud/gcp.sh fleet-up gl-w 23 europe-west1-b gl-img gl-server [n1-standard-4]
+#     (MIN_CPU_PLATFORM="Intel Skylake" puts every worker on the same CPU generation)
 #   benchmarks/cloud/gcp.sh scale gl-server              # benchmarks/scale_test.py
 #   benchmarks/cloud/gcp.sh fleet-down gl-w              # delete every VM named gl-w*
 #
@@ -175,6 +176,7 @@ case "$cmd" in
     names=(); for i in $(seq $((first + 1)) $((first + count))); do names+=("$(printf '%s%02d' "$prefix" "$i")"); done
     gcloud compute instances create "${names[@]}" "${G[@]}" --zone "$zone" --machine-type "$mt" \
       --image "$img" --boot-disk-type pd-standard --no-address --labels purpose=gpulayer-bench \
+      ${MIN_CPU_PLATFORM:+--min-cpu-platform "$MIN_CPU_PLATFORM"} \
       --metadata "gl-url=$url,gl-fingerprint=$fp,gl-join-token=$jt,ssh-keys=gl:$pub" \
       --metadata-from-file "startup-script=$ROOT/benchmarks/cloud/worker-startup.sh" \
       --format="value(name,zone.basename(),status)" ;;

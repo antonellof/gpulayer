@@ -1,0 +1,13 @@
+gl-srv	europe-west1-b	Intel Haswell	n1-standard-4
+gl-w01	europe-west1-b	Intel Skylake	n1-standard-4
+gl-w02	europe-west1-b	Intel Skylake	n1-standard-4
+gl-w03	europe-west1-b	Intel Skylake	n1-standard-4
+gl-w04	europe-west1-b	Intel Skylake	n1-standard-4
+gl-w05	europe-west1-c	Intel Skylake	n1-standard-4
+gl-w06	europe-west1-c	Intel Skylake	n1-standard-4
+gl-w07	europe-west1-c	Intel Skylake	n1-standard-4
+gl-w08	europe-west1-c	Intel Skylake	n1-standard-4
+gl-w09	europe-west4-a	Intel Skylake	n1-standard-4
+gl-w10	europe-west4-a	Intel Skylake	n1-standard-4
+gl-w11	europe-west4-a	Intel Skylake	n1-standard-4
+gl-w12	europe-west4-a	Intel Skylake	n1-standard-4

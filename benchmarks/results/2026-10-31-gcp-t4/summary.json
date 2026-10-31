@@ -1,5 +1,5 @@
 {
-  "_about": "T4 Lightning comparison of 2026-10-31 (lightning-comparison-run1.log): GPUlayer with device prefetch and cuDNN autotuning on (the defaults). The DDP CPU row is from the 2026-10-30 run (not rerun; CPU only). Read by scripts/make_perf_charts.py.",
+  "_about": "Lightning comparison of 2026-10-31: the CUDA cases on a Tesla T4 (lightning-comparison-run1.log, GPUlayer with device prefetch and cuDNN autotuning on, the defaults); the DDP CPU case on an n1-standard-8 without GPU (../2026-10-31-gcp-ddp-cpu/). Read by scripts/make_perf_charts.py.",
   "training_vs_lightning": {
     "hardware": "GCP n1-standard-8 + 1x Tesla T4 (driver 580.178.04), Ubuntu 22.04, Python 3.12, torch 2.15.0 (cuDNN 9.26), Lightning 2.6.6; Spot VM",
     "method": "benchmarks/lightning_comparison: 100 and 600 steps, 3 runs each in fresh processes, one at a time; ms/step = (median 600 - median 100) / 500; start-up = median 100-step wall - 100 x step",
@@ -28,11 +28,11 @@
         "lightning_startup_s": 5.74
       },
       {
-        "case": "DDP, 2 CPU processes (2026-10-30)",
-        "gpulayer_ms": 3.39,
-        "lightning_ms": 7.46,
-        "gpulayer_startup_s": 9.25,
-        "lightning_startup_s": 9.01
+        "case": "DDP, 2 CPU processes",
+        "gpulayer_ms": 3.2,
+        "lightning_ms": 9.56,
+        "gpulayer_startup_s": 10.32,
+        "lightning_startup_s": 9.35
       }
     ]
   }

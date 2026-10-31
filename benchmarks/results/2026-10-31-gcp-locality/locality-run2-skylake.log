@@ -1,0 +1,14 @@
+# 4 nodes x 4 processes, 2 epochs, median of 5
+# one zone: ['europe-west1-b']
+# one zone (2): ['europe-west1-c']
+# two zones: ['europe-west1-b', 'europe-west1-c']
+# two regions: ['europe-west1-b', 'europe-west4-a']
+layout        seconds  vs one zone     loss  runs
+one zone         48.6        1.00x   2.2159  60.9 48.5 49.4 48.6 48.5
+one zone (2)     45.4        0.93x   2.2159  56.9 45.4 45.4 45.2 44.9
+two zones        45.0        0.93x   2.2159  44.9 45.0 45.1 44.7 46.1
+two regions      56.2        1.16x   2.2159  66.3 56.2 58.4 54.9 55.3
+# unpinned: placed on worker group ['wkr-04add655dca2', 'wkr-66d3cff1ac01', 'wkr-853638810d70', 'wkr-a2d31240a6e6'] (same zone europe-west4-a, target remote, policy spread)
+unpinned         53.2        1.09x   2.2159  zones=['europe-west4-a']
+
+[exited with code 0]

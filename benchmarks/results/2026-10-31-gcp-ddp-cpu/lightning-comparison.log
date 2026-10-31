@@ -1,0 +1,4 @@
+case       trainer   ms/step start-up s
+ddp-cpu-2  gl           3.20      10.32
+ddp-cpu-2  pl           9.56       9.35
+ddp-cpu-2  ratio    gl faster x2.99

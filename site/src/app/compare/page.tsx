@@ -263,12 +263,12 @@ const NOTES: Note[] = [
 ];
 
 // Measured with the same model, data, optimizer and torch version in both trainers; see the
-// method note under the table. Tesla T4 run of 2026-10-31; the DDP CPU row is from 2026-10-30.
+// method note under the table. Run of 2026-10-31: CUDA rows on a Tesla T4, the DDP row on a CPU VM.
 const PERF_ROWS: { case: string; gl: number; pl: number; glOver: number; plOver: number }[] = [
   { case: "MLP, fp32, batch 256", gl: 4.06, pl: 5.64, glOver: 4.77, plOver: 5.31 },
   { case: "MLP, fp16 mixed precision", gl: 5.0, pl: 6.25, glOver: 4.82, plOver: 5.55 },
   { case: "CNN, fp16 mixed precision, batch 128", gl: 10.82, pl: 12.33, glOver: 5.65, plOver: 5.74 },
-  { case: "DDP, 2 CPU processes", gl: 3.39, pl: 7.46, glOver: 9.25, plOver: 9.01 },
+  { case: "DDP, 2 CPU processes", gl: 3.2, pl: 9.56, glOver: 10.32, plOver: 9.35 },
 ];
 
 const BEHIND = [

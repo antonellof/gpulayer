@@ -75,20 +75,30 @@ def main() -> None:
     by_zone: dict[str, list] = {}
     for w in sorted(idle, key=lambda w: w.name):
         by_zone.setdefault(w.capabilities.zone, []).append(w)
-    home = max(by_zone, key=lambda z: (len(by_zone[z]), z))
+
+    def peers(z: str) -> bool:  # another zone in its region and another region exist
+        return any(o != z and region(o) == region(z) for o in by_zone) and any(
+            region(o) != region(z) for o in by_zone
+        )
+
+    candidates = [z for z in by_zone if peers(z)] or list(by_zone)
+    home = max(candidates, key=lambda z: (len(by_zone[z]), -candidates.index(z)))
     same_region = [z for z in by_zone if z != home and region(z) == region(home)]
     other_region = [z for z in by_zone if region(z) != region(home)]
     half = n // 2
     if len(by_zone[home]) < n or not same_region or not other_region:
-        raise SystemExit(f"need {n} idle workers in one zone plus two other zones: {by_zone}")
+        counts = {z: len(ws) for z, ws in by_zone.items()}
+        raise SystemExit(f"need {n} idle workers in one zone plus two other zones: {counts}")
     zr, rr = same_region[0], other_region[0]
     if len(by_zone[zr]) < n - half or len(by_zone[rr]) < n - half:
         raise SystemExit(f"not enough idle workers in {zr} or {rr}")
     layouts = {
         "one zone": by_zone[home][:n],
+        "one zone (2)": by_zone[zr][:n] if len(by_zone[zr]) >= n else [],
         "two zones": by_zone[home][:half] + by_zone[zr][: n - half],
         "two regions": by_zone[home][:half] + by_zone[rr][: n - half],
     }
+    layouts = {k: v for k, v in layouts.items() if v}
     print(f"# {n} nodes x {DEVICES} processes, {EPOCHS} epochs, median of {REPEAT}", flush=True)
     for name, ws in layouts.items():
         print(f"# {name}: {sorted({w.capabilities.zone for w in ws})}", flush=True)
@@ -97,10 +107,11 @@ def main() -> None:
         for name, ws in layouts.items():
             results[name].append(run(n, [w.worker_id for w in ws]))
     base = statistics.median(t for t, _ in results["one zone"])
-    print(f"{'layout':12} {'seconds':>8} {'vs one zone':>12} {'loss':>8}", flush=True)
+    print(f"{'layout':12} {'seconds':>8} {'vs one zone':>12} {'loss':>8}  runs", flush=True)
     for name, rs in results.items():
         t = statistics.median(x for x, _ in rs)
-        print(f"{name:12} {t:8.1f} {t / base:11.2f}x {rs[-1][1]:8.4f}", flush=True)
+        runs = " ".join(f"{x:.1f}" for x, _ in rs)
+        print(f"{name:12} {t:8.1f} {t / base:11.2f}x {rs[-1][1]:8.4f}  {runs}", flush=True)
 
     before = {j.job_id for j in c.jobs(limit=200)}
     took, loss = run(n, None)
