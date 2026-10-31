@@ -3,7 +3,7 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
-## Unreleased
+## 0.7.1 (2026-10-31)
 
 - Fix: after a server restart behind the same address (a Kubernetes server pod), a worker's
   kept-open connection could go silent and hold a heartbeat for 60 s, past the 20 s lease, so
