@@ -5,6 +5,13 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Per-job requirements (ADR-0022): `JobSpec.environment` (`requirements`, `requirements_file`),
+  `requirements=` in the SDK builders, `@gl.remote`, `launch()` and the Trainer's
+  `launch_options`, and `gpulayer submit --requirement/--requirements-file`. Each worker builds
+  an environment on top of its own Python once and reuses it; the worker's packages (PyTorch,
+  CUDA libraries) are not installed again. Preparation is reported apart from the run
+  (`prepare_seconds`, `prepare_cached` on the task's finish event). New optional fields on
+  `JobSpec` and `TaskOutcome`; older control planes and workers ignore them.
 - Trainer `benchmark=None` turns on cuDNN autotuning only for runs that plan at least 1,000
   steps: it costs 1 to 3 s at the start (a 5-step, 2-GPU run went from 14.9 to 10.7 s without
   it) and pays back only on longer runs. `benchmark=True` or `False` still force it.

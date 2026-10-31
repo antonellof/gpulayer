@@ -23,6 +23,7 @@ machines named. Everything else says what is missing.
 | Google Cloud provisioning | validated: a CPU VM and a Spot T4 created for a job, joined, ran it and were deleted |
 | Kubernetes Helm chart | tested in CI on kind (jobs, a distributed job, upgrade, server restart); GPU worker pool not run |
 | Container images on GitHub Container Registry | published with each release (slim and `-torch`; no CUDA image) |
+| Per-job requirements, installed once per worker and reused (ADR-0022) | tested; measured on an M2 Pro (`timm`: 6.6 s first, 0.00 s after) |
 | Web dashboard, Prometheus metrics, Grafana dashboard | tested |
 | MCP server for AI agents | tested |
 

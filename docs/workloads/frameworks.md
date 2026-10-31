@@ -66,6 +66,37 @@ integration adds `torch` plus `torch.cuda` or `torch.mps` automatically.
 Inside the job, `GPULAYER_ACCELERATOR` says which accelerator was granted, and for CUDA jobs
 `CUDA_VISIBLE_DEVICES` lists the granted GPUs, so any CUDA library uses the right devices.
 
+## Extra packages for one job
+
+A job can list packages its worker does not have. The worker installs them once, in an
+environment of its own built on top of the worker's Python, and reuses it for every later job
+with the same list ([ADR-0022](../decisions/ADR-0022-job-environments-and-dependency-installation.md)):
+
+```bash
+gpulayer submit --source ./app --requirement timm==1.0.30 -- python train.py
+gpulayer submit --source ./app --requirements-file requirements.txt -- python train.py
+```
+
+```python
+gl.command(["python", "train.py"], source=src, requirements=["timm==1.0.30"])
+@gl.remote(accelerator="cuda", requirements=["timm"])
+glt.launch(nodes=2, devices=4, accelerator="cuda", requirements=["timm"])
+trainer = glt.Trainer(..., launch_options={"requirements": ["timm"]})
+```
+
+- **Installed once per worker, never per run.** The environment is keyed by the list (or the
+  file's content) and the worker's Python. The first job on a worker builds it; later jobs
+  reuse it. On an M2 Pro: `timm` took 6.6 s the first time and 0.00 s after.
+- **The worker's packages stay.** PyTorch, the CUDA libraries and everything else the worker
+  has are visible and are not installed again: `timm`, which depends on torch, used the
+  worker's torch. Pin versions that must match the worker's CUDA build.
+- **Reported apart from the run.** The task's log says `environment built in 6.62s` or
+  `environment reused in 0.00s`, and its finish event carries `prepare_seconds` and
+  `prepare_cached`; job timings and benchmarks never include it.
+- A failed install fails the task before any of the job runs, with the installer's message.
+- Environments live in the worker's directory (`<home>/envs` for local workers). Delete it to
+  rebuild them; automatic cleanup is not implemented yet.
+
 ## What has been run
 
 | Workload | Status |

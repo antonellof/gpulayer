@@ -256,6 +256,7 @@ class Client:
                     self._local_caps,
                     self.home / "workers" / channel.worker_id,
                     python=self._worker_python,
+                    env_cache=self.home / "envs",
                 )
                 thread = threading.Thread(target=agent.run, daemon=True, name=name)
                 thread.start()

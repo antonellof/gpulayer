@@ -51,6 +51,7 @@ gpulayer submit [options] [-- COMMAND ...]
 | `--framework 'torch>=2.1'` | framework requirement |
 | `--profile pytorch-cuda` | runtime profile: fills in accelerator and frameworks (see [JobSpec](job-spec.md#runtime-profiles)) |
 | `--worker ID`, `--label K=V` | pin to workers |
+| `--requirement PKG` (repeatable), `--requirements-file FILE` | extra packages, installed once per worker and reused |
 | `--group-locality prefer\|network_group\|zone\|region\|any` | distributed jobs: how close together the machines must be (default `prefer`) |
 | `--provider NAME --max-hourly-cost X` | allow provisioning through a provider adapter |
 | `--env K=V`, `--secret NAME=WORKER_ENV_KEY` | environment and secret references |

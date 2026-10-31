@@ -22,6 +22,7 @@ from gpulayer.contracts import (
     Accelerator,
     CommandJob,
     DistributedJob,
+    EnvironmentSpec,
     InputArtifact,
     JobSpec,
     JobState,
@@ -71,6 +72,8 @@ def launch(
     env: dict[str, str] | None = None,
     inputs: dict[str, str | Path] | None = None,
     timeout_seconds: float | None = None,
+    requirements: list[str] | None = None,
+    requirements_file: str | None = None,
     name: str | None = None,
     output_dir: str | Path | None = None,
     exit: bool = True,  # noqa: A002 - mirrors sys.exit semantics
@@ -80,7 +83,10 @@ def launch(
     """Submit this script as a GPUlayer job, or return ``None`` when already inside one.
 
     ``inputs`` maps a path under ``$GPULAYER_INPUT_DIR`` in the job to a local file, which is
-    uploaded and placed there on every node (for example a checkpoint to resume from)."""
+    uploaded and placed there on every node (for example a checkpoint to resume from).
+
+    ``requirements`` / ``requirements_file`` (relative to the script's directory) add packages
+    the workers do not have; each worker installs them once and reuses them (ADR-0022)."""
     if not is_launcher_process():
         return None
     if accelerator == "auto":
@@ -134,6 +140,11 @@ def launch(
             for dest, local in (inputs or {}).items()
         ],
         timeout_seconds=timeout_seconds,
+        environment=EnvironmentSpec(
+            requirements=list(requirements or []), requirements_file=requirements_file
+        )
+        if requirements or requirements_file
+        else None,
     )
     job = c.submit(spec)
     if not quiet:

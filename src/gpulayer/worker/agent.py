@@ -40,6 +40,7 @@ from gpulayer.runtime import dist_function_runner, function_runner, rank_launche
 from gpulayer.runtime.distributed import direct_argv, direct_env, free_port, torchrun_argv
 from gpulayer.runtime.process import ProcessOutcome, run_process
 from gpulayer.worker.channel import WorkerChannel
+from gpulayer.worker.environments import EnvironmentCache, PreparedEnvironment
 
 log = logging.getLogger("gpulayer.worker")
 
@@ -125,6 +126,7 @@ class WorkerAgent:
         poll_interval: float = 0.5,
         long_poll: float = 10.0,
         keep_workspaces: bool = False,
+        env_cache: str | Path | None = None,
     ) -> None:
         self.channel = channel
         self.caps = capabilities
@@ -140,6 +142,9 @@ class WorkerAgent:
         self._cancel: dict[str, threading.Event] = {}
         self._cancel_lock = threading.Lock()
         self._hb_thread: threading.Thread | None = None
+        # Per-job environments (ADR-0022); shared by the local workers of one GPUlayer home.
+        self.envs = EnvironmentCache(Path(env_cache) if env_cache else self.workdir / "envs")
+        self._prepared: dict[str, PreparedEnvironment] = {}
 
     # ------------------------------------------------------------- lifecycle
 
@@ -301,6 +306,11 @@ class WorkerAgent:
         finally:
             with self._cancel_lock:
                 self._cancel.pop(a.task_id, None)
+        prepared = self._prepared.pop(a.task_id, None)
+        if prepared is not None:
+            outcome = outcome.model_copy(
+                update={"prepare_seconds": prepared.seconds, "prepare_cached": prepared.cached}
+            )
         try:
             self.channel.finish(a.task_id, outcome)
         except GpuLayerError as e:
@@ -390,13 +400,14 @@ class WorkerAgent:
         sink = _LogBuffer(self.channel, a.task_id, secret_values)
         line_sink: Callable[[str, str], None] = sink
         try:
+            python = self._prepare_environment(a, src if source is not None else None, env, sink)
             cwd = str(src if source is not None else ws)
             result_file: Path | None = None
 
             if isinstance(w, (CommandJob, ServiceJob)):
                 argv = list(w.command)
                 if argv[0] == "python":  # documented: 'python' means the worker's interpreter
-                    argv[0] = self.python
+                    argv[0] = python
             elif isinstance(w, FunctionJob):
                 runner = ws / "function_runner.py"
                 shutil.copyfile(function_runner.__file__, runner)
@@ -407,7 +418,7 @@ class WorkerAgent:
                 result_file = ws / "result.json"
                 if source is not None:
                     env["PYTHONPATH"] = str(src)
-                argv = [self.python, str(runner), str(call), str(result_file)]
+                argv = [python, str(runner), str(call), str(result_file)]
             elif isinstance(w, DistributedJob):
                 rdzv = self._rendezvous(a)
                 base_rank = rdzv.node_rank * rdzv.procs_per_node
@@ -435,8 +446,8 @@ class WorkerAgent:
 
                 def launch_argv(entry: Path, args: list[str]) -> list[str]:
                     if w.launcher == "direct":
-                        return direct_argv(self.python, str(launcher), rdzv, str(entry), args)
-                    return torchrun_argv(self.python, rdzv, str(entry), args)
+                        return direct_argv(python, str(launcher), rdzv, str(entry), args)
+                    return torchrun_argv(python, rdzv, str(entry), args)
 
                 sink(
                     "system",
@@ -544,6 +555,34 @@ class WorkerAgent:
             error=None if out.exit_code == 0 else f"exit code {out.exit_code}",
             outputs=outputs,
         )
+
+    def _prepare_environment(
+        self, a: TaskAssignment, src: Path | None, env: dict[str, str], sink: _LogBuffer
+    ) -> str:
+        """The interpreter for this task: the worker's own, or a cached environment with the
+        job's extra packages (built on first use). Its time is reported apart from the run."""
+        spec = a.spec.environment
+        if spec is None or spec.empty:
+            return self.python
+        text = None
+        if spec.requirements_file:
+            if src is None:
+                raise GpuLayerError("requirements_file needs a source bundle")
+            path = (src / spec.requirements_file).resolve()
+            if not path.is_relative_to(src.resolve()) or not path.is_file():
+                raise GpuLayerError(f"requirements file {spec.requirements_file!r} not found")
+            text = path.read_text()
+        prepared = self.envs.prepare(
+            self.python, spec.requirements, text, log=lambda line: sink("system", line)
+        )
+        self._prepared[a.task_id] = prepared
+        sink(
+            "system",
+            f"environment {'reused' if prepared.cached else 'built'} in {prepared.seconds:.2f}s",
+        )
+        env["PATH"] = prepared.bin_dir + os.pathsep + env.get("PATH", "")
+        env["VIRTUAL_ENV"] = str(Path(prepared.bin_dir).parent)
+        return prepared.python
 
     def _serve(
         self,

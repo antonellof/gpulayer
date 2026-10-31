@@ -969,14 +969,24 @@ class ControlPlane:
                     task_id,
                 ),
             )
+            details = []
+            if outcome.exit_code is not None:
+                details.append(f"exit {outcome.exit_code}")
+            data: dict[str, Any] = {"error": outcome.error} if outcome.error else {}
+            if outcome.prepare_seconds is not None:
+                # Environment preparation (ADR-0022), reported apart from the run.
+                how = "reused" if outcome.prepare_cached else "built"
+                details.append(f"environment {how} in {outcome.prepare_seconds:.2f}s")
+                data["prepare_seconds"] = round(outcome.prepare_seconds, 3)
+                data["prepare_cached"] = bool(outcome.prepare_cached)
             self.store.add_event(
                 f"task.{outcome.state.value}",
                 f"node rank {task['node_rank']} {outcome.state.value}"
-                + (f" (exit {outcome.exit_code})" if outcome.exit_code is not None else ""),
+                + (f" ({'; '.join(details)})" if details else ""),
                 job_id=task["job_id"],
                 task_id=task_id,
                 worker_id=worker_id,
-                data={"error": outcome.error} if outcome.error else None,
+                data=data or None,
             )
         self._update_job(task["job_id"])
         self.schedule_pending()

@@ -33,6 +33,7 @@ and `launch()` create them for you; you can also write one as JSON and run
 | `timeout_seconds` | number | none | |
 | `retry` | `{max_attempts, retry_on}` | `1`, `["worker_lost"]` | not allowed for distributed jobs |
 | `labels` | map | `{}` | free-form |
+| `environment` | object | none | `{requirements: [...], requirements_file: "path in bundle"}`: extra packages, installed once per worker and reused ([details](../workloads/frameworks.md#extra-packages-for-one-job)) |
 
 ## Workloads
 

@@ -1,6 +1,6 @@
 # ADR-0022: Job environments and dependency installation
 
-- **Status:** Proposed
+- **Status:** Accepted (points 1 to 3 implemented; 4 and 5 planned)
 - **Date:** 2026-10-31
 
 ## Context
@@ -34,11 +34,16 @@ and is reused, and where it is per job (Ray) it is cached by the content of the 
    time never includes installation.
 2. **Add per-job requirements with cached environments.** A job may declare
    `environment.requirements` (a list, or a `requirements.txt` in its source bundle). The
-   worker builds a virtual environment with `uv` keyed by the hash of (requirements, Python
-   version, platform), on top of the worker's own packages (`--system-site-packages`), so
-   PyTorch and CUDA libraries are not reinstalled. The first job on a worker pays the
-   install; later jobs with the same requirements reuse it. Like Ray's `runtime_env`, but
-   with uv's cache and hard links, which make a warm build take well under a second.
+   worker builds a virtual environment keyed by the hash of (requirements, file content,
+   interpreter path and version), and reuses it for later jobs with the same request.
+   Implemented in `worker/environments.py`: the environment is created with `uv venv` (or
+   `venv`), the worker interpreter's own site-packages are linked in with an
+   `site.addsitedir` .pth line (so a worker running in a virtualenv, the usual case, keeps
+   PyTorch and the CUDA libraries, including editable installs), and packages are installed
+   with that environment's pip. pip, not uv: uv does not count packages reached through a
+   .pth file as installed and would install torch again; pip resolves against the whole
+   `sys.path`. Builds are locked per key (threads and processes) and counted as ready only
+   once marked, so a failed build is retried, never reused.
 3. **Report preparation separately.** Building or reusing an environment is a `task.prepare`
    phase with its own duration in the job's events and in `gpulayer job status`, never part
    of the run time. Benchmarks run with warm environments and report preparation apart.
@@ -65,7 +70,14 @@ and is reused, and where it is per job (Ray) it is cached by the content of the 
 - Jobs that need packages a worker cannot build (no network, no matching wheels) fail in
   `task.prepare` with the installer's message, before any of the workload runs.
 
+## Measured
+
+On an M2 Pro (worker virtualenv with torch 2.15.0): `tqdm` built in 1.56 s and reused in
+0.00 s; `timm` built in 6.62 s and reused in 0.00 s, without installing torch again
+(`benchmarks/results/2026-10-31-environments/`).
+
 ## Follow-up
 
-- Implement points 2 and 3 with uv, measure a cold and a warm preparation on a GPU worker,
-  and add the `environment` field to `JobSpec` (additive, versioned).
+- Measure a cold and a warm preparation on a GPU worker.
+- Point 4 (`gpulayer env prepare`), point 5 (images), and cleanup of unused environments in
+  `gpulayer gc`.

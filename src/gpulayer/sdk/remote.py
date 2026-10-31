@@ -210,8 +210,16 @@ class RemoteFunction:
             workload = FunctionJob(
                 entrypoint=self.ref, args=list(args), kwargs=kwargs, source=source
             )
+        from gpulayer.sdk.builders import pop_environment
+
+        environment = pop_environment(opts)
         return JobSpec(
-            name=name, workload=workload, resources=resources, placement=placement, **opts
+            name=name,
+            workload=workload,
+            resources=resources,
+            placement=placement,
+            environment=environment,
+            **opts,
         )
 
     def _source(self) -> ArtifactReference:

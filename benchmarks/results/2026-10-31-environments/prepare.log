@@ -1,0 +1,7 @@
+# EnvironmentCache.prepare on an Apple M2 Pro, macOS, Python 3.12.13, uv 0.13 + pip 26.1, home network
+# worker interpreter: a virtualenv with torch 2.15.0 (CPU/MPS), numpy, gpulayer (editable)
+['tqdm']: built in 1.56s
+['tqdm']: reused in 0.00s
+['timm']: built in 6.62s
+['timm']: reused in 0.00s
+torch installed into the env: False   (timm uses the worker's torch 2.15.0)

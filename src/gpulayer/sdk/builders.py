@@ -9,6 +9,7 @@ from gpulayer.contracts import (
     ArtifactReference,
     CommandJob,
     DistributedJob,
+    EnvironmentSpec,
     ExecutionTarget,
     FunctionJob,
     JobSpec,
@@ -17,6 +18,18 @@ from gpulayer.contracts import (
     SecretRef,
     ServiceJob,
 )
+
+
+def pop_environment(kw: dict[str, Any]) -> EnvironmentSpec | None:
+    """Turn ``requirements=[...]`` / ``requirements_file=...`` options into an
+    EnvironmentSpec (ADR-0022), removing them from ``kw``."""
+    reqs = kw.pop("requirements", None)
+    req_file = kw.pop("requirements_file", None)
+    if isinstance(reqs, str):
+        reqs = [reqs]
+    if not reqs and not req_file:
+        return kw.pop("environment", None)
+    return EnvironmentSpec(requirements=list(reqs or []), requirements_file=req_file)
 
 
 def _spec(
@@ -37,6 +50,9 @@ def _spec(
         )
     if placement is None:
         placement = PlacementPolicy(target=ExecutionTarget(target))
+    environment = pop_environment(kw)
+    if environment is not None:
+        kw["environment"] = environment
     secrets = kw.pop("secrets", None) or []
     secrets = [s if isinstance(s, SecretRef) else SecretRef(**s) for s in secrets]
     return JobSpec(

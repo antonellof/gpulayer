@@ -25,6 +25,7 @@ from gpulayer.contracts import (
     Accelerator,
     CommandJob,
     DistributedJob,
+    EnvironmentSpec,
     ExecutionTarget,
     FunctionJob,
     InputArtifact,
@@ -708,6 +709,11 @@ def build_spec(args: argparse.Namespace, client: Client) -> JobSpec:
         inputs=inputs,
         timeout_seconds=args.timeout,
         retry=RetryPolicy(max_attempts=args.max_attempts),
+        environment=EnvironmentSpec(
+            requirements=args.requirement or [], requirements_file=args.requirements_file
+        )
+        if args.requirement or args.requirements_file
+        else None,
     )
 
 
@@ -1107,6 +1113,14 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--framework", action="append", metavar="SPEC", help="e.g. 'torch>=2.1'")
     s.add_argument("--worker", action="append", metavar="WORKER_ID")
     s.add_argument("--label", action="append", metavar="KEY=VALUE")
+    s.add_argument(
+        "--requirement",
+        action="append",
+        metavar="PKG",
+        help="a package the job needs beyond the worker's (repeatable); installed once per "
+        "worker and reused",
+    )
+    s.add_argument("--requirements-file", metavar="FILE", help="requirements file inside --source")
     s.add_argument("--provider", help="allow provisioning through this provider adapter")
     s.add_argument(
         "--group-locality",

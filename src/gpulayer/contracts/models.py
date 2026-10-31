@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 from enum import Enum
+from pathlib import PurePosixPath
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -458,6 +459,43 @@ Workload = Annotated[
 ]
 
 
+class EnvironmentSpec(_Model):
+    """Python packages a job needs beyond what its worker has (ADR-0022).
+
+    The worker builds a virtual environment on top of its own packages (so PyTorch and CUDA
+    libraries are not installed again), caches it by the content of this spec, and reuses it
+    for later jobs. Building or reusing it is reported apart from the job's run time.
+    """
+
+    requirements: list[str] = Field(
+        default_factory=list, description="pip requirement specifiers, e.g. 'timm==1.0.9'."
+    )
+    requirements_file: str | None = Field(
+        None, description="A requirements file in the job's source bundle, relative to it."
+    )
+
+    @field_validator("requirements")
+    @classmethod
+    def _requirements(cls, v: list[str]) -> list[str]:
+        for r in v:
+            if not r.strip() or "\n" in r or r.lstrip().startswith("-"):
+                raise ValueError(
+                    f"invalid requirement {r!r}: one package specifier per entry, no pip options"
+                )
+        return [r.strip() for r in v]
+
+    @field_validator("requirements_file")
+    @classmethod
+    def _file(cls, v: str | None) -> str | None:
+        if v is not None and (v.startswith("/") or ".." in PurePosixPath(v).parts):
+            raise ValueError("requirements_file must be a relative path inside the source bundle")
+        return v
+
+    @property
+    def empty(self) -> bool:
+        return not self.requirements and not self.requirements_file
+
+
 class JobSpec(_Model):
     api_version: Literal["gpulayer.dev/v1alpha1"] = "gpulayer.dev/v1alpha1"
     name: str = "job"
@@ -470,6 +508,9 @@ class JobSpec(_Model):
     timeout_seconds: float | None = Field(None, gt=0)
     retry: RetryPolicy = Field(default_factory=RetryPolicy)
     labels: dict[str, str] = Field(default_factory=dict)
+    environment: EnvironmentSpec | None = Field(
+        None, description="Extra Python packages, installed once per worker and cached."
+    )
 
     @field_validator("name")
     @classmethod
@@ -748,6 +789,10 @@ class TaskOutcome(_Model):
     error: str | None = None
     return_value: Any = None
     outputs: list[ArtifactReference] = Field(default_factory=list)
+    prepare_seconds: float | None = Field(
+        None, description="Time spent building or reusing the job's environment (ADR-0022)."
+    )
+    prepare_cached: bool | None = None
 
     @field_validator("state")
     @classmethod
