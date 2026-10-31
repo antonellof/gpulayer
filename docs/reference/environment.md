@@ -10,6 +10,7 @@
 | `GPULAYER_FINGERPRINT` | SDK, CLI, join | pinned server certificate (`sha256:...`) |
 | `GPULAYER_JOIN_TOKEN` | `join`, `worker start` | worker join token |
 | `GPULAYER_WORKER_PYTHON` | SDK in-process workers | interpreter for jobs |
+| `GPULAYER_REGION`, `GPULAYER_ZONE` | `up`, `join`, `worker start` | default for `--region` and `--zone`: where this worker is, for [group placement](../architecture/scheduling.md#distributed-groups-and-network-locality); read from GCE metadata on Google Cloud when unset |
 
 ## Set for every job
 

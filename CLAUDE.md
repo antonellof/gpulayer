@@ -338,6 +338,21 @@ A passing unit test is not evidence of cloud provisioning or multi-node GPU comp
 
 Keep `architecture_plan.md`, `site/`, and `docs/decisions/` aligned with the implementation.
 
+Every change that alters behavior, capability, status, or measured results must update all
+places that describe it in the same change, on GitHub and on the website:
+
+- `README.md` and `CHANGELOG.md`.
+- `docs/` (guides, reference, architecture, `docs/project/status.md`), which the site renders.
+- The site's own pages in `site/src/` (home page features and status list, quickstart,
+  compare page, structured data).
+- `docs/decisions/` and `architecture_plan.md` when a decision or the architecture changes.
+- Charts and benchmark summaries in `docs/assets/perf/` and `benchmarks/results/` when numbers
+  change: show the latest results and comparisons with other tools, not before/after values
+  of GPUlayer's own fixes.
+
+Before finishing, search the docs and site for statements the change makes stale (feature
+names, "planned", "not yet", version numbers, measured values) and fix them.
+
 Document supported execution modes, setup instructions, provider requirements, networking, compatibility limits, and security assumptions.
 
 Distinguish stable public APIs from experimental interfaces.

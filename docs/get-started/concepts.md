@@ -72,7 +72,12 @@ scheduling: no eligible worker
 
 A job whose compatible workers are all busy waits in the queue. A job that no registered worker
 could ever run fails immediately when `on_unschedulable="fail"` (the default for the CLI,
-`Trainer`, `launch()` and `@gl.remote`). See [Scheduling](../architecture/scheduling.md).
+`Trainer`, `launch()` and `@gl.remote`).
+
+A distributed job is placed on a whole group of workers at once, kept as close together as the
+workers allow: one network group (a rack or LAN you label), else one zone, else one region.
+Inside a machine, a job that asks for several GPUs gets the free GPUs with the fastest links
+between them (NVLink, then one PCIe switch). See [Scheduling](../architecture/scheduling.md).
 
 ## Job lifecycle
 

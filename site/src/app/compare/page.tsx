@@ -137,7 +137,7 @@ const MATRIX: MatrixRow[] = [
   {
     feature: "Multi-node jobs",
     marks: ["yes", "partial", "partial", "yes", "yes", "yes", "partial", "yes"],
-    note: "GPUlayer starts every node from one call (tested up to 16 machines); Lightning and Accelerate train across nodes but need a launcher started on each node",
+    note: "GPUlayer starts every node from one call (tested up to 16 machines) and keeps the group in one zone or rack when possible; Lightning and Accelerate train across nodes but need a launcher started on each node",
   },
   {
     feature: "Chooses a machine that fits the job",

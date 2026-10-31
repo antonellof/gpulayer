@@ -25,8 +25,9 @@ trainer.fit(model, train_loader)                                         # PyTor
 > **Status: v0.5.0.** Local execution, scheduling, the server and worker
 > protocol, and distributed jobs are implemented and tested on CPU and Apple Silicon, and
 > validated on an NVIDIA Tesla T4 and across machines on Google Cloud (30 workers; distributed
-> PyTorch with gloo on up to 16 machines). Long-running services and a Helm chart for
-> Kubernetes are tested. Several GPUs per machine and NCCL across machines are not validated
+> PyTorch with gloo on up to 16 machines). Long-running services, a Helm chart for
+> Kubernetes, and placement of distributed groups by zone and of multi-GPU jobs by GPU
+> interconnect are tested (the GPU interconnect choice with recorded topologies only). Several GPUs per machine and NCCL across machines are not validated
 > yet, and automatic cloud provisioning covers Google Cloud only. See [Status and roadmap](project/status.md) and
 > [Performance and comparison](get-started/performance-and-comparison.md).
 

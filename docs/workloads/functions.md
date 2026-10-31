@@ -42,7 +42,7 @@ parallel. With a remote control plane, the jobs spread over all compatible worke
 
 `@gl.remote(...)` and `.options(...)` accept: `accelerator`, `gpus`, `gpu_memory_gb`,
 `memory_gb`, `cpu_cores`, `frameworks`, `python`, `target`, `fallback_targets`,
-`worker_labels`, `on_unschedulable`, `provisioning`, `env`, `secrets`, `timeout_seconds`,
+`worker_labels`, `on_unschedulable`, `group_locality`, `provisioning`, `env`, `secrets`, `timeout_seconds`,
 `retry`, `name`, `client`, `source`, `nodes`, `procs_per_node` and `comm_backend`.
 
 ## Distributed functions

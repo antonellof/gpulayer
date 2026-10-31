@@ -129,7 +129,7 @@ const FEATURES = [
   {
     icon: Network,
     title: "Distributed when needed",
-    body: "Worker groups are placed together, with ranks and rendezvous set up. Ranks start with the standard torchrun environment, without torchrun's start-up cost.",
+    body: "Worker groups are placed together, in one rack, zone or region when possible, with ranks and rendezvous set up. Multi-GPU jobs get the best-connected GPUs on a machine.",
   },
   {
     icon: Cloud,
@@ -211,7 +211,7 @@ const STATUS: { label: string; dot: string; items: string }[] = [
     label: "Tested",
     dot: "bg-emerald-500",
     items:
-      "Local execution, SDK and CLI · scheduling · servers and workers over HTTPS · long-running services · Helm chart on Kubernetes (kind, in CI) · MLX, NumPy and shell jobs",
+      "Local execution, SDK and CLI · scheduling, including distributed groups by zone and rack · servers and workers over HTTPS · long-running services · Helm chart on Kubernetes (kind, in CI) · MLX, NumPy and shell jobs",
   },
   {
     label: "Hardware-validated",
@@ -222,7 +222,8 @@ const STATUS: { label: string; dot: string; items: string }[] = [
   {
     label: "Implemented, not validated",
     dot: "bg-amber-500",
-    items: "Several GPUs per machine · NCCL across machines · FSDP (experimental) · NVIDIA GPU workers on Kubernetes",
+    items:
+      "Several GPUs per machine, including the choice of best-connected GPUs · NCCL across machines · FSDP (experimental) · NVIDIA GPU workers on Kubernetes",
   },
   {
     label: "Planned",
@@ -348,7 +349,7 @@ export default function Home() {
               <SectionHeader
                 eyebrow="Placement"
                 title="Every decision comes with a reason"
-                lede="Workers report their GPUs, memory, drivers and installed frameworks. Each job goes to a worker that has what it asks for. When none does, it is rejected before it starts, and you see why for every worker."
+                lede="Workers report their GPUs, memory, drivers, installed frameworks and where they are. Each job goes to a worker that has what it asks for, and distributed groups stay as close together as the workers allow. When nothing fits, the job is rejected before it starts, and you see why for every worker."
               />
               <Link href="/docs/architecture/scheduling/" className="link-arrow mt-8">
                 How scheduling works <ArrowRight className="h-3.5 w-3.5" />

@@ -46,7 +46,7 @@ To train with PyTorch, install it too: `pip install "gpulayer[torch]"`.
 |---|---|
 | As a standalone CLI with [uv](https://docs.astral.sh/uv/) | `uv tool install gpulayer` |
 | Install script (own virtual environment, no sudo) | `curl -fsSL https://raw.githubusercontent.com/antonellof/gpulayer/main/install.sh \| sh` |
-| Docker | `docker build -t gpulayer .` (see [deploy/docker](https://github.com/antonellof/gpulayer/tree/main/deploy/docker)) |
+| Docker | `docker pull ghcr.io/antonellof/gpulayer:0.5.0` (also `:0.5.0-torch`; see [deploy/docker](https://github.com/antonellof/gpulayer/tree/main/deploy/docker)) |
 | Kubernetes (Helm) | `helm install gpulayer deploy/kubernetes/helm/gpulayer -n gpulayer --create-namespace` (see [Kubernetes](https://github.com/antonellof/gpulayer/blob/main/docs/guides/kubernetes.md)) |
 | From source, to run the examples | `git clone https://github.com/antonellof/gpulayer && cd gpulayer && pip install -e ".[dev,examples]"` |
 
@@ -108,7 +108,7 @@ has it, wherever that machine is.
 | Several GPU machines | track free machines by hand; jobs crash on the wrong GPU or library | one queue; each job lands where it can run, or is rejected with the reason |
 | NVIDIA servers and Apple Silicon Macs | separate scripts and setup per machine | ask for `cuda` or `mps`; one interface |
 | Many independent tasks | loops and ad hoc scripts | `fn.map([...])` across free GPUs |
-| Multi-node training | `torchrun` on every node with matching ranks and addresses | `Trainer(num_nodes=2, devices=4)` |
+| Multi-node training | `torchrun` on every node with matching ranks and addresses | `Trainer(num_nodes=2, devices=4)`; the machines are kept in one zone or rack when possible |
 
 On one machine with one GPU, running your code directly is simpler. GPUlayer runs services
 without a load balancer in front of them, and is not a sandbox for untrusted code. More in
@@ -150,7 +150,8 @@ GPUlayer has three parts:
   PyTorch `Trainer` and `launch()`, and the MCP server for AI agents. A job states what it
   needs (accelerator, GPU count and memory, frameworks), not which machine to use.
 - **The control plane** keeps the job queue, picks a worker for each job and records the
-  reason when no worker fits. It stores code bundles, inputs, outputs and logs, and checks
+  reason when no worker fits. Distributed groups stay in one network group, zone or region
+  when possible, and multi-GPU jobs get the best-connected GPUs on a machine. It stores code bundles, inputs, outputs and logs, and checks
   tokens. For work on one machine it runs inside your process; for several machines it runs
   as a server (`gpulayer up`).
 - **Workers**, one per machine, report their GPUs and installed frameworks, ask the control
