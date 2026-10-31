@@ -43,6 +43,7 @@ with [`launch()`](launch.md) to choose where it runs.
 | `module(model)` | moves the model to the device; wraps it in DDP when distributed |
 | `dataloader(loader, shuffle=None)` | rebuilds the loader with a `DistributedSampler` when distributed |
 | `to_device(batch)` | moves tensors, and lists, tuples and dicts of tensors |
+| `batches(loader, prefetch=True)` | iterates `loader` with each batch on the device; on CUDA it copies the next batch on a side stream while the current step runs |
 | `autocast()` | context manager for the chosen mixed precision (no-op for `32-true`) |
 | `backward(loss)`, `step(optimizer, params, clip_val)` | backward and optimizer step, with gradient scaling for `16-mixed` |
 | `mean(value)` | average of a Python number across all processes |

@@ -475,3 +475,60 @@ def test_max_time_clip_value_and_deterministic(tmp_path):
         assert torch.equal(run(), run())
     finally:
         torch.use_deterministic_algorithms(False)
+
+
+def test_batches_without_prefetch_device_are_plain(tmp_path):
+    rt = glt.Runtime("cpu").setup()
+    train, _ = loaders()
+    plain = list(train.dataset)[:3]
+    got = list(rt.batches([plain[0], plain[1], plain[2]]))
+    assert all(torch.equal(a[0], b[0]) for a, b in zip(got, plain, strict=True))
+    nested = [{"x": torch.ones(2), "meta": "keep"}]
+    assert list(rt.batches(nested, prefetch=False))[0]["meta"] == "keep"
+
+
+def test_prefetch_does_not_change_cpu_training(tmp_path):
+    results = []
+    for prefetch in (True, False):
+        glt.seed_everything(0)
+        train, val = loaders()
+        t = glt.Trainer(
+            accelerator="cpu",
+            max_epochs=2,
+            prefetch=prefetch,
+            default_root_dir=tmp_path,
+            enable_checkpointing=False,
+        )
+        t.fit(Lin(), train, val)
+        results.append(t.callback_metrics["val_loss"])
+    assert results[0] == results[1]
+
+
+def test_benchmark_conflicts_with_deterministic():
+    with pytest.raises(ValidationFailed, match="deterministic"):
+        glt.Trainer(benchmark=True, deterministic=True)
+
+
+@pytest.mark.hardware_cuda
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs a CUDA device")
+def test_cuda_prefetch_matches_plain_copies(tmp_path):
+    rt = glt.Runtime("cuda").setup()
+    data = [(torch.full((64, 8), float(i)), torch.tensor([i])) for i in range(20)]
+    got = list(rt.batches(data))
+    assert [int(b[1].item()) for b in got] == list(range(20))
+    assert all(b[0].is_cuda and float(b[0][0, 0]) == i for i, b in enumerate(got))
+    results = []
+    for prefetch in (True, False):
+        glt.seed_everything(0)
+        train, val = loaders()
+        t = glt.Trainer(
+            accelerator="cuda",
+            max_epochs=2,
+            prefetch=prefetch,
+            default_root_dir=tmp_path,
+            enable_checkpointing=False,
+        )
+        t.fit(Lin(), train, val)
+        results.append(t.callback_metrics["val_loss"])
+    assert results[0] == pytest.approx(results[1], rel=1e-5)
+    assert torch.backends.cudnn.benchmark is True

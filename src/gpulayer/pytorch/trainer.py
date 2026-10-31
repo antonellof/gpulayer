@@ -60,6 +60,8 @@ class Trainer:
         fast_dev_run: bool | int = False,
         max_time: float | None = None,
         deterministic: bool = False,
+        benchmark: bool | None = None,
+        prefetch: bool = True,
         enable_checkpointing: bool = True,
         default_root_dir: str | Path = "gpulayer_runs",
         launch_options: dict[str, Any] | None = None,
@@ -96,6 +98,12 @@ class Trainer:
         self.fast_dev_run = bool(fast_dev_run)
         self.max_time = max_time
         self.deterministic = deterministic
+        if benchmark and deterministic:
+            raise ValidationFailed(
+                "benchmark=True picks kernels by speed; it conflicts with deterministic=True"
+            )
+        self.benchmark = benchmark
+        self.prefetch = prefetch
         if gradient_sync not in GRADIENT_SYNC:
             raise ValidationFailed(
                 f"gradient_sync must be one of {GRADIENT_SYNC}, got {gradient_sync!r}"
@@ -243,6 +251,10 @@ class Trainer:
             torch.backends.cudnn.benchmark = False
         rt = Runtime(self.accelerator, self.precision, self.gradient_sync).setup()
         self.runtime = rt
+        if rt.device.type == "cuda" and not self.deterministic:
+            # cuDNN times its algorithms for each new input shape and keeps the fastest. Faster
+            # for fixed shapes (the usual case); varying shapes pay the timing again each time.
+            torch.backends.cudnn.benchmark = self.benchmark is not False
         try:
             self._fit_loop(rt, model, train_dataloaders, val_dataloaders, _resume_path(ckpt_path))
         finally:
@@ -352,10 +364,9 @@ class Trainer:
             if self.limit_train_batches is not None:
                 n_batches = min(n_batches or self.limit_train_batches, self.limit_train_batches)
             val_every = self._val_every(n_batches) if val is not None else None
-            for batch_idx, batch in enumerate(train):
+            for batch_idx, batch in enumerate(rt.batches(train, prefetch=self.prefetch)):
                 if self.limit_train_batches is not None and batch_idx >= self.limit_train_batches:
                     break
-                batch = rt.to_device(batch)
                 model._gl_step_logs = {}
                 # Apply the optimizer every `accumulate` batches (and on the last one). On the
                 # other batches DDP skips its gradient all-reduce.
@@ -458,11 +469,11 @@ class Trainer:
         sums: dict[str, Any] = defaultdict(float)
         count = 0
         with torch.no_grad(), rt.autocast():
-            for batch_idx, batch in enumerate(loader):
+            for batch_idx, batch in enumerate(rt.batches(loader, prefetch=self.prefetch)):
                 if self.limit_val_batches is not None and batch_idx >= self.limit_val_batches:
                     break
                 model._gl_step_logs = {}
-                step_fn(rt.to_device(batch), batch_idx)
+                step_fn(batch, batch_idx)
                 for k, v in model._gl_step_logs.items():
                     sums[k] = sums[k] + v
                 count += 1
@@ -489,8 +500,8 @@ class Trainer:
             model.eval()
             with torch.no_grad(), rt.autocast():
                 loader = rt.dataloader(dataloaders, shuffle=False)
-                for batch_idx, batch in enumerate(loader):
-                    out.append(_to_cpu(model.predict_step(rt.to_device(batch), batch_idx)))
+                for batch_idx, batch in enumerate(rt.batches(loader, prefetch=self.prefetch)):
+                    out.append(_to_cpu(model.predict_step(batch, batch_idx)))
             return out
         finally:
             rt.teardown()

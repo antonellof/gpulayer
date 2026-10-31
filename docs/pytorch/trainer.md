@@ -84,6 +84,8 @@ dicts of tensors, before calling your step.
 | `fast_dev_run` | `False` | `True` or N: one epoch of N training and N validation batches, no checkpoints, to check the whole pipeline quickly |
 | `max_time` | `None` | stop after this many seconds of training; checked every step in one process, at the end of each epoch when distributed (so all processes stop together) |
 | `deterministic` | `False` | use deterministic algorithms (with `seed_everything(n)`, runs repeat exactly; usually slower) |
+| `benchmark` | `None` | cuDNN autotuning (`torch.backends.cudnn.benchmark`) on CUDA: on unless `deterministic`; `False` turns it off (useful when input shapes change every batch). Lightning leaves it off by default |
+| `prefetch` | `True` | on CUDA, pin the next batch and copy it to the GPU on a side stream while the current step runs; `False` copies each batch when it is used |
 | `enable_checkpointing` | `True` | save `checkpoints/last.ckpt` after every epoch |
 | `default_root_dir` | `"gpulayer_runs"` | where local checkpoints and downloaded job outputs go |
 | `launch_options` | `{}` | extra arguments for [`launch()`](launch.md), for example `{"env": {...}, "timeout_seconds": 3600}` |

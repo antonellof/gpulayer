@@ -1,4 +1,6 @@
-"""One training run: python bench.py {gl|pl} CASE STEPS [NODES]. Same model, data, optimizer.
+"""One training run: python bench.py {gl|gl-base|pl} CASE STEPS [NODES]. Same model, data,
+optimizer. gl-base is GPUlayer without device prefetch and cuDNN autotuning (prefetch=False,
+benchmark=False), to measure what those add.
 
 NODES (default 1) is for the multi-node cases, run by multinode.py: GPUlayer submits the job
 to the server in $GPULAYER_URL; Lightning is started on every node with torchrun."""
@@ -68,7 +70,7 @@ def step_loss(net, batch_):
     return nn.functional.cross_entropy(net(x), y)
 
 
-if fw == "gl":
+if fw in ("gl", "gl-base"):
     import gpulayer.pytorch as glt
 
     class M(glt.Module):
@@ -93,6 +95,7 @@ if fw == "gl":
         enable_checkpointing=False,
         log_every_n_steps=10_000,
         launch_options={"quiet": True} if devices * nodes > 1 else None,
+        **({"prefetch": False, "benchmark": False} if fw == "gl-base" else {}),
     )
 else:
     import lightning as L

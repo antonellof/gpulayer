@@ -20,6 +20,10 @@ before 1.0, minor versions may change public APIs, with migration notes here.
   several GPUs gets the set whose slowest link is fastest (an NVLink island, or GPUs behind one
   PCIe switch) instead of the lowest indices. Tested with recorded topology output; not yet run
   on a multi-GPU machine.
+- Trainer on CUDA: `prefetch=True` (default) pins the next batch and copies it on a side stream
+  while the current step runs; `benchmark=None` (default) turns on cuDNN autotuning unless
+  `deterministic=True`. `Runtime.batches(loader)` exposes the prefetch for custom loops.
+  Tested on CPU and MPS (unchanged results); the CUDA speed-up has not been measured yet.
 - Migration: the GCP adapter now reports `region="europe-west1"` and `zone="europe-west1-b"`
   (it used to put the zone in `region`). `placement.regions` matches either, so existing
   policies keep working.

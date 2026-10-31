@@ -51,6 +51,18 @@ def resolve_accelerator(accelerator: str = "auto") -> str:
     return accelerator
 
 
+def _record_stream(batch: Any, stream: Any) -> None:
+    if isinstance(batch, torch.Tensor):
+        if batch.device.type == "cuda":
+            batch.record_stream(stream)
+    elif isinstance(batch, (list, tuple)):
+        for b in batch:
+            _record_stream(b, stream)
+    elif isinstance(batch, dict):
+        for b in batch.values():
+            _record_stream(b, stream)
+
+
 def seed_everything(seed: int) -> None:
     import random
 
@@ -300,13 +312,50 @@ class Runtime:
             return batch  # DataLoader batches are already on the CPU
         return self._to_device(batch)
 
-    def _to_device(self, batch: Any) -> Any:
+    def batches(self, loader: Any, *, prefetch: bool = True) -> Iterator[Any]:
+        """Iterate ``loader`` with each batch on the device.
+
+        On CUDA (with ``prefetch``) the next batch is pinned and copied on a side stream while
+        the current step runs, so neither the copy nor the CPU work of loading the next batch
+        waits for the GPU. A copy from ordinary (pageable) memory with ``non_blocking=True``
+        does not overlap: it runs on the compute stream and the CPU waits for the previous
+        step's kernels before it can copy and load the next batch. Elsewhere this is
+        ``to_device`` per batch.
+        """
+        if not prefetch or self.device.type != "cuda":
+            for batch in loader:
+                yield self.to_device(batch)
+            return
+        stream = torch.cuda.Stream(self.device)
+        compute = torch.cuda.current_stream(self.device)
+        it = iter(loader)
+        end = object()
+
+        def load() -> Any:
+            try:
+                batch = next(it)
+            except StopIteration:
+                return end
+            with torch.cuda.stream(stream):
+                return self._to_device(batch, pin=True)
+
+        nxt = load()
+        while nxt is not end:
+            compute.wait_stream(stream)  # the copy of this batch is done before it is used
+            cur = nxt
+            _record_stream(cur, compute)  # memory from the side stream, used on this one
+            nxt = load()
+            yield cur
+
+    def _to_device(self, batch: Any, pin: bool = False) -> Any:
         if isinstance(batch, torch.Tensor):
+            if pin and batch.device.type == "cpu" and not batch.is_pinned():
+                batch = batch.pin_memory()
             return batch.to(self.device, non_blocking=True)
         if isinstance(batch, (list, tuple)):
-            return type(batch)(self._to_device(b) for b in batch)
+            return type(batch)(self._to_device(b, pin) for b in batch)
         if isinstance(batch, dict):
-            return {k: self._to_device(v) for k, v in batch.items()}
+            return {k: self._to_device(v, pin) for k, v in batch.items()}
         return batch
 
     # ------------------------------------------------------------- precision

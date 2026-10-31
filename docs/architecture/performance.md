@@ -84,7 +84,15 @@ The PyTorch `Trainer` avoids work that slows each step:
 - values passed to `self.log()` stay on the device and are read only when printed or at the
   end of an epoch, so the CPU does not wait for the GPU on every step;
 - `accumulate_grad_batches=N` applies the optimizer every N batches, and DDP exchanges
-  gradients only on those batches.
+  gradients only on those batches;
+- on CUDA, the next batch is pinned and copied to the GPU on a side stream while the current
+  step runs (`prefetch=True`). A `non_blocking` copy from ordinary memory runs on the compute
+  stream, so without this the CPU waits for each step's kernels before it can load and copy
+  the next batch;
+- cuDNN autotuning is on for CUDA unless `deterministic=True` (`benchmark=None`).
+
+The effect of the last two on CUDA has not been measured yet; `benchmarks/lightning_comparison`
+compares them (`TRAINERS="gl gl-base pl"`).
 
 How this compares with PyTorch Lightning on an NVIDIA T4 is in
 [Performance and comparison](../get-started/performance-and-comparison.md).
