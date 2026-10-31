@@ -1,139 +1,41 @@
 # Status and roadmap
 
-Repository-specific plan derived from `prompt.md`, `CLAUDE.md` and `architecture_plan.md`.
-Updated 2026-10-31 (v0.5.0 plus unreleased Trainer changes).
+## What works today
 
-## At a glance
+"Tested" means automated tests cover it. "Validated" means it ran on the real hardware or
+machines named. Everything else says what is missing.
 
 | Capability | Status |
 |---|---|
-| Local execution (SDK, CLI, Trainer), logs, results, artifacts, cancel, timeout | tested |
-| Capability-aware scheduling with per-worker reasons, gang scheduling | tested |
-| `gpulayer up` / `join` / `gl.connect`, TLS with a pinned certificate | tested (several processes, one host) |
-| Workers on separate physical machines | validated: 30 GCP workers in two regions (2026-10-30) |
-| Distributed DDP, 1 x 2 and 2 x 2 processes, gloo | tested on one host |
-| Distributed across machines, gloo | validated: up to 16 machines x 2 processes; DDP training on 8 machines 11.9% faster than Lightning |
-| NCCL across GPUs or machines | not validated yet (GPU quota of one) |
-| Apple MPS, independent jobs | hardware-validated |
-| NVIDIA CUDA execution | hardware-validated on a Tesla T4 (single GPU) |
-| AMD ROCm | detection only |
-| Two-level gradient sync with gloo (ADR-0020) | validated on 8 GCP machines x 4 processes (11.9% faster than Lightning under torchrun) |
-| Kubernetes: Helm chart (server StatefulSet, CPU and GPU worker pools) | tested in CI on kind: jobs and a distributed job across worker pods, upgrade, server restart; GPU worker pool not validated |
-| Container images | built and smoke-tested in CI; published to GitHub Container Registry with each release (slim and `-torch`; no CUDA image) |
-| JAX and CuPy GPU detection (reported only when they ran on the GPU) | tested; not yet run on a GPU |
-| Trainer FSDP (`strategy="fsdp"`) | experimental; tested on CPU, not validated on GPUs |
-| Topology-aware group placement (ADR-0021): zone, region, network group | tested (unit tests, simulated fleet); training speed-up not measured on machines |
-| Trainer CUDA input prefetch and cuDNN autotuning | hardware-validated on a Tesla T4: CNN step 1.16x faster, MLPs unchanged; 1.14 to 1.39x faster than Lightning |
-| Multi-GPU tasks get the best-connected GPUs (`nvidia-smi topo -m`) | tested with recorded topology output; not run on a multi-GPU machine (GPU quota of one) |
-| Long-running services (ADR-0019): replicas, `$PORT`, endpoints, restarts | tested on a local worker and on Kubernetes (kind); no load balancer |
-| Cloud provisioning through provider adapters | Google Cloud: validated with a CPU VM and a Spot T4 VM (create, join, run a CUDA training job, delete); other clouds: none yet; `FakeProvider` for tests |
-| Documentation site (`site/`) | builds as a static export |
+| Commands, Python functions and the PyTorch Trainer on this machine: logs, results, artifacts, cancel, timeout | tested |
+| Scheduling by requirements, with a reason for every rejected worker; distributed groups placed all at once | tested |
+| A server with workers on other machines (`gpulayer up`, `join`), TLS with a pinned certificate, named tokens | validated on 30 GCP machines in two regions |
+| Distributed PyTorch with gloo | validated on up to 16 machines; DDP training on 8 machines 11.9% faster than Lightning |
+| Distributed groups kept in one network group, zone or region | tested on a simulated fleet |
+| NVIDIA CUDA | validated on one Tesla T4, including the Trainer (1.14 to 1.39x faster per step than Lightning) |
+| Several GPUs per machine, NCCL, choosing the best-connected GPUs | implemented; GPU choice tested with recorded `nvidia-smi topo -m` output; not run on a multi-GPU machine |
+| Apple Silicon (PyTorch MPS, MLX) | validated on an M2 Pro |
+| AMD ROCm | detected, not run |
+| JAX and CuPy on NVIDIA GPUs | detection tested; not run on a GPU |
+| Trainer FSDP (`strategy="fsdp"`) | experimental; tested on CPU only |
+| Long-running services: replicas, `$PORT`, endpoints, restarts | tested on a local worker and on Kubernetes (kind); no load balancer |
+| Google Cloud provisioning | validated: a CPU VM and a Spot T4 created for a job, joined, ran it and were deleted |
+| Kubernetes Helm chart | tested in CI on kind (jobs, a distributed job, upgrade, server restart); GPU worker pool not run |
+| Container images on GitHub Container Registry | published with each release (slim and `-torch`; no CUDA image) |
+| Web dashboard, Prometheus metrics, Grafana dashboard | tested |
+| MCP server for AI agents | tested |
 
-## Milestone 2 (in progress): PyTorch and ease of use
+## Next
 
-| Item | Status |
-|---|---|
-| `gpulayer.pytorch`: `Module`, `Trainer`, `Runtime`, `launch()` (ADR-0014) | done, tested |
-| `@gl.remote` with `.run`, `.map`, `.options`, distributed functions | done, tested |
-| `gpulayer up`, `gpulayer join`, `gl.connect`, certificate pinning | done, tested |
-| Examples: regression, CNN, char-level transformer, custom loop, DDP script, sweep | done, run on Apple Silicon |
-| Documentation site (Next.js, Mermaid diagrams) | done |
-| Gradient accumulation (with DDP `no_sync`) | done, tested |
-| Event-driven dispatch: long-poll acquire and job waits, async log shipping (ADR-0016) | done, tested, benchmarked on one machine |
-| Web dashboard (jobs, logs, workers, activity charts), Prometheus `/metrics`, Grafana dashboard | done, tested; charts checked in a browser |
-| Worker telemetry: load, memory, task processes, NVIDIA GPU utilisation | done, tested (NVIDIA path not hardware-validated) |
-| Callbacks, `EarlyStopping`, `ModelCheckpoint` (consistent stop across DDP ranks) | done, tested |
-| Callbacks, sanity validation, `fast_dev_run`, `max_time`, gradient clipping by value, `deterministic` | done, tested (unreleased) |
-| Validation on NVIDIA hardware and across machines | done for one T4 and up to 16 machines with gloo; several GPUs and NCCL wait on GPU quota |
+- Several GPUs per machine and NCCL across machines, including the best-connected GPU choice.
+  Waiting on more GPU quota from Google Cloud.
+- FSDP and `torch.compile` on CUDA.
+- A second cloud provider.
+- A CUDA container image.
 
-## Milestone 1 steps (prompt.md §8)
+## Later
 
-| # | Step | Status | Notes |
-|---|---|---|---|
-| 1 | Contracts and runtime interfaces | done | `contracts/models.py`, API `gpulayer.dev/v1alpha1`, protocol `1` |
-| 2 | Local execution via SDK and CLI | done, tested | command + function jobs, logs, results, artifacts, cancel, timeout |
-| 3 | Worker registry and scheduler | done, tested | heartbeats, leases, deterministic explainable placement |
-| 4 | Remote-worker path | done, tested on one host | authenticated HTTP; separate process + state dir. Gap: no second-machine test |
-| 5 | Distributed foundation | done, beyond the planned scope | contracts, gang scheduling, ranks, rendezvous, fail-fast, and a real torchrun run (2 nodes × 2 procs, one host) |
-| 6 | NVIDIA foundation | done (unvalidated) | detection + hardware-gated smoke test; never run on NVIDIA hardware |
-| 7 | MPS discovery | done, hardware-validated | mocked CI tests + Apple Silicon smoke test |
-| 8 | Provider foundation | done, simulated | `ProviderAdapter`, `FakeProvider`, full provisioning lifecycle |
-| 9 | Docs and ADRs | done | `docs/`, 13 ADRs (licence and website stack still Proposed) |
-
-Definition of done (prompt.md §14): items 1 to 10 are met, with the classifications above.
-
-## Alignment with `architecture_plan.md`
-
-The plan was updated on 2026-10-31 to match the implementation: the job lifecycle
-(`queued → [provisioning] → scheduled → running → terminal`, with preparation and finalization as
-task events), the worker states actually produced (`registering` and `unhealthy` are defined
-but not produced yet), the flatter repository layout, and the open questions the ADRs have
-answered. `prompt.md` §9 now uses `--distributed --nodes N` with `--target local|remote|cloud`,
-since distributed is a workload type, not a target. The status vocabulary adds `implemented`
-(execution path exists, not hardware-validated) to CLAUDE.md §2.5, so CUDA paths are not
-labelled `tested` on the strength of mocks alone.
-
-Still open: shared database and object store for a multi-node control plane, isolation tiers,
-cost and placement policies for more providers, and recording the website stack in ADR-0013.
-
-## Known gaps, ordered for the next iterations
-
-### Iteration 2: harden what exists
-
-- Done: provider API calls run outside metadata transactions (intent, call, outcome).
-- Done: worker artifact reads scoped to their tasks; `admin` and `submitter` client roles.
-- Done: named, expiring, revocable tokens (`gpulayer token`); rate limiting of failed logins.
-- Done: provisioning retries on `CapacityUnavailable`, retried terminations, orphan sweep.
-- Done: retention and garbage collection (`gpulayer gc`, admin endpoint `POST /v1/admin/gc`).
-- Done: CLI flag `--gpu-memory-kind`; runtime profiles (`profile="pytorch-cuda"`,
-  `--profile mlx`) as a shorthand for accelerator and framework requirements.
-
-### Performance (ADR-0016), runs alongside the iterations
-
-- Done: long-poll dispatch and job waits, event-driven process exit, background log shipping,
-  no per-step device sync in the Trainer, bundles skip GPUlayer state. Idle-job latency
-  31 ms, burst throughput 87 jobs/s (one Mac).
-- Done: several tasks per worker, each with its own reserved GPUs (tested with simulated
-  multi-GPU workers and real concurrent CPU processes).
-- Done: per-rank log streams (every distributed log line carries its global rank).
-- Done: faster distributed start-up. The default `direct` launcher starts ranks without
-  torchrun: a 2 x 2 job takes 0.93 s, against about 2.1 s through torchrun (`benchmarks/distributed_startup.py`,
-  one Mac, CPU). GPUlayer itself adds under 0.01 s.
-- Done: two-level gradient sync for gloo (ADR-0020): 11.9% faster than Lightning on 8
-  machines x 4 processes.
-- Done: topology-aware group placement (ADR-0021): distributed groups prefer one network
-  group, then zone, then region; required with `group_locality`.
-- Done: multi-GPU tasks get the best-connected free GPUs on a machine.
-- Next: measure group placement on machines in two regions; validate the GPU choice on a
-  multi-GPU machine.
-  Validating FSDP and `torch.compile` needs CUDA hardware.
-
-### Distribution (ADR-0017)
-
-- Done: `install.sh` (curl one-liner, private virtualenv, uv or pip, no sudo; tested from a
-  local checkout with and without uv), `Dockerfile` (CPU or CUDA base, unprivileged user,
-  `/data` volume) and `deploy/docker/docker-compose.yml`. CI builds the image and runs a server,
-  a worker and a job across containers.
-- Done: Apache-2.0 licence (ADR-0012), public repository, PyPI releases through trusted
-  publishing (`pip install gpulayer`).
-- Done: images on GitHub Container Registry with each release (`<version>`, `<version>-torch`).
-- Done: Helm chart (`deploy/kubernetes/helm/gpulayer`), installed on kind in CI.
-- Next: a CUDA image, possibly a Homebrew formula.
-
-### Iteration 3: validate across machines
-
-- Done: workers on separate machines (30 GCP workers, two regions) and distributed gloo jobs on
-  up to 16 machines.
-- Done: `tests/hardware` on one Tesla T4; CUDA is hardware-validated for a single GPU.
-- Next: several GPUs per machine and NCCL across machines (blocked on GPU quota).
-
-### Iteration 4: first real cloud provider
-
-- Done: Google Cloud (Compute Engine) adapter (ADR-0010), validated with a CPU VM and a Spot T4
-  VM: create, join, run a CUDA training job, delete.
-- Next: a second provider.
-
-### Later
-
-- Shared database and object storage (multi-node control plane), push-based assignment,
-  container packaging, hosted control-plane design, isolation review for multi-tenant use.
+- A shared database and object storage, so the control plane can run on several machines.
+- A hosted control plane, and an isolation review before running jobs for people who do not
+  trust each other.
+- Container packaging for jobs.
