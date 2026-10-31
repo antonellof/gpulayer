@@ -36,7 +36,7 @@ step "test suite"
 run pytest -q -p no:cacheprovider
 
 step "CUDA hardware tests"
-run pytest -v -p no:cacheprovider -m hardware_cuda tests/hardware
+run pytest -v -p no:cacheprovider -m hardware_cuda tests  # every CUDA-marked test, wherever it lives
 
 step "CUDA checks"
 run python scripts/validate_cuda.py
