@@ -3,12 +3,15 @@ import {
   ArrowRight,
   Boxes,
   Check,
+  Cloud,
+  Container,
   FileCode2,
   Flame,
   Library,
   Minus,
   Network,
   ScrollText,
+  Server,
 } from "lucide-react";
 import { ArchitectureDiagram } from "@/components/landing/architecture-diagram";
 import { CopyCommand } from "@/components/landing/copy-command";
@@ -118,12 +121,27 @@ const FEATURES = [
   {
     icon: Boxes,
     title: "Any machine you can reach",
-    body: "Your laptop, servers that join with one command, cloud VMs. NVIDIA CUDA and Apple Metal.",
+    body: "Your laptop, servers that join with one command, and cloud VMs. NVIDIA CUDA and Apple Metal.",
   },
   {
     icon: Network,
     title: "Distributed when needed",
     body: "Worker groups are placed together, with ranks and rendezvous set up. Ranks start with the standard torchrun environment, without torchrun's start-up cost.",
+  },
+  {
+    icon: Cloud,
+    title: "Cloud GPUs per job",
+    body: "When no worker fits, GPUlayer can create a Google Cloud VM from offers you list, run the job there and delete the VM when it ends.",
+  },
+  {
+    icon: Server,
+    title: "Long-running services",
+    body: "Inference servers run as replicas on separate workers, each with a free $PORT and a reported endpoint, and restart when they exit. No load balancer yet.",
+  },
+  {
+    icon: Container,
+    title: "Kubernetes",
+    body: "A Helm chart runs the server and pools of CPU or NVIDIA GPU workers, using the images published to GitHub Container Registry with each release.",
   },
   {
     icon: ScrollText,
@@ -159,6 +177,11 @@ const COMPARISON: { situation: string; without: string; with: string }[] = [
     with: "`fn.map([...])` in parallel across free workers",
   },
   {
+    situation: "A cloud GPU for one job",
+    without: "create a VM, install drivers and code, copy results back, remember to delete it",
+    with: "`gpulayer submit --target cloud --provider gcp --accelerator cuda -- <cmd>`",
+  },
+  {
     situation: "Multi-node training",
     without: "torchrun on every node with matching ranks, address and port",
     with: "`Trainer(num_nodes=2, devices=4)`",
@@ -170,15 +193,23 @@ const STATUS: { label: string; dot: string; items: string }[] = [
     label: "Tested",
     dot: "bg-emerald-500",
     items:
-      "Local execution, SDK and CLI · scheduling · servers and workers over HTTPS (one host) · DDP, 2 nodes × 2 processes (one host) · MLX, NumPy and shell jobs",
+      "Local execution, SDK and CLI · scheduling · servers and workers over HTTPS · long-running services · Helm chart on Kubernetes (kind, in CI) · MLX, NumPy and shell jobs",
   },
-  { label: "Hardware-validated", dot: "bg-emerald-500", items: "Apple Metal (MPS) · NVIDIA CUDA on one GPU (Tesla T4) · workers on separate machines" },
-  { label: "Implemented, not validated", dot: "bg-amber-500", items: "Several GPUs per machine · NCCL across machines" },
-  { label: "Simulated", dot: "bg-amber-500", items: "Cloud provisioning (FakeProvider)" },
+  {
+    label: "Hardware-validated",
+    dot: "bg-emerald-500",
+    items:
+      "Apple Metal (MPS) · NVIDIA CUDA on one GPU (Tesla T4) · 30 workers on separate machines · distributed PyTorch with gloo on up to 16 machines · Google Cloud provisioning (a CPU VM and a Spot T4)",
+  },
+  {
+    label: "Implemented, not validated",
+    dot: "bg-amber-500",
+    items: "Several GPUs per machine · NCCL across machines · FSDP (experimental) · NVIDIA GPU workers on Kubernetes",
+  },
   {
     label: "Planned",
     dot: "bg-neutral-400",
-    items: "A real cloud provider · long-running services · hosted control plane",
+    items: "Other cloud providers · a load balancer for services · hosted control plane",
   },
 ];
 
@@ -398,8 +429,8 @@ export default function Home() {
               </table>
             </div>
             <p className="mt-6 max-w-3xl text-sm text-muted-foreground">
-              On a single machine with a single GPU, running your code directly is simpler. GPUlayer runs jobs that
-              finish (long-running services are planned) and is meant for people who trust each other.{" "}
+              On a single machine with a single GPU, running your code directly is simpler. Services run without a
+              load balancer, and GPUlayer is meant for people who trust each other.{" "}
               <Link href="/docs/#when-not-to-use-it" className="link-arrow">
                 When to use it
               </Link>

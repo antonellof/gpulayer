@@ -24,9 +24,10 @@ trainer.fit(model, train_loader)                                         # PyTor
 
 > **Status: v0.5.0.** Local execution, scheduling, the server and worker
 > protocol, and distributed jobs are implemented and tested on CPU and Apple Silicon, and
-> validated on an NVIDIA Tesla T4 and across two machines on Google Cloud. Several GPUs per
-> machine and NCCL across machines are not validated yet, and automatic cloud provisioning
-> covers Google Cloud only. See [Status and roadmap](project/status.md) and
+> validated on an NVIDIA Tesla T4 and across machines on Google Cloud (30 workers; distributed
+> PyTorch with gloo on up to 16 machines). Long-running services and a Helm chart for
+> Kubernetes are tested. Several GPUs per machine and NCCL across machines are not validated
+> yet, and automatic cloud provisioning covers Google Cloud only. See [Status and roadmap](project/status.md) and
 > [Performance and comparison](get-started/performance-and-comparison.md).
 
 ## Why GPUlayer
@@ -87,12 +88,14 @@ GPUlayer has three parts:
 - **The control plane** keeps the job queue, picks a worker for each job and records the
   reason when no worker fits ([Scheduling](architecture/scheduling.md)). It stores code
   bundles, inputs, outputs and logs, and checks tokens. For work on one machine it runs inside
-  your process; for several machines it runs as a server (`gpulayer up`).
+  your process; for several machines it runs as a server (`gpulayer up`, the Docker image, or
+  the [Helm chart](guides/kubernetes.md) on Kubernetes).
 - **Workers**, one per machine, report their GPUs and installed frameworks, ask the control
   plane for tasks, run them as normal processes (one per rank for
   [distributed jobs](architecture/distributed.md)), stream logs back and upload outputs.
   Workers open every connection themselves, so they can sit behind NAT. A cloud VM is a
-  worker that joined with `gpulayer join`.
+  worker that joined with `gpulayer join`, or one GPUlayer
+  [created for a job](guides/cloud-providers.md) and deletes when the job ends.
 
 A job goes from `queued` to `scheduled` when a worker fits, then `running`, and ends as
 `succeeded`, `failed`, `cancelled` or `timed_out`. Frameworks still decide how a computation
@@ -111,8 +114,8 @@ flow in detail.
 - **Untrusted users.** Workloads run as normal processes on workers, not in a sandbox. Use
   GPUlayer among people who trust each other.
 - **Validated scale today.** GPUlayer is at v0.5.0. It has been validated
-  on one NVIDIA GPU and on two machines; several GPUs per machine and NCCL across machines are
-  not validated yet, distributed jobs support PyTorch only, and automatic cloud provisioning covers Google Cloud only. Cloud VMs you start yourself can join
+  on one NVIDIA GPU and across up to 30 machines (CPU, gloo); several GPUs per machine and
+  NCCL across machines are not validated yet, distributed jobs support PyTorch only, and automatic cloud provisioning covers Google Cloud only. Cloud VMs you start yourself can join
   with `gpulayer join`.
 
 Two constraints: function arguments and results must be JSON, and code ships as files (the

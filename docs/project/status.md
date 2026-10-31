@@ -1,7 +1,7 @@
 # Status and roadmap
 
 Repository-specific plan derived from `prompt.md`, `CLAUDE.md` and `architecture_plan.md`.
-Updated 2026-10-29 at the end of the first iteration.
+Updated 2026-10-31 (v0.5.0 plus unreleased Trainer changes).
 
 ## At a glance
 
@@ -17,6 +17,11 @@ Updated 2026-10-29 at the end of the first iteration.
 | Apple MPS, independent jobs | hardware-validated |
 | NVIDIA CUDA execution | hardware-validated on a Tesla T4 (single GPU) |
 | AMD ROCm | detection only |
+| Two-level gradient sync with gloo (ADR-0020) | validated on 8 GCP machines x 4 processes (11.9% faster than Lightning under torchrun) |
+| Kubernetes: Helm chart (server StatefulSet, CPU and GPU worker pools) | tested in CI on kind: jobs and a distributed job across worker pods, upgrade, server restart; GPU worker pool not validated |
+| Container images | built and smoke-tested in CI; published to GitHub Container Registry with each release (slim and `-torch`; no CUDA image) |
+| JAX and CuPy GPU detection (reported only when they ran on the GPU) | tested; not yet run on a GPU |
+| Trainer FSDP (`strategy="fsdp"`) | experimental; tested on CPU, not validated on GPUs |
 | Long-running services (ADR-0019): replicas, `$PORT`, endpoints, restarts | tested on a local worker and on Kubernetes (kind); no load balancer |
 | Cloud provisioning through provider adapters | Google Cloud: validated with a CPU VM and a Spot T4 VM (create, join, run a CUDA training job, delete); other clouds: none yet; `FakeProvider` for tests |
 | Documentation site (`site/`) | builds as a static export |
@@ -35,7 +40,8 @@ Updated 2026-10-29 at the end of the first iteration.
 | Web dashboard (jobs, logs, workers, activity charts), Prometheus `/metrics`, Grafana dashboard | done, tested; charts checked in a browser |
 | Worker telemetry: load, memory, task processes, NVIDIA GPU utilisation | done, tested (NVIDIA path not hardware-validated) |
 | Callbacks, `EarlyStopping`, `ModelCheckpoint` (consistent stop across DDP ranks) | done, tested |
-| Validation on NVIDIA hardware and across machines | planned |
+| Callbacks, sanity validation, `fast_dev_run`, `max_time`, gradient clipping by value, `deterministic` | done, tested (unreleased) |
+| Validation on NVIDIA hardware and across machines | done for one T4 and up to 16 machines with gloo; several GPUs and NCCL wait on GPU quota |
 
 ## Milestone 1 steps (prompt.md §8)
 
@@ -104,29 +110,35 @@ uncommitted local changes, so it was deliberately left untouched.
 - Done: faster distributed start-up. The default `direct` launcher starts ranks without
   torchrun: a 2 x 2 job takes 0.93 s instead of about 2.1 s (`benchmarks/distributed_startup.py`,
   one Mac, CPU). GPUlayer itself adds under 0.01 s.
-- Next: topology-aware
-  group placement. FSDP and `torch.compile` need CUDA hardware.
+- Done: two-level gradient sync for gloo (ADR-0020): a DDP step on 8 machines x 4 processes
+  went from 117 to 102 ms.
+- Next: topology-aware group placement. Validating FSDP and `torch.compile` needs CUDA
+  hardware.
 
 ### Distribution (ADR-0017)
 
 - Done: `install.sh` (curl one-liner, private virtualenv, uv or pip, no sudo; tested from a
   local checkout with and without uv), `Dockerfile` (CPU or CUDA base, unprivileged user,
-  `/data` volume) and `deploy/docker/docker-compose.yml`. The image has not been built in CI.
+  `/data` volume) and `deploy/docker/docker-compose.yml`. CI builds the image and runs a server,
+  a worker and a job across containers.
 - Done: Apache-2.0 licence (ADR-0012), public repository, PyPI releases through trusted
   publishing (`pip install gpulayer`).
-- Next: published images on GitHub Container Registry, possibly a Homebrew formula.
+- Done: images on GitHub Container Registry with each release (`<version>`, `<version>-torch`).
+- Done: Helm chart (`deploy/kubernetes/helm/gpulayer`), installed on kind in CI.
+- Next: a CUDA image, possibly a Homebrew formula.
 
 ### Iteration 3: validate across machines
 
-- A two-machine remote-worker test (documented environment), then multi-machine torchrun with
-  `--advertise-address` and interface selection.
-- Run `tests/hardware` on an NVIDIA host (single GPU, then NCCL multi-GPU), and promote CUDA
-  from `implemented` to `hardware-validated` only after it passes.
+- Done: workers on separate machines (30 GCP workers, two regions) and distributed gloo jobs on
+  up to 16 machines.
+- Done: `tests/hardware` on one Tesla T4; CUDA is hardware-validated for a single GPU.
+- Next: several GPUs per machine and NCCL across machines (blocked on GPU quota).
 
-### Iteration 4: first real cloud provider (needs an ADR-0010 decision)
+### Iteration 4: first real cloud provider
 
-- Choose a provider using the ADR's criteria. Implement offers, pricing source, provisioning
-  with bootstrap via user-data, cleanup, and failure tests against a real test account.
+- Done: Google Cloud (Compute Engine) adapter (ADR-0010), validated with a CPU VM and a Spot T4
+  VM: create, join, run a CUDA training job, delete.
+- Next: a second provider.
 
 ### Later
 

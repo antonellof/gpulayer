@@ -75,7 +75,20 @@ Notes:
 - Apple GPUs are not available inside Docker on macOS. Run Mac workers natively.
 - Distributed jobs need the workers to reach each other on the rendezvous port; use host
   networking or a shared Docker network, and set `--advertise-address`.
-- Images are built locally for now. Published images (GitHub Container Registry) are planned.
+- Each release also publishes images to GitHub Container Registry:
+  `ghcr.io/antonellof/gpulayer:<version>` (slim) and `:<version>-torch` (with CPU PyTorch).
+  CUDA images are not published; build them with the command above.
+
+## On Kubernetes
+
+The Helm chart runs a server and pools of CPU or NVIDIA GPU workers from the published images:
+
+```bash
+git clone https://github.com/antonellof/gpulayer && cd gpulayer
+helm install gpulayer deploy/kubernetes/helm/gpulayer --namespace gpulayer --create-namespace
+```
+
+See [Kubernetes](../guides/kubernetes.md) for values, GPU workers and connecting from a laptop.
 
 ## From source
 
