@@ -91,8 +91,11 @@ The PyTorch `Trainer` avoids work that slows each step:
   the next batch;
 - cuDNN autotuning is on for CUDA unless `deterministic=True` (`benchmark=None`).
 
-The effect of the last two on CUDA has not been measured yet; `benchmarks/lightning_comparison`
-compares them (`TRAINERS="gl gl-base pl"`).
+On a Tesla T4 the last two made a compute-bound CNN 1.16x faster per step (12.67 to
+10.93 ms; autotuning about 9%, the copy-ahead about 5%) and made no difference beyond
+run-to-run variation on small MLPs. `benchmarks/lightning_comparison` measures them with
+`TRAINERS="gl gl-base gl-noprefetch gl-nobench pl"`; logs in
+`benchmarks/results/2026-10-31-gcp-t4/`.
 
 How this compares with PyTorch Lightning on an NVIDIA T4 is in
 [Performance and comparison](../get-started/performance-and-comparison.md).

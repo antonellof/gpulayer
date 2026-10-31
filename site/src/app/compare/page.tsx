@@ -263,11 +263,11 @@ const NOTES: Note[] = [
 ];
 
 // Measured with the same model, data, optimizer and torch version in both trainers; see the
-// method note under the table. Filled from the benchmark run of 2026-10-29.
+// method note under the table. Tesla T4 run of 2026-10-31; the DDP CPU row is from 2026-10-30.
 const PERF_ROWS: { case: string; gl: number; pl: number; glOver: number; plOver: number }[] = [
-  { case: "MLP, fp32, batch 256", gl: 3.93, pl: 5.41, glOver: 4.83, plOver: 5.39 },
-  { case: "MLP, fp16 mixed precision", gl: 5.04, pl: 6.54, glOver: 5.11, plOver: 5.8 },
-  { case: "CNN, fp16 mixed precision, batch 128", gl: 12.18, pl: 12.27, glOver: 5.19, plOver: 5.74 },
+  { case: "MLP, fp32, batch 256", gl: 4.06, pl: 5.64, glOver: 4.77, plOver: 5.31 },
+  { case: "MLP, fp16 mixed precision", gl: 5.0, pl: 6.25, glOver: 4.82, plOver: 5.55 },
+  { case: "CNN, fp16 mixed precision, batch 128", gl: 10.82, pl: 12.33, glOver: 5.65, plOver: 5.74 },
   { case: "DDP, 2 CPU processes", gl: 3.39, pl: 7.46, glOver: 9.25, plOver: 9.01 },
 ];
 

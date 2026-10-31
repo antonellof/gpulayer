@@ -122,8 +122,8 @@ optimizer:
 ![Training step time: GPUlayer and PyTorch Lightning](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/perf/training-step-light.svg#gh-light-mode-only)
 ![Training step time: GPUlayer and PyTorch Lightning](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/perf/training-step-dark.svg#gh-dark-mode-only)
 
-- GPUlayer's Trainer is 1.3 to 1.4x faster per step on small models and the same on a
-  compute-bound CNN, and starts about 0.6 s sooner.
+- GPUlayer's Trainer is 1.25 to 1.39x faster per step on small models and 1.14x on a
+  compute-bound CNN, and starts 0.1 to 0.7 s sooner.
 - One training job across machines on CPUs (gloo): GPUlayer trains 11.9% faster than
   Lightning under torchrun on 8 machines (50.5 s vs 57.3 s; 5.3% on 4, 1.6% on 2), and it
   starts every machine from one `Trainer(num_nodes=N)` call.

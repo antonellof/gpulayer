@@ -27,6 +27,7 @@ python benchmarks/http_requests.py
 
 uv pip install lightning==2.6.6
 cd benchmarks/lightning_comparison && python run.py mlp-fp32 cnn-fp16   # CUDA cases
+TRAINERS="gl gl-base pl" python run.py cnn-fp16                         # also without prefetch and autotuning
 python run.py ddp-cpu-2                                                   # CPU only
 ```
 
@@ -78,6 +79,8 @@ Notes:
 | `results/2026-10-30-gcp-fleet/` | 30 workers: distributed jobs on 16 machines, fail-fast, worker loss, throughput |
 | `results/2026-10-30-gcp-9vm/` | 9 VMs: strong scaling against Lightning (pinned and unpinned), 2,000-job bursts |
 | `results/2026-10-30-gcp-two-level/` | 9 VMs: per-step profile on 8 x 4 processes, and strong scaling against Lightning with two-level gradient sync |
+| `results/2026-10-31-placement/` | one Mac: cost of placing a distributed group and of choosing GPUs by interconnect, and the zones a group spans |
+| `results/2026-10-31-gcp-t4/` | Tesla T4: validation, Lightning comparison with device prefetch and cuDNN autotuning (and a run with each turned off), `nvidia-smi`, package versions |
 | `results/2026-10-30-gcp-provider/` | Google Cloud adapter: CPU VM created, joined, ran a job, deleted |
 | `results/2026-10-30-gcp-provider-t4/` | Google Cloud adapter: Spot T4 VM created, ran `Trainer` on CUDA, deleted |
 

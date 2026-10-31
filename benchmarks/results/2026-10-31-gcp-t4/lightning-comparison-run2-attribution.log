@@ -1,0 +1,11 @@
+case       trainer   ms/step start-up s
+mlp-fp32   gl           4.32       4.65
+mlp-fp32   gl-noprefetch     4.20       4.70
+mlp-fp32   gl-nobench     4.24       4.74
+mlp-fp32   gl-base      4.16       4.87
+mlp-fp32   gl vs gl-base  x0.96
+cnn-fp16   gl          10.93       5.85
+cnn-fp16   gl-noprefetch    11.53       5.73
+cnn-fp16   gl-nobench    12.10       5.54
+cnn-fp16   gl-base     12.67       5.50
+cnn-fp16   gl vs gl-base  x1.16

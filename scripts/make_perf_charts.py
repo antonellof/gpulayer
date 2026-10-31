@@ -20,6 +20,7 @@ OUT = ROOT / "docs" / "assets" / "perf"
 DEFAULT = [
     ROOT / "benchmarks" / "results" / "2026-10-30-gcp" / "summary.json",
     ROOT / "benchmarks" / "results" / "2026-10-30-gcp-two-level" / "summary.json",
+    ROOT / "benchmarks" / "results" / "2026-10-31-gcp-t4" / "summary.json",
 ]
 
 THEMES = {

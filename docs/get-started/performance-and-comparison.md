@@ -15,28 +15,33 @@ Lightning's `Trainer` on one Tesla T4.
 
 | Case (Tesla T4) | GPUlayer, ms per step | Lightning, ms per step | Result |
 |---|---|---|---|
-| MLP, fp32, batch 256 | 3.93 | 5.41 | GPUlayer 1.38x faster |
-| MLP, fp16 mixed precision | 5.04 | 6.54 | GPUlayer 1.30x faster |
-| CNN, fp16 mixed precision, batch 128 | 12.18 | 12.27 | about the same |
-| DDP, 2 CPU processes | 3.39 | 7.46 | GPUlayer 2.20x faster |
+| MLP, fp32, batch 256 | 4.06 | 5.64 | GPUlayer 1.39x faster |
+| MLP, fp16 mixed precision | 5.00 | 6.25 | GPUlayer 1.25x faster |
+| CNN, fp16 mixed precision, batch 128 | 10.82 | 12.33 | GPUlayer 1.14x faster |
+| DDP, 2 CPU processes (2026-10-30 run) | 3.39 | 7.46 | GPUlayer 2.20x faster |
 
 - **Small models** (the MLPs) take a few milliseconds per step, so the trainer's own work per
   step matters. GPUlayer's loop does less of it, for example it does not wait for the GPU when
   a loss is logged.
-- **The CNN** is dominated by GPU compute, and both trainers come out the same. Expect the
-  same for most large models.
+- **The CNN** is dominated by GPU compute. GPUlayer turns on cuDNN autotuning by default
+  (Lightning leaves it off) and copies the next batch to the GPU while the current step runs.
+  Turning these off in the same session measured 12.67 ms per step (both off), 11.53 ms
+  (autotuning only), 12.10 ms (copy-ahead only) and 10.93 ms (both). On the MLPs they made no
+  difference beyond run-to-run variation (4.16 to 4.32 ms per step across the four
+  variants). Logs: `benchmarks/results/2026-10-31-gcp-t4/`.
 - **DDP on CPU** runs with each trainer's defaults. GPUlayer gives each process one CPU thread;
   Lightning leaves PyTorch's default, so its two processes compete for the 8 vCPUs. Much of
   the difference likely comes from that, not from the training loop.
 
 ![Start-up time: GPUlayer and PyTorch Lightning](../assets/perf/startup-light.svg)
 
-Start-up is Python start, imports and the fixed cost inside `fit()`. GPUlayer starts 0.55 to
+Start-up is Python start, imports and the fixed cost inside `fit()`. GPUlayer starts 0.1 to
 0.7 s sooner on one GPU, and 0.24 s later for DDP, where the job is packaged and scheduled
 first.
 
-**Method.** GCP `n1-standard-8` with one Tesla T4 (driver 580), Ubuntu 22.04, Python 3.12,
-torch 2.15.0 with CUDA 13.2, Lightning 2.6.6. SGD with momentum and one logged loss per step;
+**Method.** GCP `n1-standard-8` with one Tesla T4 (driver 580, Spot VM), Ubuntu 22.04,
+Python 3.12, torch 2.15.0 with CUDA 13.2, Lightning 2.6.6, run on 2026-10-31 (the DDP row on
+2026-10-30). SGD with momentum and one logged loss per step;
 Lightning runs without logger, progress bar, model summary or checkpoints, GPUlayer without
 checkpoints. Each case runs 100 and 600 steps, three times each in fresh processes, one run
 at a time with nothing else on the GPU. Milliseconds per step is the difference of the median

@@ -284,7 +284,7 @@ export default function Home() {
               and the results come back.
             </p>
             <p className="mt-4 max-w-2xl text-sm text-muted-foreground">
-              Its PyTorch Trainer ran up to 1.38x faster per step than PyTorch Lightning on an NVIDIA T4, and trained
+              Its PyTorch Trainer ran 1.14 to 1.39x faster per step than PyTorch Lightning on an NVIDIA T4, and trained
               11.9% faster on 8 machines (CPU, gloo).{" "}
               <Link href="/docs/get-started/performance-and-comparison/" className="link-arrow">
                 Benchmarks and method <ArrowRight className="h-3 w-3" />

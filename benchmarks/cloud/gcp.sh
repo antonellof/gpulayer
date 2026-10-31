@@ -10,7 +10,7 @@
 #   benchmarks/cloud/gcp.sh cpu-up gl-cpu [e2-standard-8]
 #   benchmarks/cloud/gcp.sh push gl-gpu                  # copy this checkout, install
 #   benchmarks/cloud/gcp.sh validate gl-gpu              # scripts/validate_gpu.sh
-#   benchmarks/cloud/gcp.sh compare gl-gpu               # GPUlayer vs PyTorch Lightning
+#   benchmarks/cloud/gcp.sh compare gl-gpu [cases...]    # GPUlayer vs PyTorch Lightning
 #   benchmarks/cloud/gcp.sh cluster gl-gpu gl-cpu        # server on the first, workers on all
 #   benchmarks/cloud/gcp.sh multi gl-gpu                 # benchmarks/multi_machine.py
 #   benchmarks/cloud/gcp.sh fetch gl-gpu benchmarks/results/<date>-gcp/
@@ -88,11 +88,12 @@ case "$cmd" in
     on "$1" 'cd gpulayer && n=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader | wc -l);
       [ "$n" = 0 ] || { echo "GPU busy; not starting a timed run"; exit 1; };
       bash scripts/validate_gpu.sh > validate_gpu.log 2>&1; tail -3 validate_gpu.log' ;;
-  compare)
-    on "$1" 'cd gpulayer && n=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader | wc -l);
+  compare)  # compare VM [cases...]; TRAINERS="gl gl-base pl" also measures gl-base
+    vm=$1; shift
+    on "$vm" 'cd gpulayer && n=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader | wc -l);
       [ "$n" = 0 ] || { echo "GPU busy; not starting a timed run"; exit 1; };
       export PATH=$HOME/.local/bin:$PATH; uv pip install -q --python .venv-validate/bin/python "lightning==2.6.6";
-      cd benchmarks/lightning_comparison && ../../.venv-validate/bin/python run.py > ../../lightning-comparison.log 2>&1;
+      cd benchmarks/lightning_comparison && TRAINERS="'"${TRAINERS:-gl pl}"'" ../../.venv-validate/bin/python run.py '"$*"' > ../../lightning-comparison.log 2>&1;
       cat ../../lightning-comparison.log' ;;
   cluster)
     server=$1; shift

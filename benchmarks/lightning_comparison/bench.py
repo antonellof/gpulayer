@@ -1,6 +1,6 @@
-"""One training run: python bench.py {gl|gl-base|pl} CASE STEPS [NODES]. Same model, data,
-optimizer. gl-base is GPUlayer without device prefetch and cuDNN autotuning (prefetch=False,
-benchmark=False), to measure what those add.
+"""One training run: python bench.py {gl|gl-base|gl-noprefetch|gl-nobench|pl} CASE STEPS [NODES].
+Same model, data, optimizer. The gl-* variants turn off device prefetch and/or cuDNN autotuning
+(gl-base: both; gl-noprefetch: prefetch=False; gl-nobench: benchmark=False).
 
 NODES (default 1) is for the multi-node cases, run by multinode.py: GPUlayer submits the job
 to the server in $GPULAYER_URL; Lightning is started on every node with torchrun."""
@@ -70,7 +70,14 @@ def step_loss(net, batch_):
     return nn.functional.cross_entropy(net(x), y)
 
 
-if fw in ("gl", "gl-base"):
+VARIANTS = {
+    "gl": {},
+    "gl-base": {"prefetch": False, "benchmark": False},
+    "gl-noprefetch": {"prefetch": False},
+    "gl-nobench": {"benchmark": False},
+}
+
+if fw in VARIANTS:
     import gpulayer.pytorch as glt
 
     class M(glt.Module):
@@ -95,7 +102,7 @@ if fw in ("gl", "gl-base"):
         enable_checkpointing=False,
         log_every_n_steps=10_000,
         launch_options={"quiet": True} if devices * nodes > 1 else None,
-        **({"prefetch": False, "benchmark": False} if fw == "gl-base" else {}),
+        **VARIANTS[fw],
     )
 else:
     import lightning as L

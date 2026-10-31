@@ -1,0 +1,117 @@
+
+==== hardware and software
+name, memory.total [MiB], driver_version, compute_cap
+Tesla T4, 15360 MiB, 580.178.04, 7.5
+	[4mGPU0	CPU Affinity	NUMA Affinity	GPU NUMA ID[0m
+GPU0	 X 	0-7	0		N/A
+
+Legend:
+
+  X    = Self
+  SYS  = Connection traversing PCIe as well as the SMP interconnect between NUMA nodes (e.g., QPI/UPI)
+  NODE = Connection traversing PCIe as well as the interconnect between PCIe Host Bridges within a NUMA node
+  PHB  = Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)
+  PXB  = Connection traversing multiple PCIe bridges (without traversing the PCIe Host Bridge)
+  PIX  = Connection traversing at most a single PCIe bridge
+  NV#  = Connection traversing a bonded set of # NVLinks
+Linux 6.8.0-1070-gcp x86_64
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+8
+               total        used        free      shared  buff/cache   available
+Mem:              29           0          22           0           6          28
+
+==== install
+downloading uv 0.13.6 x86_64-unknown-linux-gnu
+installing to /home/user/.local/bin
+  uv
+  uvx
+everything's installed!
+error: Failed to create virtual environment
+  cause: A virtual environment already exists at: .venv-validate
+
+hint: Use the `--clear` flag or set `UV_VENV_CLEAR=1` to replace the existing virtual environment
+torch 2.15.0+cu132 cuda 13.2 available True devices 1
+gpulayer 0.5.0
+
+==== gpulayer resources detect
+host      gl-t4 (linux/x86_64), 8 cores, 29.37 GB RAM, python 3.12.16
+torch     2.15.0  distributed backends: gloo,nccl
+device    [0] cuda Tesla T4 (15.0 GB dedicated) independent=hardware-validated distributed=implemented
+
+==== test suite
+.....s.................................................................. [ 29%]
+..........s............................................................. [ 59%]
+........................................................................ [ 88%]
+...........................                                              [100%]
+241 passed, 2 skipped in 221.42s (0:03:41)
+
+==== CUDA hardware tests
+============================= test session starts ==============================
+platform linux -- Python 3.12.16, pytest-9.2.0, pluggy-1.7.0 -- /home/user/gpulayer/.venv-validate/bin/python
+rootdir: /home/user/gpulayer
+configfile: pyproject.toml
+collecting ... collected 2 items / 1 deselected / 1 selected
+
+tests/hardware/test_gpu_smoke.py::test_cuda_independent_job PASSED       [100%]
+
+======================= 1 passed, 1 deselected in 7.24s ========================
+
+==== CUDA checks
+CHECK detect-cuda PASS Tesla T4 15.0 GB cc7.5 (2.3s)
+[gpulayer] training on cuda, precision 32-true, 3 epoch(s)
+epoch 0 step 50 train_loss=0.0118
+epoch 0 done in 0.365s: train_loss=0.1113 val_loss=0.0084
+epoch 1 step 100 train_loss=0.0067
+epoch 1 done in 0.175s: train_loss=0.0065 val_loss=0.0057
+epoch 2 step 150 train_loss=0.0033
+epoch 2 done in 0.176s: train_loss=0.0037 val_loss=0.0045
+CHECK trainer-in-process-32-true PASS val_loss 0.0045, 3 epochs 2.67s (2.7s)
+[gpulayer] training on cuda, precision bf16-mixed, 3 epoch(s)
+epoch 0 step 50 train_loss=0.0121
+epoch 0 done in 0.205s: train_loss=0.1003 val_loss=0.0099
+epoch 1 step 100 train_loss=0.0058
+epoch 1 done in 0.187s: train_loss=0.0066 val_loss=0.0066
+epoch 2 step 150 train_loss=0.0034
+epoch 2 done in 0.189s: train_loss=0.0038 val_loss=0.0053
+CHECK trainer-in-process-bf16-mixed PASS val_loss 0.0053, 3 epochs 0.63s (0.7s)
+[gpulayer] training on cuda, precision 16-mixed, 3 epoch(s)
+epoch 0 step 50 train_loss=0.0115
+epoch 0 done in 0.267s: train_loss=0.1095 val_loss=0.0090
+epoch 1 step 100 train_loss=0.0051
+epoch 1 done in 0.209s: train_loss=0.0063 val_loss=0.0065
+epoch 2 step 150 train_loss=0.0035
+epoch 2 done in 0.206s: train_loss=0.0036 val_loss=0.0046
+CHECK trainer-in-process-16-mixed PASS val_loss 0.0046, 3 epochs 0.80s (0.8s)
+[gpulayer] training on cuda, precision bf16-mixed, 3 epoch(s)
+/home/user/gpulayer/.venv-validate/lib/python3.12/site-packages/torch/_inductor/compile_fx.py:3634: UserWarning: Tesla T4 does not support bfloat16 compilation natively, skipping
+  warnings.warn(
+epoch 0 step 50 train_loss=0.0116
+epoch 0 done in 0.203s: train_loss=0.1080 val_loss=0.0090
+epoch 1 step 100 train_loss=0.0056
+epoch 1 done in 0.202s: train_loss=0.0064 val_loss=0.0061
+epoch 2 step 150 train_loss=0.0033
+epoch 2 done in 0.2s: train_loss=0.0036 val_loss=0.0049
+CHECK trainer-torch-compile-bf16 PASS val_loss 0.0049, 3 epochs 3.85s (7.4s)
+CHECK cuda-job-gets-its-reserved-gpu PASS CVD 0 1 Tesla T4 (4.4s)
+CHECK one-gpu-worker-runs-gpu-jobs-one-at-a-time PASS gap 0.02s (8.2s)
+CHECK trainer-as-gpulayer-job-cuda PASS succeeded (9.9s)
+SUMMARY 8/8 passed 
+
+==== benchmarks
+jobs=20 workers=1
+python start-up               16.3 ms
+one job, idle worker       p50    22.2 ms   p95    23.1 ms   (submit -> wait() returns)
+burst of jobs:
+submit -> started          p50   208.5 ms   p95   384.5 ms
+submit -> client sees done p50   229.6 ms   p95   404.5 ms
+throughput                   44.8 jobs/s
+2 node(s) x 2 process(es), seconds
+direct    dispatch  0.00  launcher start  0.05  import torch  1.70  init group  0.06  launcher exit  0.72  completion  0.00  total  2.54
+direct    dispatch  0.00  launcher start  0.05  import torch  1.72  init group  0.04  launcher exit  0.64  completion  0.00  total  2.46
+direct    dispatch  0.00  launcher start  0.05  import torch  1.73  init group  0.51  launcher exit  0.66  completion  0.00  total  2.95
+torchrun  dispatch  0.00  launcher start  2.52  import torch  1.73  init group  0.03  launcher exit  1.41  completion  0.00  total  5.70
+torchrun  dispatch  0.00  launcher start  2.12  import torch  1.77  init group  0.01  launcher exit  1.44  completion  0.00  total  5.35
+torchrun  dispatch  0.00  launcher start  2.06  import torch  1.73  init group  0.03  launcher exit  1.44  completion  0.00  total  5.26
+
+==== done
+ALL STEPS PASSED
