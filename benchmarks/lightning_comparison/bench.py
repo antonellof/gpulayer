@@ -1,6 +1,7 @@
 """One training run: python bench.py {gl|gl-base|gl-noprefetch|gl-nobench|pl} CASE STEPS [NODES].
 Same model, data, optimizer. The gl-* variants turn off device prefetch and/or cuDNN autotuning
-(gl-base: both; gl-noprefetch: prefetch=False; gl-nobench: benchmark=False).
+(gl-base: both off; gl-noprefetch: prefetch=False; gl-prefetch: prefetch=True;
+gl-nobench: benchmark=False).
 
 NODES (default 1) is for the multi-node cases, run by multinode.py: GPUlayer submits the job
 to the server in $GPULAYER_URL; Lightning is started on every node with torchrun."""
@@ -25,6 +26,10 @@ CASES = {
     "ddp-cpu-2": ("mlp-small", 64, "cpu", 2, "32"),
     "ddp-nodes": ("mlp-small", 64, "cpu", 2, "32"),
     "ddp-nodes-big": ("mlp", 64, "cpu", 2, "32"),
+    # Several GPUs in one machine, DDP over NCCL; the batch is per GPU, so each step trains on
+    # batch x GPUs samples (weak scaling).
+    **{f"cnn-gpu{g}": ("cnn", 128, "cuda", g, "16-mixed") for g in (1, 2, 4, 8)},
+    **{f"mlp-gpu{g}": ("mlp", 256, "cuda", g, "32") for g in (1, 2, 4, 8)},
 }
 kind, batch, accel, devices, precision = CASES[case]
 
@@ -74,6 +79,7 @@ VARIANTS = {
     "gl": {},
     "gl-base": {"prefetch": False, "benchmark": False},
     "gl-noprefetch": {"prefetch": False},
+    "gl-prefetch": {"prefetch": True},
     "gl-nobench": {"benchmark": False},
 }
 

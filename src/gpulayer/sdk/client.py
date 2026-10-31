@@ -232,10 +232,21 @@ class Client:
             from gpulayer.worker.channel import EmbeddedChannel
 
             if self._local_caps is None:
+                from gpulayer.gpu.discovery import probe_torch_in_process
+
+                # Jobs run with this interpreter and torch is already loaded here (a Trainer or
+                # launch() script): read torch in-process instead of importing it again.
+                same_python = os.path.realpath(self._worker_python) == os.path.realpath(
+                    sys.executable
+                )
                 self._local_caps = detect_capabilities(
                     origin=WorkerOrigin.LOCAL,
                     advertise_address="127.0.0.1",
                     runner=_python_runner(self._worker_python),
+                    torch_probe=probe_torch_in_process
+                    if same_python and "torch" in sys.modules
+                    else None,
+                    location_probe=None,  # one machine: placement locality does not apply
                 )
             while len(self._local) < n:
                 name = f"local-{os.getpid()}-{len(self._local)}"

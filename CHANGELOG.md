@@ -5,6 +5,11 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Faster start for the Trainer and `launch()` on one machine: the local worker reads torch's
+  details in the launching process, which already imported it, instead of starting Python and
+  importing torch again (0.69 s to 0.01 s on an M2 Pro; seconds on a GPU machine).
+- Trainer `prefetch` now defaults to `False` and runs in a background thread when turned on.
+  Measured on an RTX 3070: a CNN 5% faster with it, an MLP 36% slower, so it is opt-in.
 - Workers report a `torch.compile` capability only when a C compiler is present; a job that
   asks for it is not placed on a worker without one, and the reason says so. Found on rented
   GPU containers, which often have no compiler: `torch.compile` failed mid-run with an

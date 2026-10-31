@@ -10,6 +10,9 @@
 #                                                      # validate_multigpu.py with 2+ GPUs)
 #   benchmarks/cloud/vast.sh fetch gl-gpu benchmarks/results/<date>-vast/
 #   benchmarks/cloud/vast.sh down gl-gpu               # destroy the instance (billing stops)
+#   benchmarks/cloud/vast.sh clusters                  # physical clusters with 2+ offers
+#   benchmarks/cloud/vast.sh overlay 46 glnet          # private network in cluster 46, then
+#   GL_VAST_NET=glnet vast.sh up gl-a OFFER            # instances on it reach each other (NCCL)
 #
 # Instances run the nvidia/cuda Ubuntu image; validate_gpu.sh installs Python and PyTorch with
 # uv. PyTorch's default wheels need a host driver for CUDA 13 and a Turing or newer GPU
@@ -45,7 +48,10 @@ for o in json.load(sys.stdin)[:15]:
           f\"cuda {o.get('cuda_max_good')}  cpu {o.get('cpu_name','')[:28]:<28} {o.get('geolocation','')}\")" ;;
   up)
     name=$1 offer=$2
+    # GL_VAST_NET: an overlay network (same physical cluster) so instances reach each other on
+    # all ports, which NCCL across machines needs. Create it with `vast.sh overlay CLUSTER NAME`.
     vastai create instance "$offer" --image "$IMAGE" --disk 60 --ssh --direct --label "$name" --raw \
+      ${GL_VAST_NET:+--env "-n $GL_VAST_NET"} \
       --onstart-cmd 'apt-get update -qq && apt-get install -y -qq curl ca-certificates >/dev/null' |
       python3 -c "import json,sys; print('instance', json.load(sys.stdin).get('new_contract'))"  # no API key
     for _ in $(seq 1 60); do
@@ -56,6 +62,24 @@ print(next((i.get('actual_status') or '' for i in json.load(sys.stdin) if i.get(
     done
     for _ in $(seq 1 30); do on "$name" 'command -v curl >/dev/null && nvidia-smi -L' 2>/dev/null && exit 0; sleep 10; done
     echo "instance $name not reachable over ssh" >&2; exit 1 ;;
+  overlay)  # overlay CLUSTER_ID NAME: private network for instances in one physical cluster
+    python3 - "$1" "$2" <<'PY'
+import json, os, sys, urllib.request
+key = next(open(os.path.expanduser(p)).read().strip()
+           for p in ("~/.config/vastai/vast_api_key", "~/.vast_api_key") if os.path.exists(os.path.expanduser(p)))
+req = urllib.request.Request("https://console.vast.ai/api/v0/overlay/", method="POST",
+    data=json.dumps({"cluster_id": int(sys.argv[1]), "name": sys.argv[2]}).encode(),
+    headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
+print(urllib.request.urlopen(req, timeout=30).read().decode())
+PY
+    ;;
+  clusters)  # clusters with 2+ suitable offers, for multi-machine runs
+    vastai search offers --raw 'cluster_id!=None compute_cap>=750 cuda_vers>=13.0 rentable=true reliability>0.97' | python3 -c "
+import json,sys,collections
+c=collections.defaultdict(list)
+for o in json.load(sys.stdin): c[o.get('cluster_id')].append(o)
+for k,v in sorted(c.items(),key=lambda kv:min(o['dph_total'] for o in kv[1])):
+    if len(v)>=2: print(k, len(v), 'offers from', round(min(o['dph_total'] for o in v),2), '\$/h', v[0].get('geolocation'))" ;;
   push)
     vm=$1 tgz=$(mktemp -t gpulayer-src).tgz
     root=$(cd "$(dirname "$0")/../.." && pwd)

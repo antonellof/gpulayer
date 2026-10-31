@@ -85,10 +85,11 @@ The PyTorch `Trainer` avoids work that slows each step:
   end of an epoch, so the CPU does not wait for the GPU on every step;
 - `accumulate_grad_batches=N` applies the optimizer every N batches, and DDP exchanges
   gradients only on those batches;
-- on CUDA, the next batch is pinned and copied to the GPU on a side stream while the current
-  step runs (`prefetch=True`). A `non_blocking` copy from ordinary memory runs on the compute
-  stream, so without this the CPU waits for each step's kernels before it can load and copy
-  the next batch;
+- with `prefetch=True` on CUDA, a background thread loads and pins the next batches and each is
+  copied to the GPU on a side stream while the current step runs. It is off by default:
+  measured on a T4 and an RTX 3070, it helped compute-heavy CNNs by about 5% and slowed short
+  MLP steps by up to 36%, because the thread competes with the training loop for the Python
+  interpreter;
 - cuDNN autotuning is on for CUDA unless `deterministic=True` (`benchmark=None`).
 
 On a Tesla T4 the last two made a compute-bound CNN 1.16x faster per step (12.67 to

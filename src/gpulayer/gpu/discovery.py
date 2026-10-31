@@ -62,7 +62,7 @@ out["cuda_built"] = torch.backends.cuda.is_built()
 out["cuda_available"] = bool(torch.cuda.is_available())
 out["cuda_runtime"] = torch.version.cuda
 out["cuda_devices"] = []
-if out["cuda_available"]:
+if out["cuda_available"] and not globals().get("SKIP_DEVICE_PROPERTIES"):
     for i in range(torch.cuda.device_count()):
         p = torch.cuda.get_device_properties(i)
         out["cuda_devices"].append({"name": p.name, "memory_bytes": p.total_memory,
@@ -172,6 +172,26 @@ def probe_torch(
 ) -> TorchProbe:
     """Probe torch in an isolated interpreter. Never raises."""
     code, out = runner([python, "-c", _TORCH_PROBE], timeout)
+    return _parse_probe(code, out)
+
+
+def probe_torch_in_process() -> TorchProbe:
+    """The same probe in this process, for when this interpreter runs the jobs and has already
+    imported torch (the launching script of a Trainer or launch()). Saves starting Python and
+    importing torch again, which takes seconds on a GPU machine. Device properties are skipped:
+    reading them can create a CUDA context in this process; nvidia-smi reports them instead."""
+    import io
+
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            exec(_TORCH_PROBE, {"__name__": "gpulayer_probe", "SKIP_DEVICE_PROPERTIES": True})
+    except BaseException as e:  # noqa: BLE001 - never raise from discovery
+        return TorchProbe(error=f"in-process torch probe failed: {e}")
+    return _parse_probe(0, buf.getvalue())
+
+
+def _parse_probe(code: int, out: str) -> TorchProbe:
     lines = out.strip().splitlines()
     packages: dict[str, str] = {}
     for line in lines:
@@ -433,6 +453,9 @@ def detect_capabilities(
         if tp.torch_version and not tp.cuda_available:
             notes.append("NVIDIA GPU usable, but torch in this environment has no CUDA support")
     elif tp.cuda_available:
+        if not tp.cuda_devices and torch_probe is not None:
+            # An in-process probe skips device properties; without nvidia-smi, ask a subprocess.
+            tp = probe_torch(runner=runner)
         for i, cd in enumerate(tp.cuda_devices):
             accelerators.append(
                 AcceleratorDevice(
