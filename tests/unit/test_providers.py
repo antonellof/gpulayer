@@ -36,6 +36,7 @@ def offer(oid, price=None, gpus=1, mem=24.0):
         provider="fake",
         instance_type=f"type-{oid}",
         region="test-1",
+        zone="test-1a",
         capabilities=caps,
         price=PriceQuote(amount=price, currency="USD", source="fake-provider (simulated)")
         if price is not None
@@ -113,6 +114,9 @@ def test_end_to_end_simulated_cloud_job(cp):
     with pytest.raises(Unauthorized):
         cp.register_worker("x", caps, instance_token="wrong")
     w = cp.register_worker("cloud-1", caps, instance_token=b.join_token).worker_id
+    # Location comes from GPUlayer's record of the offer, not from the worker's claims.
+    registered = next(x for x in cp.list_workers() if x.worker_id == w).capabilities
+    assert (registered.region, registered.zone) == ("test-1", "test-1a")
     with pytest.raises(Unauthorized):  # single use
         cp.register_worker("x", caps, instance_token=b.join_token)
 

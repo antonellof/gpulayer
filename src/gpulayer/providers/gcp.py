@@ -28,6 +28,7 @@ from gpulayer.contracts import (
     WorkerCapabilities,
     WorkerOrigin,
 )
+from gpulayer.gpu.discovery import gce_region
 from gpulayer.providers.base import (
     CapacityUnavailable,
     Instance,
@@ -201,7 +202,8 @@ class GCPProvider(ProviderAdapter):
             launchers=["direct", "torchrun"] if torch else [],
             origin=WorkerOrigin.PROVIDER,
             provider=self.name,
-            region=self.config.zone,
+            region=gce_region(self.config.zone),
+            zone=self.config.zone,
             max_concurrent_tasks=max(1, o.gpu_count),
         )
         price = None
@@ -213,7 +215,8 @@ class GCPProvider(ProviderAdapter):
             offer_id=o.id,
             provider=self.name,
             instance_type=o.machine_type + (f"+{o.gpu_count}x{o.gpu_type}" if o.gpu_count else ""),
-            region=self.config.zone,
+            region=gce_region(self.config.zone),
+            zone=self.config.zone,
             capabilities=caps,
             price=price,
         )

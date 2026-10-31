@@ -5,6 +5,19 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Topology-aware placement of distributed groups (ADR-0021). Workers report a `zone` (new
+  `WorkerCapabilities` field) and an optional `gpulayer.dev/network-group` label: read from
+  the GCE metadata server on Google Cloud, or set with `--zone`, `--region`
+  (`$GPULAYER_ZONE`, `$GPULAYER_REGION`) and `--network-group` on `up`, `join` and
+  `worker start`. New `PlacementPolicy.group_locality` (`--group-locality`): `prefer`
+  (default) keeps a group in one network group, else zone, else region; `network_group`,
+  `zone` or `region` require it; `any` ignores location. Workers without a location place as
+  before. On a simulated fleet of 5 zones in 2 regions an 8-node group now stays in one zone
+  instead of spanning both regions; `schedule()` costs 1 to 15% more
+  (`benchmarks/placement.py`). Training speed-up not measured yet.
+- Migration: the GCP adapter now reports `region="europe-west1"` and `zone="europe-west1-b"`
+  (it used to put the zone in `region`). `placement.regions` matches either, so existing
+  policies keep working.
 - Trainer: `num_sanity_val_steps` (default 2, as in Lightning: a broken `validation_step`
   fails before training), `fast_dev_run`, `max_time`, `gradient_clip_algorithm="value"` and
   `deterministic`. Per-step time unchanged (about 102 us/step for a small MLP on one CPU

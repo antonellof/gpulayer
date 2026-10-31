@@ -9,6 +9,7 @@ in [Performance](../docs/architecture/performance.md).
 | `dispatch.py` | time GPUlayer adds around a job, burst throughput | nothing |
 | `distributed_startup.py` | where a distributed job's start-up goes, direct launcher vs torchrun | torch |
 | `http_requests.py` | HTTP API latency and throughput over TLS | nothing |
+| `placement.py` | time to place a distributed group, and the zones it spans, on a simulated fleet | nothing |
 | `lightning_comparison/` | GPUlayer `Trainer` vs PyTorch Lightning: ms per step and start-up | torch, `lightning`, a CUDA GPU for the GPU cases |
 | `multi_machine.py` | placement, distributed jobs and failure across machines; hundreds of jobs | a server with workers on 2+ machines |
 | `../scripts/validate_gpu.sh` | full validation on an NVIDIA machine (tests, CUDA checks, benchmarks) | an NVIDIA GPU |

@@ -14,6 +14,7 @@ from gpulayer.contracts import (
     WorkerState,
 )
 from gpulayer.control_plane.scheduler import (
+    NETWORK_GROUP_LABEL,
     RESERVED_LABEL,
     WorkerView,
     compatibility_reasons,
@@ -261,3 +262,110 @@ def test_spread_keeps_room_for_a_distributed_group(cp):
         JobSpec(workload=DistributedJob(entrypoint="t.py", num_workers=2, procs_per_worker=1))
     )
     assert cp.get_job(ddp.job_id).state.value == "scheduled"
+
+
+# ------------------------------------------------------------ topology-aware groups
+
+
+def placed_view(wid, zone=None, region=None, group=None, torch="2.4.0", running=0):
+    labels = {NETWORK_GROUP_LABEL: group} if group else {}
+    return view(
+        wid,
+        running=running,
+        **{**TORCH_CAPS, "frameworks": {"torch": torch}},
+        zone=zone,
+        region=region,
+        labels=labels,
+    )
+
+
+def dist_with(n, locality):
+    s = dist(n)
+    s.placement.group_locality = locality
+    return s
+
+
+def test_group_prefers_one_zone_over_worker_order():
+    ws = [
+        placed_view("a1", zone="z-a", region="r"),
+        placed_view("a2", zone="z-a", region="r"),
+        placed_view("b1", zone="z-b", region="r"),
+        placed_view("b2", zone="z-b", region="r"),
+        placed_view("b3", zone="z-b", region="r"),
+    ]
+    d = schedule(dist(3), ws)
+    assert d.worker_ids == ["b1", "b2", "b3"]
+    assert "same zone z-b" in d.summary
+
+
+def test_group_prefers_a_network_group_inside_a_zone():
+    ws = [
+        placed_view("w1", zone="z", group="rack-1"),
+        placed_view("w2", zone="z", group="rack-2"),
+        placed_view("w3", zone="z", group="rack-2"),
+    ]
+    d = schedule(dist(2), ws)
+    assert d.worker_ids == ["w2", "w3"] and "same network group rack-2" in d.summary
+
+
+def test_group_falls_back_to_region_then_anywhere():
+    ws = [
+        placed_view("a", zone="z-a", region="r1"),
+        placed_view("b", zone="z-b", region="r1"),
+        placed_view("c", zone="z-c", region="r2"),
+    ]
+    d = schedule(dist(2), ws)
+    assert d.worker_ids == ["a", "b"] and "same region r1" in d.summary
+    d = schedule(dist(3), ws)
+    assert d.placed and d.worker_ids == ["a", "b", "c"] and "same" not in d.summary
+
+
+def test_workers_without_a_location_place_as_before():
+    ws = [placed_view(f"w{i}") for i in range(3)]
+    d = schedule(dist(2), ws)
+    assert d.worker_ids == ["w0", "w1"] and "same" not in d.summary
+
+
+def test_locality_never_mixes_torch_versions():
+    ws = [
+        placed_view("a", zone="z", torch="2.3.0"),
+        placed_view("b", zone="z", torch="2.4.0"),
+        placed_view("c", zone="y", torch="2.4.0"),
+    ]
+    d = schedule(dist(2), ws)
+    assert d.worker_ids == ["b", "c"] and "same" not in d.summary
+
+
+def test_required_zone_rejects_a_group_split_across_zones():
+    ws = [placed_view("a", zone="z-a"), placed_view("b", zone="z-b")]
+    s = dist_with(2, "zone")
+    d = schedule(s, ws)
+    assert not d.placed
+    assert "needs 2 eligible workers in one zone" in d.summary and "at most 1" in d.summary
+    assert not ever_schedulable(s, ws)
+    # Busy but in one zone: wait instead of failing.
+    ws = [placed_view("a", zone="z"), placed_view("b", zone="z", running=1)]
+    assert not schedule(s, ws).placed and ever_schedulable(s, ws)
+
+
+def test_required_zone_ignores_workers_without_a_zone():
+    ws = [placed_view("a", zone="z"), placed_view("b")]
+    assert not schedule(dist_with(2, "zone"), ws).placed
+
+
+def test_any_locality_keeps_rank_order():
+    ws = [
+        placed_view("a1", zone="z-a"),
+        placed_view("b1", zone="z-b"),
+        placed_view("b2", zone="z-b"),
+    ]
+    assert schedule(dist_with(2, "any"), ws).worker_ids == ["a1", "b1"]
+
+
+def test_regions_filter_also_accepts_a_zone():
+    caps = make_caps(region="europe-west1", zone="europe-west1-b")
+    for allowed in (["europe-west1"], ["europe-west1-b"]):
+        s = spec(placement=PlacementPolicy(regions=allowed))
+        assert compatibility_reasons(s, caps) == []
+    s = spec(placement=PlacementPolicy(regions=["us-east1"]))
+    assert compatibility_reasons(s, caps)

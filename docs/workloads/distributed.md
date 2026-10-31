@@ -38,6 +38,9 @@ data sharding and checkpoints.
 - All nodes must share the same torch version and the requested backend (`gloo` or `nccl`).
 - Across machines, workers need an address their peers can reach (`--advertise-address`) and
   open ports between them.
+- The group is kept as close together as possible: one network group, else one zone, else
+  one region. `--group-locality zone` (or `network_group`, `region`) requires it; see
+  [Scheduling](../architecture/scheduling.md#distributed-groups-and-network-locality).
 - One failed or lost node fails the job; the others are stopped. Distributed jobs are never
   retried automatically.
 

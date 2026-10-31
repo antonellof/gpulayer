@@ -55,6 +55,42 @@ def _kv(items: list[str] | None, what: str) -> dict[str, str]:
     return out
 
 
+def _worker_labels(args: argparse.Namespace) -> dict[str, str]:
+    from gpulayer.control_plane.scheduler import NETWORK_GROUP_LABEL
+
+    labels = _kv(args.label, "--label")
+    if getattr(args, "network_group", None):
+        labels[NETWORK_GROUP_LABEL] = args.network_group
+    return labels
+
+
+def _location(args: argparse.Namespace) -> dict[str, Any]:
+    """Keyword arguments for detect_capabilities: an explicit location, or ask the cloud."""
+    region = getattr(args, "region", None)
+    zone = getattr(args, "zone", None)
+    if region or zone:
+        return {"region": region, "zone": zone, "location_probe": None}
+    return {}
+
+
+def _add_location_args(s: argparse.ArgumentParser) -> None:
+    s.add_argument(
+        "--region",
+        default=os.environ.get("GPULAYER_REGION"),
+        help="region of this machine (default: from the cloud's metadata on Google Cloud)",
+    )
+    s.add_argument(
+        "--zone",
+        default=os.environ.get("GPULAYER_ZONE"),
+        help="zone or datacenter of this machine; distributed groups prefer one zone",
+    )
+    s.add_argument(
+        "--network-group",
+        metavar="NAME",
+        help="machines on one fast network (a rack, a LAN); distributed groups prefer one",
+    )
+
+
 def _print(obj: Any, as_json: bool) -> None:
     if as_json:
         if isinstance(obj, list):
@@ -225,9 +261,10 @@ def cmd_up(args: argparse.Namespace) -> int:
         caps = detect_capabilities(
             origin=WorkerOrigin.EXISTING,
             advertise_address=advertise,
-            labels=_kv(args.label, "--label"),
+            labels=_worker_labels(args),
             runner=_python_runner(python),
             gpus=_gpus(args.gpus),
+            **_location(args),
         )
         channel = EmbeddedChannel.register(cp, args.name or caps.hostname, caps)
         agent = WorkerAgent(channel, caps, home / "workers" / channel.worker_id, python=python)
@@ -447,7 +484,7 @@ def cmd_worker_start(args: argparse.Namespace) -> int:
     from gpulayer.worker.agent import WorkerAgent
 
     python = args.python or sys.executable
-    labels = _kv(args.label, "--label")
+    labels = _worker_labels(args)
     if args.url:
         from gpulayer.api.client import HttpWorkerChannel
 
@@ -464,6 +501,7 @@ def cmd_worker_start(args: argparse.Namespace) -> int:
             runner=_python_runner(python),
             max_concurrent_tasks=getattr(args, "concurrency", None),
             gpus=_gpus(getattr(args, "gpus", None)),
+            **_location(args),
         )
         instance_ref = getattr(args, "instance_ref", None)
         if instance_ref:
@@ -493,6 +531,7 @@ def cmd_worker_start(args: argparse.Namespace) -> int:
             runner=_python_runner(python),
             max_concurrent_tasks=getattr(args, "concurrency", None),
             gpus=_gpus(getattr(args, "gpus", None)),
+            **_location(args),
         )
         channel = EmbeddedChannel.register(
             open_control_plane(args.home), args.name or f"local-{os.getpid()}", caps
@@ -654,6 +693,7 @@ def build_spec(args: argparse.Namespace, client: Client) -> JobSpec:
         worker_ids=args.worker or [],
         worker_labels=_kv(args.label, "--label"),
         on_unschedulable="queue" if args.queue_if_unschedulable else "fail",
+        group_locality=args.group_locality,
         max_hourly_cost=args.max_hourly_cost,
         provisioning=provisioning,
     )
@@ -865,6 +905,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     s.add_argument("--name", help="worker name for this machine")
     s.add_argument("--label", action="append", metavar="KEY=VALUE")
+    _add_location_args(s)
     s.add_argument("--python", help="interpreter for jobs on this machine")
     s.add_argument("--tls", action="store_true", help="use TLS even on a loopback address")
     s.add_argument("--tls-cert", help="use this certificate instead of a self-signed one")
@@ -893,6 +934,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--ca-file", default=argparse.SUPPRESS)
     s.add_argument("--name")
     s.add_argument("--label", action="append", metavar="KEY=VALUE")
+    _add_location_args(s)
     s.add_argument("--python", help="interpreter used for jobs (default: this one)")
     s.add_argument("--advertise-address", help="address peers use for distributed rendezvous")
     s.add_argument(
@@ -971,6 +1013,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = wk.add_parser("start", help="register this machine and execute assignments")
     s.add_argument("--name")
     s.add_argument("--label", action="append", metavar="KEY=VALUE")
+    _add_location_args(s)
     s.add_argument("--join-token", help="default $GPULAYER_JOIN_TOKEN (remote mode)")
     s.add_argument("--python", help="interpreter used for workloads (default: this one)")
     s.add_argument("--advertise-address", help="address peers use for distributed rendezvous")
@@ -1065,6 +1108,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--worker", action="append", metavar="WORKER_ID")
     s.add_argument("--label", action="append", metavar="KEY=VALUE")
     s.add_argument("--provider", help="allow provisioning through this provider adapter")
+    s.add_argument(
+        "--group-locality",
+        choices=["prefer", "network_group", "zone", "region", "any"],
+        default="prefer",
+        help="distributed jobs: keep the machines in one network group, zone or region "
+        "(prefer: the closest group available; others: required)",
+    )
     s.add_argument("--max-hourly-cost", type=float)
     s.add_argument("--env", action="append", metavar="KEY=VALUE")
     s.add_argument("--secret", action="append", metavar="NAME=WORKER_ENV_KEY")

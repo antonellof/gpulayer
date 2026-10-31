@@ -41,6 +41,9 @@ GPUlayer handles allocation, process launch and lifecycle. PyTorch handles commu
   `NCCL_SOCKET_IFNAME`, passed with `--env`.
 - Workers need the same torch version, which the scheduler enforces, and they all run the same
   source bundle.
+- The scheduler keeps a group inside one network group, zone or region when it can
+  ([ADR-0021](../decisions/ADR-0021-topology-aware-group-placement.md)). Report a zone with
+  `--zone` (automatic on Google Cloud) and a rack or LAN with `--network-group`.
 
 ## Checkpoints and retries
 

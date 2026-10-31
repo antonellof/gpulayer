@@ -1,0 +1,13 @@
+# benchmarks/placement.py, Apple M2 Pro (10 cores), macOS 26.7, Python 3.12.13
+# before = commit 5290962 (no locality), after = topology-aware groups; runs interleaved
+## before, run 1
+workers=  30  55.0 us/call; workers= 120  210.4 us/call; workers= 500  924.9 us/call
+## before, run 2
+workers=  30  55.7 us/call; workers= 120  213.2 us/call; workers= 500  936.7 us/call
+## after, run 1
+workers=  30  63.9 us/call; workers= 120  216.1 us/call; workers= 500  928.4 us/call
+## after, run 2
+workers=  30  60.3 us/call; workers= 120  219.0 us/call; workers= 500  939.1 us/call
+## zones spanned by the 8-node group (5 zones in 2 regions, half the workers busy)
+group_locality=any (old behaviour): 5 zones, 2 regions at 30, 120 and 500 workers
+group_locality=prefer: 3 zones in 1 region at 30 workers; 1 zone at 120 and 500

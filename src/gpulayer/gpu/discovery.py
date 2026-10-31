@@ -291,6 +291,43 @@ def default_advertise_address() -> str:
         return "127.0.0.1"
 
 
+_GCE_ZONE_URL = "http://metadata.google.internal/computeMetadata/v1/instance/zone"
+
+
+def _on_gce() -> bool:
+    try:
+        with open("/sys/class/dmi/id/product_name") as f:
+            return "Google" in f.read()
+    except OSError:
+        return False
+
+
+def detect_location(timeout: float = 1.0) -> tuple[str | None, str | None]:
+    """(region, zone) of this machine when a cloud says so, else (None, None).
+
+    Only Google Compute Engine (and GKE nodes) for now: the metadata server is asked only when
+    the machine identifies itself as GCE, so other machines never wait on the network.
+    Elsewhere, pass ``--zone`` and ``--region`` (or $GPULAYER_ZONE / $GPULAYER_REGION).
+    """
+    if not _on_gce():
+        return None, None
+    import urllib.request
+
+    req = urllib.request.Request(_GCE_ZONE_URL, headers={"Metadata-Flavor": "Google"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310 (fixed URL)
+            zone = r.read().decode().strip().rsplit("/", 1)[-1]
+    except (OSError, ValueError):
+        return None, None
+    return gce_region(zone), zone or None
+
+
+def gce_region(zone: str) -> str | None:
+    """'europe-west1-b' -> 'europe-west1' (GCE zone names are <region>-<letter>)."""
+    region, sep, _ = zone.rpartition("-")
+    return region if sep else None
+
+
 def apple_silicon() -> bool:
     return platform.system() == "Darwin" and platform.machine().lower() in ("arm64", "aarch64")
 
@@ -305,12 +342,18 @@ def detect_capabilities(
     torch_probe: Callable[[], TorchProbe] | None = None,
     max_concurrent_tasks: int | None = None,
     gpus: Sequence[int] | None = None,
+    region: str | None = None,
+    zone: str | None = None,
+    location_probe: Callable[[], tuple[str | None, str | None]] | None = detect_location,
 ) -> WorkerCapabilities:
     """``max_concurrent_tasks`` defaults to one task per usable discrete GPU (at least 1).
 
     ``gpus`` limits the worker to those discrete GPU indices (as ``nvidia-smi`` numbers them);
     an empty list offers none. Use it to split one machine's GPUs between workers, so that two
     workers never offer the same GPU.
+
+    ``region`` and ``zone`` place the worker for topology-aware group placement. When neither
+    is given, ``location_probe`` asks the cloud the machine runs in (None: do not ask).
     """
     notes: list[str] = []
     tp = torch_probe() if torch_probe else probe_torch(runner=runner)
@@ -402,6 +445,9 @@ def detect_capabilities(
         # Like 'torch.cuda': this JAX / CuPy can run on the GPU, not just import.
         frameworks.update(probe_gpu_frameworks(tp.packages, runner=runner))
 
+    if region is None and zone is None and location_probe is not None:
+        region, zone = location_probe()
+
     disk = shutil.disk_usage(workdir or os.getcwd())
     caps = WorkerCapabilities(
         hostname=socket.gethostname(),
@@ -417,6 +463,8 @@ def detect_capabilities(
         launchers=launchers,
         advertise_address=advertise_address,
         origin=origin,
+        region=region,
+        zone=zone,
         labels=dict(labels or {}),
         max_concurrent_tasks=max_concurrent_tasks or 1,
         notes=notes,

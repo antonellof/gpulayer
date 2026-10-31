@@ -100,6 +100,8 @@ def test_offers_describe_known_hardware_only():
         caps.accelerators[0].memory_gb == 15.0 and caps.accelerators[0].compute_capability == "7.5"
     )
     assert caps.cpu_cores == 8 and caps.max_concurrent_tasks == 2
+    assert (t4.region, t4.zone) == ("europe-west1", "europe-west1-b")
+    assert (caps.region, caps.zone) == ("europe-west1", "europe-west1-b")
     assert caps.frameworks["torch.cuda"] == "2.15.0" and "nccl" in caps.distributed_backends
     assert t4.price.amount == 0.5 and "config" in t4.price.source
     assert (

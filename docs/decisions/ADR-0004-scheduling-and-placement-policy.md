@@ -60,8 +60,9 @@ whole compatible group or not at all.
   `tests/unit/test_scheduler.py`.
 - FIFO has head-of-line behavior only per job, not per queue. There are no priorities,
   quotas or fairness, and no preemption.
-- There is no topology or interconnect awareness, and data locality is limited to
-  labels.
+- Data locality is limited to labels. Network locality of distributed groups was added by
+  [ADR-0021](ADR-0021-topology-aware-group-placement.md); GPU interconnect inside a machine
+  is not considered yet.
 
 ## Security and operational implications
 

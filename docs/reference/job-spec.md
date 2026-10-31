@@ -88,7 +88,8 @@ gpulayer submit --profile mlx -- python bench.py
 | `target` | `local` | `local`, `remote`, `cloud` |
 | `fallback_targets` | `[]` | tried in order after `target` |
 | `worker_ids`, `worker_labels` | `[]`, `{}` | pin to specific workers |
-| `providers`, `regions` | `[]` | restrict provider-backed workers |
+| `providers`, `regions` | `[]` | restrict provider-backed workers; a `regions` entry may also name a zone |
+| `group_locality` | `prefer` | distributed jobs: `prefer` the closest group (one network group, zone, then region), require one with `network_group`, `zone` or `region`, or `any`; see [Scheduling](../architecture/scheduling.md#distributed-groups-and-network-locality) |
 | `strategy` | `spread` | `spread`: least-loaded worker first; `first_fit`: lowest worker id with a free slot (packs work); `most_free_memory` |
 | `on_unschedulable` | `queue` | `fail` rejects jobs no registered worker could ever run |
 | `max_hourly_cost`, `currency` | none, `USD` | offers without a price are rejected when set |

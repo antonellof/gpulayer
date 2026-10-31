@@ -188,6 +188,7 @@ class RemoteFunction:
                 fallback_targets=opts.pop("fallback_targets", []),
                 worker_labels=opts.pop("worker_labels", {}),
                 on_unschedulable=opts.pop("on_unschedulable", "fail"),
+                group_locality=opts.pop("group_locality", "prefer"),
                 provisioning=opts.pop("provisioning", None),
             )
         name = opts.pop("name", self.fn.__name__.replace("_", "-")[:63])

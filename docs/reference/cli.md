@@ -15,8 +15,8 @@ Global options go before the command:
 
 | Command | Description |
 |---|---|
-| `gpulayer up [--host --port --advertise-address --no-worker --gpus 0,1\|none --name --label K=V --python --tls --tls-cert --tls-key --insecure-http]` | start a server and use this machine as a worker; prints join and connect commands |
-| `gpulayer join URL --token T [--fingerprint FP --name --label K=V --python --advertise-address --workdir --concurrency N --gpus 0,1\|none --max-tasks N --idle-exit S]` | add this machine as a worker of a server; `--concurrency` sets how many tasks run at once (default one per GPU), `--gpus` limits the GPUs it offers, `--max-tasks` exits after N tasks |
+| `gpulayer up [--host --port --advertise-address --no-worker --gpus 0,1\|none --name --label K=V --region --zone --network-group --python --tls --tls-cert --tls-key --insecure-http]` | start a server and use this machine as a worker; prints join and connect commands |
+| `gpulayer join URL --token T [--fingerprint FP --name --label K=V --region --zone --network-group --python --advertise-address --workdir --concurrency N --gpus 0,1\|none --max-tasks N --idle-exit S]` | add this machine as a worker of a server; `--concurrency` sets how many tasks run at once (default one per GPU), `--gpus` limits the GPUs it offers, `--max-tasks` exits after N tasks |
 | `gpulayer dashboard [--port 8471 --no-open]` | open the web dashboard for local jobs |
 | `gpulayer mcp [--read-only]` | MCP server on stdio for AI and coding agents ([guide](../guides/ai-agents.md)) |
 | `gpulayer metrics` | print Prometheus metrics (embedded, or a server with `--url`) |
@@ -26,7 +26,7 @@ Global options go before the command:
 | `gpulayer token revoke NAME` | revoke a token; a running server applies it on the next request |
 | `gpulayer server init [--rotate]` | create client and join tokens for `server start` (printed once) |
 | `gpulayer server start [--host --port --tls-cert --tls-key --allow-insecure-remote --public-url]` | serve the API only |
-| `gpulayer worker start [--name --label --join-token --python --advertise-address --workdir --concurrency --gpus --max-tasks --idle-exit]` | run a worker: embedded without `--url`, remote with it |
+| `gpulayer worker start [--name --label --region --zone --network-group --join-token --python --advertise-address --workdir --concurrency --gpus --max-tasks --idle-exit]` | run a worker: embedded without `--url`, remote with it |
 | `gpulayer worker status [--json]` | registered workers |
 | `gpulayer worker revoke WORKER_ID` | revoke a worker's credentials |
 | `gpulayer resources detect [--json --python]` | what this machine offers |
@@ -51,6 +51,7 @@ gpulayer submit [options] [-- COMMAND ...]
 | `--framework 'torch>=2.1'` | framework requirement |
 | `--profile pytorch-cuda` | runtime profile: fills in accelerator and frameworks (see [JobSpec](job-spec.md#runtime-profiles)) |
 | `--worker ID`, `--label K=V` | pin to workers |
+| `--group-locality prefer\|network_group\|zone\|region\|any` | distributed jobs: how close together the machines must be (default `prefer`) |
 | `--provider NAME --max-hourly-cost X` | allow provisioning through a provider adapter |
 | `--env K=V`, `--secret NAME=WORKER_ENV_KEY` | environment and secret references |
 | `--timeout SECONDS`, `--max-attempts N` | limits and retries |

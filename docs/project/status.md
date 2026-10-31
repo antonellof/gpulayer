@@ -22,6 +22,7 @@ Updated 2026-10-31 (v0.5.0 plus unreleased Trainer changes).
 | Container images | built and smoke-tested in CI; published to GitHub Container Registry with each release (slim and `-torch`; no CUDA image) |
 | JAX and CuPy GPU detection (reported only when they ran on the GPU) | tested; not yet run on a GPU |
 | Trainer FSDP (`strategy="fsdp"`) | experimental; tested on CPU, not validated on GPUs |
+| Topology-aware group placement (ADR-0021): zone, region, network group | tested (unit tests, simulated fleet); training speed-up not measured on machines |
 | Long-running services (ADR-0019): replicas, `$PORT`, endpoints, restarts | tested on a local worker and on Kubernetes (kind); no load balancer |
 | Cloud provisioning through provider adapters | Google Cloud: validated with a CPU VM and a Spot T4 VM (create, join, run a CUDA training job, delete); other clouds: none yet; `FakeProvider` for tests |
 | Documentation site (`site/`) | builds as a static export |
@@ -112,8 +113,10 @@ uncommitted local changes, so it was deliberately left untouched.
   one Mac, CPU). GPUlayer itself adds under 0.01 s.
 - Done: two-level gradient sync for gloo (ADR-0020): 11.9% faster than Lightning on 8
   machines x 4 processes.
-- Next: topology-aware group placement. Validating FSDP and `torch.compile` needs CUDA
-  hardware.
+- Done: topology-aware group placement (ADR-0021): distributed groups prefer one network
+  group, then zone, then region; required with `group_locality`.
+- Next: measure it on machines in two regions; pick GPUs inside a machine by interconnect.
+  Validating FSDP and `torch.compile` needs CUDA hardware.
 
 ### Distribution (ADR-0017)
 

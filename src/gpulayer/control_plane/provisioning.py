@@ -85,7 +85,7 @@ class ProvisioningManager:
         ok: list[InstanceOffer] = []
         for offer in adapter.list_offers():
             caps = offer.capabilities.model_copy(
-                update={"provider": adapter.name, "region": offer.region}
+                update={"provider": adapter.name, "region": offer.region, "zone": offer.zone}
             )
             reasons = compatibility_reasons(spec, caps, target=ExecutionTarget.CLOUD)
             if p.max_hourly_cost is not None:
@@ -269,6 +269,7 @@ class ProvisioningManager:
             update={
                 "provider": row["provider"],
                 "region": record["offer"].get("region"),
+                "zone": record["offer"].get("zone"),
                 "labels": labels,
             }
         )

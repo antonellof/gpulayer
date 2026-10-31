@@ -33,6 +33,7 @@ class InstanceOffer(BaseModel):
     provider: str
     instance_type: str = Field(description="Provider-specific name; metadata only.")
     region: str | None = None
+    zone: str | None = None
     capabilities: WorkerCapabilities = Field(
         description="Expected worker capabilities. Verified again when the worker registers."
     )

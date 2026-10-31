@@ -256,7 +256,15 @@ class PlacementPolicy(_Model):
     worker_ids: list[str] = Field(default_factory=list)
     worker_labels: dict[str, str] = Field(default_factory=dict)
     providers: list[str] = Field(default_factory=list)
-    regions: list[str] = Field(default_factory=list)
+    regions: list[str] = Field(
+        default_factory=list, description="Allowed regions; an entry may also name a zone."
+    )
+    group_locality: Literal["prefer", "network_group", "zone", "region", "any"] = Field(
+        "prefer",
+        description="How close together the workers of a distributed job must be. 'prefer' "
+        "picks the tightest group available (same network group, then zone, then region, "
+        "then any); 'network_group', 'zone' and 'region' require it; 'any' ignores location.",
+    )
     # spread: least-loaded worker first (keeps machines evenly busy and leaves room for
     # distributed groups); first_fit: lowest worker id with a free slot (packs work).
     strategy: Literal["spread", "first_fit", "most_free_memory"] = "spread"
@@ -568,6 +576,11 @@ class WorkerCapabilities(_Model):
     provider: str | None = None
     instance_id: str | None = None
     region: str | None = None
+    zone: str | None = Field(
+        None,
+        description="Availability zone or datacenter within the region. Used to keep the "
+        "machines of a distributed job close together.",
+    )
     labels: dict[str, str] = Field(default_factory=dict)
     max_concurrent_tasks: int = Field(1, ge=1)
     notes: list[str] = Field(

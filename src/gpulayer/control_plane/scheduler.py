@@ -8,6 +8,7 @@ a whole compatible worker group is selected or nothing is.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
@@ -63,6 +64,21 @@ def _cc_tuple(cc: str) -> tuple[int, int]:
 
 
 RESERVED_LABEL = "gpulayer.dev/reserved-for"
+# User-defined network locality finer than a zone: a rack, a LAN, a switch, one office.
+NETWORK_GROUP_LABEL = "gpulayer.dev/network-group"
+
+# Locality levels for distributed groups, tightest first.
+_LEVELS = ("network_group", "zone", "region")
+_LEVEL_NAME = {"network_group": "network group", "zone": "zone", "region": "region"}
+
+
+def locality(caps: WorkerCapabilities, level: str) -> str | None:
+    """The worker's value at a locality level, or None when it is not known."""
+    if level == "network_group":
+        return caps.labels.get(NETWORK_GROUP_LABEL) or None
+    if level == "zone":
+        return caps.zone
+    return caps.region
 
 
 # Pseudo-frameworks reported by discovery: "this worker's torch can drive that GPU".
@@ -91,7 +107,7 @@ def compatibility_reasons(
         reasons.append(f"worker is reserved for job {reserved}")
     if p.providers and caps.provider not in p.providers:
         reasons.append(f"provider {caps.provider!r} not in allowed providers {p.providers}")
-    if p.regions and caps.region not in p.regions:
+    if p.regions and caps.region not in p.regions and caps.zone not in p.regions:
         reasons.append(f"region {caps.region!r} not in allowed regions {p.regions}")
     for k, v in p.worker_labels.items():
         if caps.labels.get(k) != v:
@@ -227,6 +243,7 @@ def schedule(
     pinned = set(p.worker_ids)
     needed = spec.num_nodes
     candidates: list[CandidateEvaluation] = []
+    locality_miss: str | None = None
 
     for target in p.allowed_targets:
         eligible: list[WorkerView] = []
@@ -257,23 +274,28 @@ def schedule(
                 eligible.append(w)
 
         eligible.sort(key=lambda w: _rank_key(spec, w))
-        group = _pick_group(spec, eligible, needed)
+        group, where = _pick_group(spec, eligible, needed)
         if group:
             what = "worker group" if spec.workload_type.value == "distributed" else "worker"
+            near = f"{where}, " if where else ""
             return SchedulingDecision(
                 placed=True,
                 target=target,
                 worker_ids=[g.worker_id for g in group],
-                summary=f"placed on {what} {[g.worker_id for g in group]} (target "
+                summary=f"placed on {what} {[g.worker_id for g in group]} ({near}target "
                 f"{target.value}, policy {p.strategy})",
                 candidates=candidates,
             )
+        if where:
+            locality_miss = where
         if any_compatible and len(eligible) < needed:
             continue  # try explicit fallback targets before giving up
 
     n_ok = sum(1 for c in candidates if c.eligible)
     if not any(w.state != WorkerState.OFFLINE for w in workers):
         summary = "no workers online"
+    elif locality_miss:
+        summary = locality_miss
     elif needed > 1:
         summary = f"distributed job needs {needed} eligible workers, {n_ok} available"
     else:
@@ -281,19 +303,72 @@ def schedule(
     return SchedulingDecision(placed=False, summary=summary, candidates=candidates)
 
 
-def _pick_group(spec: JobSpec, eligible: list[WorkerView], needed: int) -> list[WorkerView]:
-    if len(eligible) < needed:
-        return []
-    if needed == 1:
-        return eligible[:1]
-    # Distributed: all nodes must agree on the torch version so collectives interoperate.
-    by_torch: dict[str | None, list[WorkerView]] = {}
-    for w in eligible:
-        by_torch.setdefault(w.capabilities.frameworks.get("torch"), []).append(w)
-    for version in sorted(by_torch, key=lambda v: (v is None, v or "")):
-        if len(by_torch[version]) >= needed:
-            return by_torch[version][:needed]
+def _first_full(
+    workers: list[WorkerView], needed: int, key: Callable[[WorkerView], tuple | None]
+) -> list[WorkerView]:
+    """Bucket ``workers`` (already in rank order) by ``key`` and return the first bucket to
+    reach ``needed`` members. Workers whose key is None are skipped."""
+    buckets: dict[tuple, list[WorkerView]] = {}
+    for w in workers:
+        k = key(w)
+        if k is None:
+            continue
+        b = buckets.setdefault(k, [])
+        b.append(w)
+        if len(b) == needed:
+            return b
     return []
+
+
+def _locality_levels(spec: JobSpec) -> tuple[tuple[str, ...], bool]:
+    """The levels to try, tightest first, and whether one of them is required."""
+    mode = spec.placement.group_locality
+    if mode == "prefer":
+        return _LEVELS, False
+    if mode == "any":
+        return (), False
+    return (mode,), True
+
+
+def _torch(w: WorkerView) -> str | None:
+    return w.capabilities.frameworks.get("torch")
+
+
+def _pick_group(
+    spec: JobSpec, eligible: list[WorkerView], needed: int
+) -> tuple[list[WorkerView], str | None]:
+    """A group of ``needed`` workers, and a note on its locality (or, with no group, why a
+    required locality could not be met)."""
+    if len(eligible) < needed:
+        return [], None
+    if needed == 1:
+        return eligible[:1], None
+    # Distributed: all nodes must agree on the torch version so collectives interoperate.
+    # Then keep the group as close together as possible, so collectives cross the fewest
+    # and shortest network links: one network group, else one zone, else one region.
+    levels, required = _locality_levels(spec)
+    for level in levels:
+
+        def key(w: WorkerView, level: str = level) -> tuple | None:
+            loc = locality(w.capabilities, level)
+            return None if loc is None else (_torch(w), loc)
+
+        group = _first_full(eligible, needed, key)
+        if group:
+            return group, f"same {_LEVEL_NAME[level]} {locality(group[0].capabilities, level)}"
+    if required:
+        level = levels[0]
+        counts: dict[str, int] = {}
+        for w in eligible:
+            loc = locality(w.capabilities, level)
+            if loc is not None:
+                counts[loc] = counts.get(loc, 0) + 1
+        most = max(counts.values(), default=0)
+        return [], (
+            f"distributed job needs {needed} eligible workers in one {_LEVEL_NAME[level]} "
+            f"(group_locality={level}); at most {most} share one"
+        )
+    return _first_full(eligible, needed, lambda w: (_torch(w),)), None
 
 
 def ever_schedulable(spec: JobSpec, workers: list[WorkerView], job_id: str | None = None) -> bool:
@@ -305,4 +380,18 @@ def ever_schedulable(spec: JobSpec, workers: list[WorkerView], job_id: str | Non
         and (not spec.placement.worker_ids or w.worker_id in spec.placement.worker_ids)
         and not compatibility_reasons(spec, w.capabilities, job_id=job_id)
     ]
+    levels, required = _locality_levels(spec)
+    if required and spec.num_nodes > 1:
+        level = levels[0]
+        return bool(
+            _first_full(
+                ok,
+                spec.num_nodes,
+                lambda w: (
+                    None
+                    if locality(w.capabilities, level) is None
+                    else (locality(w.capabilities, level),)
+                ),
+            )
+        )
     return len(ok) >= spec.num_nodes

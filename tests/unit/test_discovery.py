@@ -3,7 +3,14 @@
 import json
 
 from gpulayer.contracts import Accelerator, MemoryKind
-from gpulayer.gpu.discovery import TorchProbe, detect_capabilities, detect_nvidia, probe_torch
+from gpulayer.gpu.discovery import (
+    TorchProbe,
+    detect_capabilities,
+    detect_location,
+    detect_nvidia,
+    gce_region,
+    probe_torch,
+)
 
 
 def runner_for(responses):
@@ -238,3 +245,72 @@ def test_jax_and_cupy_cuda_only_when_they_run_on_the_gpu(monkeypatch):
     # No NVIDIA driver: no probe either
     caps = detect_capabilities(runner=runner_for({}), torch_probe=lambda: TorchProbe(packages=pkgs))
     assert "jax.cuda" not in caps.frameworks
+
+
+# ------------------------------------------------------------------ location
+
+
+def test_gce_region_from_zone():
+    assert gce_region("europe-west1-b") == "europe-west1"
+    assert gce_region("us-central1-a") == "us-central1"
+    assert gce_region("nozone") is None
+
+
+def test_location_is_not_asked_off_gce(monkeypatch):
+    monkeypatch.setattr("gpulayer.gpu.discovery._on_gce", lambda: False)
+
+    def boom(*a, **k):
+        raise AssertionError("metadata server must not be contacted")
+
+    monkeypatch.setattr("urllib.request.urlopen", boom)
+    assert detect_location() == (None, None)
+
+
+def test_location_from_gce_metadata(monkeypatch):
+    class Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b"projects/123456/zones/europe-west4-a"
+
+    seen = {}
+
+    def urlopen(req, timeout):
+        seen["header"] = req.get_header("Metadata-flavor")
+        return Resp()
+
+    monkeypatch.setattr("gpulayer.gpu.discovery._on_gce", lambda: True)
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    assert detect_location() == ("europe-west4", "europe-west4-a")
+    assert seen["header"] == "Google"
+
+
+def test_location_metadata_failure_is_not_guessed(monkeypatch):
+    def urlopen(req, timeout):
+        raise OSError("unreachable")
+
+    monkeypatch.setattr("gpulayer.gpu.discovery._on_gce", lambda: True)
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    assert detect_location() == (None, None)
+
+
+def test_explicit_location_skips_the_probe(monkeypatch):
+    monkeypatch.setattr("gpulayer.gpu.discovery.apple_silicon", lambda: False)
+    probe = lambda: (_ for _ in ()).throw(AssertionError("probe called"))  # noqa: E731
+    caps = detect_capabilities(
+        runner=runner_for({}),
+        torch_probe=lambda: TorchProbe(),
+        zone="rack-zone",
+        location_probe=probe,
+    )
+    assert caps.zone == "rack-zone" and caps.region is None
+    caps = detect_capabilities(
+        runner=runner_for({}),
+        torch_probe=lambda: TorchProbe(),
+        location_probe=lambda: ("r1", "r1-a"),
+    )
+    assert (caps.region, caps.zone) == ("r1", "r1-a")
