@@ -70,6 +70,20 @@ Notes:
 - `gcp.sh` repeats the commands used for the 2026-10-30 runs, collected into one script. The
   script as a whole has not yet been run end to end.
 
+## Run on AWS
+
+`cloud/aws.sh` does the same for NVIDIA machines on EC2 (AWS Deep Learning AMI, default VPC,
+instances tagged `purpose=gpulayer-bench`). It needs the `aws` CLI and EC2 quota for G
+instances, which is 0 on new accounts until AWS approves a request. Not yet run end to end.
+
+```bash
+A=benchmarks/cloud/aws.sh
+$A up gl-gpu4 g4dn.12xlarge        # 4x T4
+$A push gl-gpu4 && $A validate gl-gpu4   # validate_gpu.sh, with validate_multigpu.py on 2+ GPUs
+$A fetch gl-gpu4 benchmarks/results/$(date +%F)-aws/
+$A down gl-gpu4
+```
+
 ## Results
 
 | Directory | Contents |
