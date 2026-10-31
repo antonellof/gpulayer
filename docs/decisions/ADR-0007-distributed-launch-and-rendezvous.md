@@ -1,6 +1,6 @@
 # ADR-0007: Distributed launch and rendezvous
 
-- **Status:** Accepted (milestone 1) for torchrun static rendezvous, validated multi-process on one host. Multi-machine operation is Proposed (not validated).
+- **Status:** Accepted. Validated: several processes and GPUs on one host (NCCL on 4 GPUs), and across machines with gloo (up to 16). Not validated: NCCL across machines (see the 2026-10-31 amendment).
 - **Date:** 2026-10-29
 
 ## Context
@@ -75,3 +75,17 @@ not own collective communication, which PyTorch already provides.
 - A reachability pre-check, NCCL/CUDA validation, and an explicit network-interface
   selection option.
 - Checkpoint-aware restart as an opt-in policy.
+
+## Amendment (2026-10-31): what multi-GPU and multi-machine runs taught
+
+- **One machine, several GPUs: validated.** NCCL all-reduce across 4x RTX 3070 (PCIe) and 2x
+  A100 SXM4 (NVLink) as GPUlayer distributed jobs with the direct launcher.
+- **Across machines, NCCL needs every port open between the nodes.** gloo across 16 GCP VMs
+  worked on one VPC. On Vast.ai, containers sit behind NAT with a few mapped ports, so NCCL
+  cannot connect across instances; its overlay networks (one private LAN per physical
+  cluster) are the documented way, but the one created for this test never received a subnet.
+  Requirement made explicit: a multi-machine group needs a network where the workers' advertise
+  addresses reach each other on all ports (one VPC, one LAN, or an overlay). GPUlayer does not
+  tunnel collective traffic and will not add a custom transport (ADR-0016).
+- **Status:** multi-machine operation with gloo is validated (up to 16 machines); with NCCL it
+  remains implemented, not validated.

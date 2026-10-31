@@ -145,3 +145,26 @@ can hold at most one server thread per open request; the failed-login limiter st
    multi-process server.
 
 Validating items 3 and 5, and any multi-node claim, requires NVIDIA hardware.
+
+## Amendment (2026-10-31): what GPU measurements changed
+
+Measured on a Tesla T4 (GCP n1-standard-8) and on 4x RTX 3070 with an older AMD EPYC 7551
+(Vast.ai), against PyTorch Lightning 2.6.6 with the same model, data and optimizer:
+
+- **Results depend on the host, not only the GPU.** The same change made a CNN step 5% faster
+  on the T4 and up to 25% slower on the RTX 3070 machine, whose CPU was the bottleneck. Rule
+  added: a default that changes step time is measured on at least two host types before it
+  ships, and published comparisons say which host they ran on.
+- **Device prefetch is opt-in.** Pinning the next batch on the training thread cost more than
+  it saved on a slow CPU; moving it to a background thread helped a CNN (5%) but slowed an MLP
+  (36%), because the thread competes with the training loop for the GIL. `prefetch=False` by
+  default, `True` documented for compute-heavy models.
+- **cuDNN autotuning is on only for runs that can pay it back.** It made CNN steps 5 to 9%
+  faster on the T4 and cost 1 to 3 s at the start, which dominated short runs. The Trainer turns
+  it on when a run plans at least 1,000 steps.
+- **Start-up is measured end to end, from the launching process to its exit.** A 5-step 2-GPU
+  run went from 14.9 to 10.7 s after the two changes above and the in-process torch probe, and
+  GPUlayer now starts faster than Lightning (5.5 vs 6.0 s on one GPU, 8.6 vs 10.0 s on two).
+- **Installation never counts as run time.** Per-job packages are built once per worker and
+  reused (ADR-0022), and preparation is reported apart from the run.
+- Follow-up item 3 (topology-aware placement) is done (ADR-0021).

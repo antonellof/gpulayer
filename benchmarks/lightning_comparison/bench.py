@@ -6,6 +6,7 @@ gl-nobench: benchmark=False).
 NODES (default 1) is for the multi-node cases, run by multinode.py: GPUlayer submits the job
 to the server in $GPULAYER_URL; Lightning is started on every node with torchrun."""
 
+import os
 import sys
 import time
 
@@ -75,13 +76,19 @@ def step_loss(net, batch_):
     return nn.functional.cross_entropy(net(x), y)
 
 
-VARIANTS = {
+VARIANTS: dict[str, dict] = {
     "gl": {},
     "gl-base": {"prefetch": False, "benchmark": False},
     "gl-noprefetch": {"prefetch": False},
     "gl-prefetch": {"prefetch": True},
+    "gl-bench": {"benchmark": True},
+    "gl-omp": {},  # OMP_NUM_THREADS = all cores in each rank (GPUlayer sets 1 by default)
     "gl-nobench": {"benchmark": False},
 }
+
+launch_options: dict | None = {"quiet": True} if devices * nodes > 1 else None
+if fw == "gl-omp" and launch_options is not None:
+    launch_options["env"] = {"OMP_NUM_THREADS": str(os.cpu_count())}
 
 if fw in VARIANTS:
     import gpulayer.pytorch as glt
@@ -107,7 +114,7 @@ if fw in VARIANTS:
         max_epochs=1,
         enable_checkpointing=False,
         log_every_n_steps=10_000,
-        launch_options={"quiet": True} if devices * nodes > 1 else None,
+        launch_options=launch_options,
         **VARIANTS[fw],
     )
 else:

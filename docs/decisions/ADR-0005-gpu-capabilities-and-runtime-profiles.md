@@ -76,3 +76,20 @@ an Apple Silicon Mac always reports its Metal GPU as `mps`. Installed GPU framew
 in `frameworks` from package metadata, and torch's ability to drive the GPU is reported as the
 `torch.cuda` / `torch.mps` capability. The PyTorch integration requires those capabilities;
 other jobs state their own framework requirements.
+
+## Amendment (2026-10-31): learned on rented multi-GPU machines
+
+- **torch.compile is a capability of its own.** Rented GPU containers (Vast.ai, 4x RTX 3070
+  and 2x A100) had torch with CUDA but no C compiler, and `torch.compile` failed mid-run with
+  an Inductor error. Workers now report `torch.compile` only when a C compiler is present, so
+  such a job is rejected at placement with the reason instead of failing after it started.
+  The lesson generalises: report what a workload can actually *do* on a worker, not only what
+  is installed (`torch.cuda`, `jax.cuda`, `torch.compile`).
+- **GPU interconnect is part of the capabilities** (`AcceleratorDevice.links`, `numa_node`,
+  ADR-0021), read from `nvidia-smi topo -m`; validated on PCIe (`PHB`/`SYS`) and NVLink (`NV4`).
+- **CUDA is hardware-validated on more than one GPU per machine** (NCCL across 4 GPUs) and on
+  three GPU generations (T4, RTX 3070, A100); NCCL across machines is still implemented only.
+- **Discovery cost matters for start-up.** Probing torch in a new interpreter took 0.7 s on a
+  Mac and seconds on a GPU machine. When the worker runs the same interpreter as a launching
+  script that already imported torch, the probe now reads it in-process (device properties
+  come from nvidia-smi, so no CUDA context is created in the launcher).

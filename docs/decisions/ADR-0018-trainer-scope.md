@@ -52,3 +52,10 @@ and fast without making users leave it for common needs.
 - Each adopted feature needs a CPU test, and a distributed test when it changes control flow.
 - The comparison harness is part of the definition of done for loop changes.
 - The planned items above are not available until listed in `docs/pytorch/trainer.md`.
+
+## Amendment (2026-10-31): defaults chosen by measurement
+
+- `benchmark=None` (cuDNN autotuning) turns on only for runs planning at least 1,000 steps;
+  `True`/`False` force it. Lightning leaves it off.
+- `prefetch=False` by default; `True` loads and pins batches in a background thread and copies
+  them on a side stream. See ADR-0016's amendment for the measurements behind both.
