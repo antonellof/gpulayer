@@ -1,0 +1,25 @@
+instance 58551467
+GPU 0: NVIDIA A100-SXM4-40GB (UUID: GPU-2d917184-6f88-6d60-fcb3-4d618c2f5593)
+GPU 1: NVIDIA A100-SXM4-40GB (UUID: GPU-069aabe1-39e4-5872-4c17-3ecce5c39e05)
+CLAUDE.md
+Dockerfile
+Welcome to vast.ai. If authentication fails, try again after a few seconds, and double check your ssh key.
+Have fun!
+CHECK detect-cuda PASS NVIDIA A100-SXM4-40GB 40.0 GB cc8.0, NVIDIA A100-SXM4-40GB 40.0 GB cc8.0 (3.4s)
+CHECK trainer-in-process-32-true PASS val_loss 0.0047, 3 epochs 2.64s (2.7s)
+CHECK trainer-in-process-bf16-mixed PASS val_loss 0.0045, 3 epochs 0.77s (0.8s)
+CHECK trainer-in-process-16-mixed PASS val_loss 0.0048, 3 epochs 0.85s (0.9s)
+CHECK trainer-torch-compile-bf16 FAIL InductorError: RuntimeError: Failed to find C compiler. Please specify via CC environment variable or set triton.knobs.build.impl.
+CHECK cuda-job-gets-its-reserved-gpu PASS CVD 0 1 NVIDIA A100-SXM4-40GB (4.3s)
+CHECK one-gpu-worker-runs-gpu-jobs-one-at-a-time FAIL AssertionError: jobs overlapped: [(1793461765.0589113, 1793461768.0590286), (1793461765.0623202, 1793461768.0624318)]
+CHECK trainer-as-gpulayer-job-cuda PASS succeeded (9.2s)
+SUMMARY 6/8 passed ['trainer-torch-compile-bf16', 'one-gpu-worker-runs-gpu-jobs-one-at-a-time']
+FAILED: python scripts/validate_cuda.py
+CHECK topology PASS 2 GPUs, links {0: {1: 'NV4'}, 1: {0: 'NV4'}}, missing or asymmetric: []
+CHECK choice-2 PASS chosen [0, 1] (slowest link NV4), lowest indices [0, 1] (slowest link NV4)
+CHECK assigned PASS CUDA_VISIBLE_DEVICES=0,1 expected 0,1 (succeeded)
+CHECK nccl PASS 1 node x 2 processes, 2 ranks reported, succeeded, 9.5 s
+SUMMARY all passed
+SOME STEPS FAILED
+
+[exited with code 0]

@@ -27,8 +27,9 @@ trainer.fit(model, train_loader)                                         # PyTor
 > validated on an NVIDIA Tesla T4 and across machines on Google Cloud (30 workers; distributed
 > PyTorch with gloo on up to 16 machines). Long-running services, a Helm chart for
 > Kubernetes, and placement of distributed groups by zone and of multi-GPU jobs by GPU
-> interconnect are tested (the GPU interconnect choice with recorded topologies only). Several GPUs per machine and NCCL across machines are not validated
-> yet, and automatic cloud provisioning covers Google Cloud only. See [Status and roadmap](project/status.md) and
+> interconnect are tested. Several GPUs per machine with NCCL are validated on 4× RTX 3070 and
+> 2× A100 (NVLink). NCCL across machines is not validated yet, and automatic cloud provisioning
+> covers Google Cloud only. See [Status and roadmap](project/status.md) and
 > [Performance and comparison](get-started/performance-and-comparison.md).
 
 ## Why GPUlayer
@@ -115,8 +116,8 @@ flow in detail.
 - **Untrusted users.** Workloads run as normal processes on workers, not in a sandbox. Use
   GPUlayer among people who trust each other.
 - **Validated scale today.** GPUlayer is at v0.5.0. It has been validated
-  on one NVIDIA GPU and across up to 30 machines (CPU, gloo); several GPUs per machine and
-  NCCL across machines are not validated yet, distributed jobs support PyTorch only, and automatic cloud provisioning covers Google Cloud only. Cloud VMs you start yourself can join
+  on machines with up to 4 NVIDIA GPUs and across up to 30 machines (CPU, gloo); NCCL across
+  machines is not validated yet, distributed jobs support PyTorch only, and automatic cloud provisioning covers Google Cloud only. Cloud VMs you start yourself can join
   with `gpulayer join`.
 
 Two constraints: function arguments and results must be JSON, and code ships as files (the

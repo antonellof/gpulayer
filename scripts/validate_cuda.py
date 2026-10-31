@@ -126,24 +126,39 @@ def _job():
         return line.strip()
 
 
-@check("one-gpu-worker-runs-gpu-jobs-one-at-a-time")
-def _serial():
-    # Two 1-GPU jobs on a 1-GPU worker must not overlap: the second waits for the GPU.
-    code = "import time; print('T', time.time()); time.sleep(3); print('T', time.time())"
+@check("gpu-jobs-one-per-gpu")
+def _one_per_gpu():
+    # N+1 one-GPU jobs on a worker with N GPUs: at most N run at once, each on its own GPU,
+    # and the extra one waits for a GPU to free up.
+    import torch
+
+    n = torch.cuda.device_count()
+    code = (
+        "import os, time; print('T', time.time(), os.environ.get('CUDA_VISIBLE_DEVICES')); "
+        "time.sleep(3); print('T', time.time())"
+    )
     with tempfile.TemporaryDirectory() as tmp, gl.Client(home=Path(tmp)) as c:
         jobs = [
             c.submit(gl.command(["python", "-c", code], accelerator="cuda", gpus=1))
-            for _ in range(2)
+            for _ in range(n + 1)
         ]
         spans = []
-        for j in jobs:
-            st = j.wait(300)
-            assert st.state == JobState.SUCCEEDED, (st.error, j.logs_text())
-            ts = [float(x.split()[1]) for x in j.logs_text().splitlines() if x.startswith("T ")]
-            spans.append((ts[0], ts[-1]))
-        spans.sort()
-        assert spans[1][0] >= spans[0][1], f"jobs overlapped: {spans}"
-        return f"gap {spans[1][0] - spans[0][1]:.2f}s"
+        for job in jobs:
+            st = job.wait(300)
+            assert st.state == JobState.SUCCEEDED, (st.error, job.logs_text())
+            rows = [x.split() for x in job.logs_text().splitlines() if x.startswith("T ")]
+            spans.append((float(rows[0][1]), float(rows[-1][1]), rows[0][2]))
+        events = sorted([(a, 1) for a, _, _ in spans] + [(b, -1) for _, b, _ in spans])
+        running = peak = 0
+        for _, d in events:
+            running += d
+            peak = max(peak, running)
+        assert peak == n, f"{peak} jobs ran at once on {n} GPU(s): {spans}"
+        for a in spans:
+            for b in spans:
+                if a is not b and a[0] < b[1] and b[0] < a[1]:
+                    assert a[2] != b[2], f"overlapping jobs shared GPU {a[2]}: {spans}"
+        return f"{n + 1} jobs on {n} GPU(s), at most {peak} at once, each on its own GPU"
 
 
 @check("trainer-as-gpulayer-job-cuda")

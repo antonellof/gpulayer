@@ -217,13 +217,13 @@ const STATUS: { label: string; dot: string; items: string }[] = [
     label: "Hardware-validated",
     dot: "bg-emerald-500",
     items:
-      "Apple Metal (MPS) · NVIDIA CUDA on one GPU (Tesla T4) · 30 workers on separate machines · distributed PyTorch with gloo on up to 16 machines, kept in one region (16 to 24% faster than split across two) · Google Cloud provisioning (a CPU VM and a Spot T4)",
+      "Apple Metal (MPS) · NVIDIA CUDA (Tesla T4, RTX 3070, A100) · several GPUs per machine with NCCL and the best-connected GPU choice · 30 workers on separate machines · distributed PyTorch with gloo on up to 16 machines, kept in one region (16 to 24% faster than split across two) · Google Cloud provisioning (a CPU VM and a Spot T4)",
   },
   {
     label: "Implemented, not validated",
     dot: "bg-amber-500",
     items:
-      "Several GPUs per machine, including the choice of best-connected GPUs · NCCL across machines · FSDP (experimental) · NVIDIA GPU workers on Kubernetes",
+      "NCCL across machines · FSDP (experimental) · NVIDIA GPU workers on Kubernetes",
   },
   {
     label: "Planned",

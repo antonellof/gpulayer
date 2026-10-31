@@ -4,12 +4,14 @@
 #   benchmarks/cloud/kaggle.sh run [DEST]     # push, wait, download the log (default DEST:
 #                                             # benchmarks/results/<date>-kaggle-t4x2/)
 #
-# Needs the kaggle CLI (`uv tool install kaggle`), an API token in ~/.kaggle/kaggle.json, and a
+# Needs the kaggle CLI (`uv tool install kaggle`), an API token (~/.kaggle/access_token or
+# kaggle.json), and a
 # phone-verified account (GPUs and internet). The kernel is private and named gpulayer-multigpu.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 DEST=${2:-$ROOT/benchmarks/results/$(date +%F)-kaggle-t4x2}
-user=$(python3 -c "import json,os;print(json.load(open(os.path.expanduser('~/.kaggle/kaggle.json')))['username'])")
+user=$(kaggle config view 2>/dev/null | sed -n 's/^- username: //p')
+[ -n "$user" ] || { echo "kaggle CLI not logged in (~/.kaggle/access_token or kaggle.json)" >&2; exit 1; }
 work=$(mktemp -d)
 cp "$ROOT/benchmarks/cloud/kaggle/validate.py" "$work/"
 cat > "$work/kernel-metadata.json" <<META

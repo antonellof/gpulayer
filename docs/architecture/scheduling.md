@@ -66,7 +66,9 @@ switches (`PXB`), the CPU's host bridge (`PHB`), one NUMA node (`NODE`) or acros
 so a 4-GPU job on an 8-GPU NVLink machine takes one NVLink island, and a 2-GPU job on a
 two-socket PCIe box takes two GPUs behind one switch. Single-GPU tasks, and machines where the
 topology is unknown, get the lowest-numbered free GPUs as before. This is tested with recorded
-`nvidia-smi topo -m` output; it has not run on a multi-GPU machine yet.
+`nvidia-smi topo -m` output, and checked on real machines: on a 4× RTX 3070 server whose GPUs
+pair up behind two host bridges, a 2-GPU job with GPU 0 busy got GPUs 2 and 3 (`PHB`) instead
+of 1 and 2 (`SYS`); on a 2× A100 SXM4 the link was read as `NV4`.
 
 ## What is not scheduled on (yet)
 

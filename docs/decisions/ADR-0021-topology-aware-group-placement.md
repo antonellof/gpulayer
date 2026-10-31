@@ -85,8 +85,10 @@ Code: `control_plane/scheduler.py` (`locality`, `_pick_group`, `ever_schedulable
   once, when a task is assigned: 44 to 66 us on an 8-GPU NVLink layout, against about 3 us
   for the lowest indices. On that layout a 4-GPU task with GPU 0 busy now gets the other
   NVLink island (4 to 7) instead of 1 to 4, which crosses the CPU sockets.
-- Tested with recorded matrices (NVLink cube mesh, two-socket PCIe with NIC columns). Not run
-  on a multi-GPU machine: the GCP project's GPU quota is one.
+- Tested with recorded matrices (NVLink cube mesh, two-socket PCIe with NIC columns), and on
+  real machines (2026-10-31, Vast.ai): a 4× RTX 3070 server read as two `PHB` pairs joined by
+  `SYS`, where a 2-GPU task with GPU 0 busy got GPUs 2–3 instead of 1–2; and a 2× A100 SXM4
+  read as `NV4`. NCCL all-reduce across the chosen GPUs passed on both.
 
 ## Security and operational implications
 
@@ -98,7 +100,7 @@ Code: `control_plane/scheduler.py` (`locality`, `_pick_group`, `ever_schedulable
 ## Follow-up
 
 - Measure one training job in one zone against the same job across regions.
-- Validate the GPU choice on a multi-GPU machine and measure NCCL all-reduce on the chosen
-  set against the lowest indices.
+- Measure training speed on the chosen GPUs against the lowest indices on a machine where they
+  differ.
 - Keep NVLink islands free: place single-GPU tasks on GPUs outside them when possible.
 - AWS and Azure metadata, once those providers exist.

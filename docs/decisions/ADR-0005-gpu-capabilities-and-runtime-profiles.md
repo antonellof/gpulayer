@@ -30,7 +30,7 @@ without GPU libraries, and it must report uncertain values as uncertain instead 
   | Accelerator | Independent | Distributed |
   |---|---|---|
   | cpu | tested | tested (torchrun+gloo, one host) |
-  | cuda | hardware-validated (Tesla T4, 2026-10-30) | implemented (planning tested; NCCL never run) |
+  | cuda | hardware-validated (Tesla T4, 2026-10-30; RTX 3070 and A100, 2026-10-31) | hardware-validated on one machine (NCCL, up to 4 GPUs, 2026-10-31); across machines implemented |
   | mps | hardware-validated (smoke test on Apple Silicon) | unsupported |
   | rocm | detection-only | unsupported |
 

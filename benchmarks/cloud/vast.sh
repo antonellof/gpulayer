@@ -45,8 +45,9 @@ for o in json.load(sys.stdin)[:15]:
           f\"cuda {o.get('cuda_max_good')}  cpu {o.get('cpu_name','')[:28]:<28} {o.get('geolocation','')}\")" ;;
   up)
     name=$1 offer=$2
-    vastai create instance "$offer" --image "$IMAGE" --disk 60 --ssh --direct --label "$name" \
-      --onstart-cmd 'apt-get update -qq && apt-get install -y -qq curl ca-certificates >/dev/null'
+    vastai create instance "$offer" --image "$IMAGE" --disk 60 --ssh --direct --label "$name" --raw \
+      --onstart-cmd 'apt-get update -qq && apt-get install -y -qq curl ca-certificates >/dev/null' |
+      python3 -c "import json,sys; print('instance', json.load(sys.stdin).get('new_contract'))"  # no API key
     for _ in $(seq 1 60); do
       state=$(vastai show instances --raw | python3 -c "
 import json,sys
@@ -75,7 +76,7 @@ print(next((i.get('actual_status') or '' for i in json.load(sys.stdin) if i.get(
     on "$vm" 'cd gpulayer && $HOME/.local/bin/uv pip freeze --python .venv-validate/bin/python' > "$dest/pip-freeze.txt" || true
     ls -la "$dest" ;;
   down)
-    for vm in "$@"; do id=$(id_of "$vm"); [ -n "$id" ] && vastai destroy instance "$id"; done ;;
+    for vm in "$@"; do id=$(id_of "$vm"); [ -n "$id" ] && vastai destroy instance "$id" -y; done ;;
   *)
     sed -n '2,18p' "$0"; exit 1 ;;
 esac

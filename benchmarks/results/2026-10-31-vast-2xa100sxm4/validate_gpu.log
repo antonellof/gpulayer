@@ -1,0 +1,266 @@
+
+==== hardware and software
+name, memory.total [MiB], driver_version, compute_cap
+NVIDIA A100-SXM4-40GB, 40960 MiB, 580.178.04, 8.0
+NVIDIA A100-SXM4-40GB, 40960 MiB, 580.178.04, 8.0
+	[4mGPU0	GPU1	CPU Affinity	NUMA Affinity	GPU NUMA ID[0m
+GPU0	 X 	NV4	0-31,64-95	0		N/A
+GPU1	NV4	 X 	32-63,96-127	1		N/A
+
+Legend:
+
+  X    = Self
+  SYS  = Connection traversing PCIe as well as the SMP interconnect between NUMA nodes (e.g., QPI/UPI)
+  NODE = Connection traversing PCIe as well as the interconnect between PCIe Host Bridges within a NUMA node
+  PHB  = Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)
+  PXB  = Connection traversing multiple PCIe bridges (without traversing the PCIe Host Bridge)
+  PIX  = Connection traversing at most a single PCIe bridge
+  NV#  = Connection traversing a bonded set of # NVLinks
+Linux 6.8.0-147-generic x86_64
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+128
+               total        used        free      shared  buff/cache   available
+Mem:             440          14         167          72         258         349
+
+==== install
+downloading uv 0.13.6 x86_64-unknown-linux-gnu
+installing to /root/.local/bin
+  uv
+  uvx
+everything's installed!
+
+To add $HOME/.local/bin to your PATH, either restart your shell or run:
+
+    source $HOME/.local/bin/env (sh, bash, zsh)
+    source $HOME/.local/bin/env.fish (fish)
+torch 2.15.0+cu132 cuda 13.2 available True devices 2
+gpulayer 0.5.0
+
+==== gpulayer resources detect
+host      195b9fceed7c (linux/x86_64), 128 cores, 440.71 GB RAM, python 3.12.16
+torch     2.15.0  distributed backends: gloo,nccl
+device    [0] cuda NVIDIA A100-SXM4-40GB (40.0 GB dedicated) independent=hardware-validated distributed=implemented
+device    [1] cuda NVIDIA A100-SXM4-40GB (40.0 GB dedicated) independent=hardware-validated distributed=implemented
+
+==== test suite
+.....s.................................................................. [ 29%]
+..........s............................................................. [ 59%]
+........................................................................ [ 88%]
+............................                                             [100%]
+242 passed, 2 skipped in 251.05s (0:04:11)
+
+==== CUDA hardware tests
+============================= test session starts ==============================
+platform linux -- Python 3.12.16, pytest-9.2.0, pluggy-1.7.0 -- /root/gpulayer/.venv-validate/bin/python
+rootdir: /root/gpulayer
+configfile: pyproject.toml
+collecting ... collected 2 items / 1 deselected / 1 selected
+
+tests/hardware/test_gpu_smoke.py::test_cuda_independent_job PASSED       [100%]
+
+======================= 1 passed, 1 deselected in 9.72s ========================
+
+==== CUDA checks
+CHECK detect-cuda PASS NVIDIA A100-SXM4-40GB 40.0 GB cc8.0, NVIDIA A100-SXM4-40GB 40.0 GB cc8.0 (3.4s)
+[gpulayer] training on cuda, precision 32-true, 3 epoch(s)
+epoch 0 step 50 train_loss=0.0112
+epoch 0 done in 0.328s: train_loss=0.1039 val_loss=0.0091
+epoch 1 step 100 train_loss=0.0068
+epoch 1 done in 0.16s: train_loss=0.0067 val_loss=0.0057
+epoch 2 step 150 train_loss=0.0034
+epoch 2 done in 0.161s: train_loss=0.0038 val_loss=0.0047
+CHECK trainer-in-process-32-true PASS val_loss 0.0047, 3 epochs 2.64s (2.7s)
+[gpulayer] training on cuda, precision bf16-mixed, 3 epoch(s)
+epoch 0 step 50 train_loss=0.0122
+epoch 0 done in 0.218s: train_loss=0.1142 val_loss=0.0081
+epoch 1 step 100 train_loss=0.0051
+epoch 1 done in 0.174s: train_loss=0.0064 val_loss=0.0057
+epoch 2 step 150 train_loss=0.0034
+epoch 2 done in 0.175s: train_loss=0.0037 val_loss=0.0045
+CHECK trainer-in-process-bf16-mixed PASS val_loss 0.0045, 3 epochs 0.77s (0.8s)
+[gpulayer] training on cuda, precision 16-mixed, 3 epoch(s)
+epoch 0 step 50 train_loss=0.0128
+epoch 0 done in 0.243s: train_loss=0.1040 val_loss=0.0100
+epoch 1 step 100 train_loss=0.0056
+epoch 1 done in 0.187s: train_loss=0.0065 val_loss=0.0061
+epoch 2 step 150 train_loss=0.0031
+epoch 2 done in 0.186s: train_loss=0.0035 val_loss=0.0048
+CHECK trainer-in-process-16-mixed PASS val_loss 0.0048, 3 epochs 0.85s (0.9s)
+[gpulayer] training on cuda, precision bf16-mixed, 3 epoch(s)
+Traceback (most recent call last):
+  File "/root/gpulayer/scripts/validate_cuda.py", line 33, in wrap
+    detail = fn() or ""
+             ^^^^
+  File "/root/gpulayer/scripts/validate_cuda.py", line 110, in <lambda>
+    check("trainer-torch-compile-bf16")(lambda: fit("bf16-mixed", compiled=True))
+                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/gpulayer/scripts/validate_cuda.py", line 98, in fit
+    trainer.fit(model, train, val)
+  File "/root/gpulayer/src/gpulayer/pytorch/trainer.py", line 259, in fit
+    self._fit_loop(rt, model, train_dataloaders, val_dataloaders, _resume_path(ckpt_path))
+  File "/root/gpulayer/src/gpulayer/pytorch/trainer.py", line 348, in _fit_loop
+    self._evaluate(rt, model, val)
+  File "/root/gpulayer/src/gpulayer/pytorch/trainer.py", line 476, in _evaluate
+    step_fn(batch, batch_idx)
+  File "/root/gpulayer/scripts/validate_cuda.py", line 61, in validation_step
+    self.log("val_loss", nn.functional.mse_loss(self(x), y))
+                                                ^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1787, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1798, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/gpulayer/scripts/validate_cuda.py", line 50, in forward
+    return self.net(x)
+           ^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/torch/_dynamo/eval_frame.py", line 563, in __call__
+    return super().__call__(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1787, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1798, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/torch/_dynamo/eval_frame.py", line 1282, in compile_wrapper
+    raise e.remove_dynamo_frames() from None
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/torch/_inductor/compile_fx.py", line 1369, in _compile_fx_inner
+    raise InductorError(e, currentframe()).with_traceback(
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/torch/_inductor/compile_fx.py", line 1346, in _compile_fx_inner
+    mb_compiled_graph = fx_codegen_and_compile(
+                        ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/torch/_inductor/compile_fx.py", line 2189, in fx_codegen_and_compile
+    return scheme.codegen_and_compile(gm, example_inputs, inputs_to_check, graph_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/torch/_inductor/compile_fx.py", line 1937, in codegen_and_compile
+    compiled_module = graph.compile_to_module()
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/torch/_inductor/graph.py", line 3112, in compile_to_module
+    return self._compile_to_module()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/torch/_inductor/graph.py", line 3118, in _compile_to_module
+    self.codegen_with_cpp_wrapper() if self.cpp_wrapper else self.codegen()
+                                                             ^^^^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/torch/_inductor/graph.py", line 3054, in codegen
+    self.scheduler.codegen()
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/torch/_inductor/scheduler.py", line 12391, in codegen
+    self._codegen_partitions()
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/torch/_inductor/scheduler.py", line 12543, in _codegen_partitions
+    self._codegen(partition)
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/torch/_inductor/scheduler.py", line 12744, in _codegen
+    self.get_backend(device).codegen_node(node)
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/torch/_inductor/codegen/cuda_combined_scheduling.py", line 262, in codegen_node
+    return self._triton_scheduling.codegen_node(node)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/torch/_inductor/codegen/simd.py", line 4259, in codegen_node
+    return self._codegen_nodes(nodes, coalesce_analysis)  # type: ignore[arg-type]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/torch/_inductor/codegen/simd.py", line 4126, in _codegen_nodes
+    return self.codegen_node_schedule(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/torch/_inductor/codegen/simd.py", line 4356, in codegen_node_schedule
+    src_code = kernel.codegen_kernel()
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/torch/_inductor/codegen/triton.py", line 8092, in codegen_kernel
+    **self.inductor_meta_common(),
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/torch/_inductor/codegen/triton.py", line 7710, in inductor_meta_common
+    "backend_hash": torch.utils._triton.triton_hash_with_backend(),
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/torch/utils/_triton.py", line 347, in triton_hash_with_backend
+    backend = triton_backend()
+              ^^^^^^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/torch/utils/_triton.py", line 317, in triton_backend
+    target = driver.active.get_current_target()
+             ^^^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/triton/runtime/driver.py", line 39, in active
+    self._active = self.default
+                   ^^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/triton/runtime/driver.py", line 33, in default
+    self._default = _create_driver()
+                    ^^^^^^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/triton/runtime/driver.py", line 21, in _create_driver
+    return active_drivers[0]()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/triton/backends/nvidia/driver.py", line 348, in __init__
+    self.utils = CudaUtils()  # TODO: make static
+                 ^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/triton/backends/nvidia/driver.py", line 102, in __init__
+    mod = compile_module_from_file(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/triton/runtime/build.py", line 196, in compile_module_from_file
+    return _compile_so_from_file(src_path, name, library_dirs, include_dirs, libraries, ccflags, load_module=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/triton/runtime/build.py", line 165, in _compile_so_from_file
+    return _compile_so(src=src, src_path=src_path, name=name, library_dirs=library_dirs, include_dirs=include_dirs,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/triton/runtime/build.py", line 149, in _compile_so
+    so = _build(name, src_path, tmpdir, library_dirs or [], include_dirs or [], libraries or [], ccflags or [],
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/triton/runtime/build.py", line 66, in _build
+    cc = _find_compiler(language)
+         ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/gpulayer/.venv-validate/lib/python3.12/site-packages/triton/runtime/build.py", line 32, in _find_compiler
+    raise RuntimeError(
+torch._inductor.exc.InductorError: RuntimeError: Failed to find C compiler. Please specify via CC environment variable or set triton.knobs.build.impl.
+
+Set TORCHDYNAMO_VERBOSE=1 for the full Dynamo stack trace (please do this especially if you're reporting a bug to PyTorch). For even more developer context, set TORCH_LOGS="+dynamo"
+
+CHECK trainer-torch-compile-bf16 FAIL InductorError: RuntimeError: Failed to find C compiler. Please specify via CC environment variable or set triton.knobs.build.impl.
+
+Set TORCHDYNAMO_VERBOSE=1 for the full Dynamo stack trace (please do this especially if you're reporting a bug to PyTorch). For even more developer context, set TORCH_LOGS="+dynamo"
+
+CHECK cuda-job-gets-its-reserved-gpu PASS CVD 0 1 NVIDIA A100-SXM4-40GB (4.3s)
+Traceback (most recent call last):
+  File "/root/gpulayer/scripts/validate_cuda.py", line 33, in wrap
+    detail = fn() or ""
+             ^^^^
+  File "/root/gpulayer/scripts/validate_cuda.py", line 145, in _serial
+    assert spans[1][0] >= spans[0][1], f"jobs overlapped: {spans}"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: jobs overlapped: [(1793461765.0589113, 1793461768.0590286), (1793461765.0623202, 1793461768.0624318)]
+CHECK one-gpu-worker-runs-gpu-jobs-one-at-a-time FAIL AssertionError: jobs overlapped: [(1793461765.0589113, 1793461768.0590286), (1793461765.0623202, 1793461768.0624318)]
+CHECK trainer-as-gpulayer-job-cuda PASS succeeded (9.2s)
+SUMMARY 6/8 passed ['trainer-torch-compile-bf16', 'one-gpu-worker-runs-gpu-jobs-one-at-a-time']
+FAILED: python scripts/validate_cuda.py
+
+==== several GPUs: interconnect, GPU choice, NCCL
+	[4mGPU0	GPU1	CPU Affinity	NUMA Affinity	GPU NUMA ID[0m
+GPU0	 X 	NV4	0-31,64-95	0		N/A
+GPU1	NV4	 X 	32-63,96-127	1		N/A
+
+Legend:
+
+  X    = Self
+  SYS  = Connection traversing PCIe as well as the SMP interconnect between NUMA nodes (e.g., QPI/UPI)
+  NODE = Connection traversing PCIe as well as the interconnect between PCIe Host Bridges within a NUMA node
+  PHB  = Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)
+  PXB  = Connection traversing multiple PCIe bridges (without traversing the PCIe Host Bridge)
+  PIX  = Connection traversing at most a single PCIe bridge
+  NV#  = Connection traversing a bonded set of # NVLinks
+
+CHECK topology PASS 2 GPUs, links {0: {1: 'NV4'}, 1: {0: 'NV4'}}, missing or asymmetric: []
+CHECK choice-2 PASS chosen [0, 1] (slowest link NV4), lowest indices [0, 1] (slowest link NV4)
+CHECK assigned PASS CUDA_VISIBLE_DEVICES=0,1 expected 0,1 (succeeded)
+CHECK nccl PASS 1 node x 2 processes, 2 ranks reported, succeeded, 9.5 s
+SUMMARY all passed
+
+==== benchmarks
+jobs=20 workers=1
+python start-up               20.5 ms
+one job, idle worker       p50    29.5 ms   p95    30.0 ms   (submit -> wait() returns)
+burst of jobs:
+submit -> started          p50   127.8 ms   p95   229.3 ms
+submit -> client sees done p50   160.8 ms   p95   260.2 ms
+throughput                   65.3 jobs/s
+2 node(s) x 2 process(es), seconds
+direct    dispatch  0.01  launcher start  0.06  import torch  1.48  init group  5.46  launcher exit  0.91  completion  0.00  total  7.92
+direct    dispatch  0.00  launcher start  0.05  import torch  1.48  init group  0.38  launcher exit  1.17  completion  0.00  total  3.09
+direct    dispatch  0.00  launcher start  0.06  import torch  1.51  init group  0.60  launcher exit  1.13  completion  0.00  total  3.31
+torchrun  dispatch  0.00  launcher start  1.58  import torch  1.47  init group  5.08  launcher exit  1.52  completion  0.00  total  9.65
+torchrun  dispatch  0.00  launcher start  2.28  import torch  1.49  init group  0.02  launcher exit  1.97  completion  0.00  total  5.76
+torchrun  dispatch  0.00  launcher start  6.62  import torch  1.50  init group  5.04  launcher exit  1.81  completion  0.00  total 14.97
+
+==== done
+SOME STEPS FAILED

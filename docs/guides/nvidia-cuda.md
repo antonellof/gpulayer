@@ -53,8 +53,8 @@ or a PCIe switch in the same worker. See
 
 On a machine with two or more GPUs, `python scripts/validate_multigpu.py` checks the parsed
 interconnect against `nvidia-smi topo -m`, which GPUs a multi-GPU job is given, and an NCCL
-all-reduce across all of them (`scripts/validate_gpu.sh` runs it automatically). It has not
-been run yet: the cloud project used so far has a quota of one GPU.
+all-reduce across all of them (`scripts/validate_gpu.sh` runs it automatically).
+`benchmarks/cloud/vast.sh` and `benchmarks/cloud/kaggle.sh` rent such machines.
 
 To split a machine between workers, for example separate queues or Python environments, give
 each worker its own GPUs with `--gpus`, so no GPU is offered twice:
@@ -70,8 +70,18 @@ gpulayer join URL --token T --name box-cpu --gpus none --concurrency 8   # CPU j
 Validated on a Tesla T4 (GCP `n1-standard-8`, driver 580, torch 2.15 with CUDA 13.2):
 detection, CUDA jobs with their reserved GPU, one GPU job at a time on a one-GPU worker, and
 the PyTorch Trainer in `32-true`, `bf16-mixed`, `16-mixed` and with `torch.compile`, both in
-process and as a job. Several GPUs per machine and NCCL across GPUs or machines have not been
-run on hardware yet.
+process and as a job.
+
+Validated on two multi-GPU machines rented on Vast.ai (2026-10-31, torch 2.15 with CUDA 13):
+
+| Machine | Interconnect read from `nvidia-smi topo -m` | Checks |
+|---|---|---|
+| 4× RTX 3070, AMD EPYC 7551 | 0–1 and 2–3 `PHB`, the rest `SYS` | 8/8 CUDA checks; NCCL all-reduce across 4 GPUs as a GPUlayer job; a 2-GPU job with GPU 0 busy got GPUs 2–3 (`PHB`), not 1–2 (`SYS`) |
+| 2× A100 SXM4 40 GB | `NV4` (NVLink) | 8/8 CUDA checks; NCCL all-reduce across both GPUs over NVLink |
+
+Both machines needed a C compiler for `torch.compile` (`apt-get install gcc`); rented
+containers often lack one. NCCL across machines has not been run yet. Logs:
+`benchmarks/results/2026-10-31-vast-4x3070/` and `2026-10-31-vast-2xa100sxm4/`.
 
 Repeat the validation on any NVIDIA machine:
 

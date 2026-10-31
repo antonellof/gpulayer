@@ -13,7 +13,8 @@ machines named. Everything else says what is missing.
 | Distributed PyTorch with gloo | validated on up to 16 machines; DDP training on 8 machines 11.9% faster than Lightning |
 | Distributed groups kept in one network group, zone or region | validated on GCP: a job split across two regions ran 16 to 24% slower than in one region; the scheduler kept it in one zone |
 | NVIDIA CUDA | validated on one Tesla T4, including the Trainer (1.14 to 1.39x faster per step than Lightning) |
-| Several GPUs per machine, NCCL, choosing the best-connected GPUs | implemented; GPU choice tested with recorded `nvidia-smi topo -m` output; not run on a multi-GPU machine |
+| Several GPUs per machine with NCCL, choosing the best-connected GPUs | validated on 4× RTX 3070 (PCIe) and 2× A100 SXM4 (NVLink) |
+| NCCL across machines | implemented; not run yet |
 | Apple Silicon (PyTorch MPS, MLX) | validated on an M2 Pro |
 | AMD ROCm | detected, not run |
 | JAX and CuPy on NVIDIA GPUs | detection tested; not run on a GPU |
@@ -27,8 +28,7 @@ machines named. Everything else says what is missing.
 
 ## Next
 
-- Several GPUs per machine and NCCL across machines, including the best-connected GPU choice.
-  Waiting on more GPU quota from Google Cloud.
+- NCCL across machines, and Trainer training speed on several GPUs against Lightning.
 - FSDP and `torch.compile` on CUDA.
 - A second cloud provider.
 - A CUDA container image.

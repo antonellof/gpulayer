@@ -173,8 +173,8 @@ work in 60 s on 32 slots, 87% of the ideal.
 
 ## What has not been measured
 
-- More than one GPU per machine, NCCL across machines, and FSDP: the cloud project used had a
-  quota of one GPU.
+- Training speed on several GPUs (NCCL works on 4 GPUs in one machine, but no timed training
+  run yet), NCCL across machines, and FSDP on GPUs.
 - Training that runs for hours, and more than 30 machines.
 - AMD GPUs.
 

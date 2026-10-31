@@ -110,6 +110,8 @@ $V fetch gl-gpu benchmarks/results/$(date +%F)-vast/ && $V down gl-gpu
 | `results/2026-10-31-placement/` | one Mac: cost of placing a distributed group and of choosing GPUs by interconnect, and the zones a group spans |
 | `results/2026-10-31-gcp-t4/` | Tesla T4: validation, Lightning comparison with device prefetch and cuDNN autotuning (and a run with each turned off), `nvidia-smi`, package versions |
 | `results/2026-10-31-gcp-locality/` | 12 VMs in three zones: one training job in one zone, two zones and two regions, and where the scheduler put it unpinned |
+| `results/2026-10-31-vast-4x3070/` | Vast.ai 4× RTX 3070: CUDA checks, interconnect, GPU choice with a busy GPU, NCCL across 4 GPUs |
+| `results/2026-10-31-vast-2xa100sxm4/` | Vast.ai 2× A100 SXM4: CUDA checks, NVLink detected, NCCL across both GPUs |
 | `results/2026-10-31-gcp-ddp-cpu/` | `n1-standard-8` without GPU: Lightning comparison, DDP on 2 CPU processes |
 | `results/2026-10-30-gcp-provider/` | Google Cloud adapter: CPU VM created, joined, ran a job, deleted |
 | `results/2026-10-30-gcp-provider-t4/` | Google Cloud adapter: Spot T4 VM created, ran `Trainer` on CUDA, deleted |

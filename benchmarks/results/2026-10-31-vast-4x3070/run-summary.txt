@@ -1,0 +1,25 @@
+CHANGELOG.md
+CLAUDE.md
+Dockerfile
+Welcome to vast.ai. If authentication fails, try again after a few seconds, and double check your ssh key.
+Have fun!
+CHECK detect-cuda PASS NVIDIA GeForce RTX 3070 8.0 GB cc8.6, NVIDIA GeForce RTX 3070 8.0 GB cc8.6, NVIDIA GeForce RTX 3070 8.0 GB cc8.6, NVIDIA GeForce RTX 3070 8.0 GB cc8.6 (3.3s)
+CHECK trainer-in-process-32-true PASS val_loss 0.0051, 3 epochs 3.11s (3.2s)
+CHECK trainer-in-process-bf16-mixed PASS val_loss 0.0047, 3 epochs 1.03s (1.1s)
+CHECK trainer-in-process-16-mixed PASS val_loss 0.0049, 3 epochs 1.17s (1.2s)
+CHECK trainer-torch-compile-bf16 FAIL InductorError: RuntimeError: Failed to find C compiler. Please specify via CC environment variable or set triton.knobs.build.impl.
+CHECK cuda-job-gets-its-reserved-gpu PASS CVD 0 1 NVIDIA GeForce RTX 3070 (5.4s)
+CHECK one-gpu-worker-runs-gpu-jobs-one-at-a-time FAIL AssertionError: jobs overlapped: [(1793461662.195316, 1793461665.1954768), (1793461662.19745, 1793461665.1976037)]
+CHECK trainer-as-gpulayer-job-cuda PASS succeeded (11.0s)
+SUMMARY 6/8 passed ['trainer-torch-compile-bf16', 'one-gpu-worker-runs-gpu-jobs-one-at-a-time']
+FAILED: python scripts/validate_cuda.py
+CHECK topology PASS 4 GPUs, links {0: {1: 'PHB', 2: 'SYS', 3: 'SYS'}, 1: {0: 'PHB', 2: 'SYS', 3: 'SYS'}, 2: {0: 'SYS', 1: 'SYS', 3: 'PHB'}, 3: {0: 'SYS', 1: 'SYS', 2: 'PHB'}}, missing or asymmetric: []
+CHECK choice-2 PASS chosen [0, 1] (slowest link PHB), lowest indices [0, 1] (slowest link PHB)
+CHECK choice-3 PASS chosen [0, 1, 2] (slowest link SYS), lowest indices [0, 1, 2] (slowest link SYS)
+CHECK choice-4 PASS chosen [0, 1, 2, 3] (slowest link SYS), lowest indices [0, 1, 2, 3] (slowest link SYS)
+CHECK assigned PASS CUDA_VISIBLE_DEVICES=0,1 expected 0,1 (succeeded)
+CHECK nccl PASS 1 node x 4 processes, 4 ranks reported, succeeded, 5.4 s
+SUMMARY all passed
+SOME STEPS FAILED
+
+[exited with code 0]

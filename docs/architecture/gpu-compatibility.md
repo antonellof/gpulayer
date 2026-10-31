@@ -8,7 +8,7 @@ backend counts as supported only if it is listed there.
 | Accelerator | Independent jobs | Distributed jobs | Notes |
 |---|---|---|---|
 | `cpu` | tested | tested (gloo, one host) | no GPU libraries required |
-| `cuda` | hardware-validated (Tesla T4) | implemented (nccl/gloo) | any CUDA workload; single-GPU jobs and the Trainer validated on a T4; NCCL not yet run on hardware |
+| `cuda` | hardware-validated (Tesla T4, RTX 3070, A100) | hardware-validated on one machine (nccl, up to 4 GPUs); across machines implemented | any CUDA workload; the Trainer validated on a T4, RTX 3070 and A100; NCCL across machines not yet run |
 | `mps` | hardware-validated | unsupported | the Apple GPU through Metal (PyTorch MPS, MLX, ...); run on Apple Silicon |
 | `rocm` | detection-only | unsupported | reported with `execution_supported=false`, never scheduled |
 
