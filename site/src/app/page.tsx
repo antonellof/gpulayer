@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { ArchitectureDiagram } from "@/components/landing/architecture-diagram";
 import { CopyCommand } from "@/components/landing/copy-command";
+import { HeroLandscape } from "@/components/landing/hero-landscape";
 import { VERSION } from "@/lib/version";
 import { WorksWith } from "@/components/landing/logos";
 import { Quickstart } from "@/components/landing/quickstart";
@@ -212,8 +213,9 @@ export default function Home() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }} />
       <main className="flex-1">
         {/* Hero */}
-        <section className="border-b border-border">
-          <div className="mx-auto max-w-6xl px-6 pb-16 pt-20 lg:pt-28">
+        <section className="relative overflow-hidden border-b border-border">
+          <HeroLandscape />
+          <div className="relative mx-auto max-w-6xl px-6 pb-16 pt-20 lg:pt-28">
             <Link
               href="/docs/project/status/"
               className="inline-flex items-center gap-2 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"

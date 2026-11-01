@@ -98,3 +98,20 @@
     @apply my-6 block overflow-x-auto;
   }
 }
+
+/* Hero landscape: faint behind the text, gone before the terminal below. Phones stack the
+   text over it, so it fades from the top; wide screens fade it behind the headline (left). */
+.hero-landscape {
+  -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.06) 0%, rgba(0, 0, 0, 0.22) 45%, rgba(0, 0, 0, 0.8) 72%, transparent 100%);
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.06) 0%, rgba(0, 0, 0, 0.22) 45%, rgba(0, 0, 0, 0.8) 72%, transparent 100%);
+}
+@media (min-width: 1024px) {
+  .hero-landscape {
+    -webkit-mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.2) 0%, rgba(0, 0, 0, 0.55) 35%, #000 62%),
+      linear-gradient(180deg, #000 72%, transparent 100%);
+    -webkit-mask-composite: source-in;
+    mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.2) 0%, rgba(0, 0, 0, 0.55) 35%, #000 62%),
+      linear-gradient(180deg, #000 72%, transparent 100%);
+    mask-composite: intersect;
+  }
+}

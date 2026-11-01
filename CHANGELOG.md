@@ -3,6 +3,13 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
+## Unreleased
+
+- Site: the home page hero has an animated wireframe landscape (mountains, lakes, hills) behind
+  the headline, drawn with three.js loaded after the page renders. It pauses offscreen and in
+  hidden tabs, shows one still frame with reduced motion, uses a lighter grid on phones and
+  follows the light/dark theme.
+
 ## 0.8.1 (2026-11-01)
 
 - Benchmarks re-measured with the 0.8 Trainer (2026-11-01) and every Trainer chart regenerated:
