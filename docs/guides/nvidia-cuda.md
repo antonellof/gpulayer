@@ -15,6 +15,12 @@ the driver works. PyTorch jobs additionally need
 the `torch.cuda` capability (a CUDA build of torch in the worker's Python); if it is missing,
 `resources detect` prints a note and PyTorch jobs are not placed there.
 
+If convolutions fail with `CUDNN_STATUS_SUBLIBRARY_LOADING_FAILED` (or other cuDNN or cuBLAS
+loading errors) while plain tensor operations work, the machine's `LD_LIBRARY_PATH` points at a
+system CUDA whose libraries clash with the ones in the PyTorch wheel. AWS Deep Learning AMIs
+set it in `/etc/profile.d/dlami.sh`. Workers pass their environment to jobs, so start the
+worker without it: `env -u LD_LIBRARY_PATH gpulayer join ...` (or `gpulayer up`).
+
 ## Train
 
 ```python

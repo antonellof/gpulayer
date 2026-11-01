@@ -30,6 +30,10 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--case", choices=["ddp", "manual", "fsdp"], default="ddp")
 ap.add_argument("--nodes", type=int, default=2)
 ap.add_argument("--steps", type=int, default=300)
+ap.add_argument("--precision", default=None, help="default: 16-mixed (32-true for fsdp)")
+ap.add_argument(
+    "--clip", type=float, default=1.0, help="manual case: clip_gradients value (0: off)"
+)
 args = ap.parse_args()
 
 
@@ -126,7 +130,8 @@ class Model(glt.Module):
         opt = self.optimizers()
         opt.zero_grad()
         self.manual_backward(loss)
-        self.clip_gradients(opt, gradient_clip_val=1.0)
+        if args.clip:
+            self.clip_gradients(opt, gradient_clip_val=args.clip)
         opt.step()
         return {"loss": loss.detach()}
 
@@ -142,7 +147,7 @@ trainer = glt.Trainer(
     target="remote",
     max_steps=args.steps,
     max_epochs=1000,
-    precision="32-true" if args.case == "fsdp" else "16-mixed",
+    precision=args.precision or ("32-true" if args.case == "fsdp" else "16-mixed"),
     strategy="fsdp" if args.case == "fsdp" else glt.DDPStrategy(gradient_as_bucket_view=True),
     sync_batchnorm=args.case == "ddp",
     log_every_n_steps=0,
