@@ -283,7 +283,7 @@ const BEHIND = [
 const FITS = [
   "Your GPUs are spread over a laptop, a few servers and some rented VMs, and you want to train on all of them from one script.",
   "Your team mixes NVIDIA servers and Apple Silicon Macs and wants each run on hardware that can train it.",
-  "You want a run that cannot start to fail at once, with a reason for each machine.",
+  "You want each run placed on a machine that can train it, and told why when none can.",
   "You want to start small: `gpulayer up` on one machine, `gpulayer join` on the others, no cluster to operate.",
 ];
 

@@ -333,9 +333,9 @@ export default function Home() {
           <div className="mx-auto grid max-w-6xl items-center gap-12 px-6 py-24 lg:grid-cols-2">
             <div>
               <SectionHeader
-                eyebrow="Placement"
-                title="A run that cannot start fails at once, with the reason"
-                lede="Workers report their GPUs, memory, drivers and PyTorch build. A run goes only to machines that can train it."
+                eyebrow="Scheduling"
+                title="Smart placement: every run lands where it can train"
+                lede="Workers report their GPUs, memory, drivers and PyTorch build. A run goes only to machines that can train it, on their best-connected GPUs. When none can, it is rejected before it starts, with the reason for each machine."
               />
               <Link href="/docs/architecture/scheduling/" className="link-arrow mt-8">
                 How scheduling works <ArrowRight className="h-3.5 w-3.5" />
