@@ -19,7 +19,8 @@ not yet validated.
 
 > **Status: v0.8.1.** Validated on a Tesla T4, 4× RTX 3070, 2× A100 (NVLink), an Apple M2 Pro,
 > distributed CPU training on up to 16 Google Cloud machines, and NCCL across 8 AWS machines
-> with one Tesla T4 each. Cloud VMs are created by GPUlayer on Google Cloud only. See
+> with one Tesla T4 each. GPUlayer creates cloud VMs on Google Cloud; AWS and Vast.ai GPU machines were run by joining
+> them as workers. See
 > [Status and roadmap](project/status.md) and
 > [Performance and comparison](get-started/performance-and-comparison.md).
 

@@ -116,7 +116,7 @@ const FEATURES = [
   {
     icon: Cloud,
     title: "Every GPU you can reach",
-    body: "Laptops, workstations, servers that join with one command, and Google Cloud VMs created for a run. NVIDIA CUDA and Apple Metal are validated.",
+    body: "Laptops, workstations and servers that join with one command, cloud GPUs on AWS and Vast.ai that join the same way, and Google Cloud VMs created for a run. NVIDIA CUDA and Apple Metal are validated.",
   },
   {
     icon: ScrollText,

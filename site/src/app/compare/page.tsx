@@ -50,7 +50,7 @@ const MATRIX: { feature: string; marks: Mark[]; note?: string }[] = [
   {
     feature: "Creates cloud GPUs for a run",
     marks: ["partial", "no", "no", "yes", "yes", "yes", "yes", "partial"],
-    note: "GPUlayer: Google Cloud only",
+    note: "GPUlayer creates them on Google Cloud; AWS and Vast.ai GPUs were tested by joining them",
   },
   {
     feature: "No cluster to operate",
@@ -73,7 +73,7 @@ const WHAT: [string, string][] = [
 ];
 
 const ELSEWHERE = [
-  "You need a cloud other than Google Cloud, or autoscaling pools: SkyPilot, dstack or Ray cover more.",
+  "You want VMs created for you outside Google Cloud, or autoscaling pools: SkyPilot, dstack or Ray cover more (AWS or Vast.ai machines you start can join GPUlayer).",
   "You rely on DeepSpeed or TPUs today: they are implemented in the GPUlayer Trainer but not yet run on hardware.",
   "Untrusted users share the machines: GPUlayer does not sandbox jobs.",
   "One GPU on the machine in front of you: a plain training loop is simpler.",
