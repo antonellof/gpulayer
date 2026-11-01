@@ -116,4 +116,3 @@ def loaders_of(value: Any) -> list[Any]:
     if isinstance(value, (list, tuple)):
         return list(value)
     return [value]
-
