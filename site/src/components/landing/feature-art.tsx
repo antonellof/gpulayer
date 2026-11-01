@@ -5,6 +5,8 @@
 
 import type { CSSProperties, ReactNode } from "react";
 
+import { InfinityLoop } from "./infinity-loop";
+
 const W = 260;
 const H = 160;
 const S = 10; // one unit
@@ -299,35 +301,12 @@ function Results() {
 }
 
 function Loop() {
-  // your own loop: a light runs an infinity path between your script and the GPU
-  const o: Pt = [130, 46];
-  const c = 3.5;
-  const k = 0.75;
-  const at = (u: number, v: number, z = 0) => iso(o, c + (u + v) * k, c + (v - u) * k, z);
-  const pts: Pt[] = [];
-  for (let i = 0; i <= 96; i++) {
-    const t = (i / 96) * Math.PI * 2;
-    const den = 1 + Math.sin(t) ** 2;
-    pts.push(at((3.4 * Math.cos(t)) / den, (3.4 * Math.sin(t) * Math.cos(t)) / den));
-  }
-  const path = `M${pts.map(([a, b]) => `${a.toFixed(1)} ${b.toFixed(1)}`).join(" L")} Z`;
-  const box = (u: number, s: number) => ({ x: c + u * k * 1 - s / 2 + 0, y: c - u * k - s / 2 });
-  const left = box(-2.3, 1);
-  const right = box(2.3, 1.1);
+  // a 3D infinity loop turning in space, a light running along it (infinity-loop.tsx)
   return (
     <>
-      <Zoom k={1.6} dy={4}>
-        <Grid o={o} n={7} m={7} />
-        <path d={path} fill="none" stroke={ACCENT} strokeOpacity={0.4} strokeWidth={0.9} />
-        <Box o={o} x={left.x} y={left.y} w={1} d={1} h={0.5} />
-        <g className="fa-pulse-glow">
-          <Box o={o} x={right.x} y={right.y} w={1.1} d={1.1} h={1.1} glow />
-        </g>
-        <circle r={2.2} fill={ACCENT_TOP} filter="url(#fa-glow)" className="fa-move">
-          <animateMotion dur="5s" repeatCount="indefinite" path={path} />
-        </circle>
-      </Zoom>
-      <Label at={[22, 128]} text="launch()" />
+      <Grid o={[130, 40]} n={8} m={8} />
+      <InfinityLoop cx={130} cy={74} scale={1.7} />
+      <Label at={[22, 140]} text="launch()" />
     </>
   );
 }
