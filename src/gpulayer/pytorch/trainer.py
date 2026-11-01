@@ -1361,6 +1361,11 @@ class Trainer:
             self._step_schedulers("step")
 
     def _clip(self, optimizer: torch.optim.Optimizer, value: float, algorithm: str) -> None:
+        # With manual optimization the model holds _ManualOptimizer wrappers: unscale the real
+        # optimizer, which GradScaler.step checks (unscaling the wrapper made step unscale the
+        # gradients a second time, so 16-mixed manual runs with clipping did not learn).
+        if isinstance(optimizer, _ManualOptimizer):
+            optimizer = optimizer.optimizer
         rt = self.runtime
         if rt is not None and rt.scaler is not None and id(optimizer) not in self._unscaled:
             rt.scaler.unscale_(optimizer)

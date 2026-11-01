@@ -221,6 +221,26 @@ def test_manual_optimization_with_two_optimizers(tmp_path):
     assert t.history[-1]["loss"] < t.history[0]["loss"]
 
 
+def test_clipping_a_manual_optimizer_unscales_the_real_one(tmp_path):
+    """Regression (found on 2x T4 over NCCL): clip_gradients on the wrapper returned by
+    self.optimizers() must unscale the wrapped optimizer, or GradScaler.step unscales twice."""
+    from gpulayer.pytorch.trainer import _ManualOptimizer
+
+    unscaled = []
+
+    class Scaler:
+        def unscale_(self, opt):
+            unscaled.append(opt)
+
+    model = Lin()
+    t = trainer(tmp_path)
+    opt = torch.optim.SGD(model.parameters(), lr=0.1)
+    t.runtime = type("RT", (), {"scaler": Scaler()})()
+    t._clip(_ManualOptimizer(opt, t), 1.0, "norm")
+    t._clip(_ManualOptimizer(opt, t), 1.0, "norm")
+    assert unscaled == [opt]  # the real optimizer, once per step
+
+
 def test_several_optimizers_need_manual_optimization(tmp_path):
     class Two(Lin):
         def configure_optimizers(self):
