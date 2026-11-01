@@ -1214,6 +1214,8 @@ class Trainer:
         train = self._prepare_loader(rt, train_src)
         val = self._prepare_loaders(rt, val_src)
         self.train_dataloader, self.val_dataloaders = train, val
+        if rt.is_global_zero:
+            _performance_hints(rt, loaders_of(train), self.num_devices)
         if rt.device.type == "cuda" and not self.deterministic:
             # cuDNN times its algorithms for each new input shape and keeps the fastest: 5 to
             # 9% faster CNN steps measured, for 1 to 3 s of timing at the start. Worth it only
@@ -2626,6 +2628,43 @@ def _extreme(values: list[Any], fx: str) -> float:
     dev = tensors[0].device
     stacked = torch.stack([t.to(dev).float() for t in tensors])
     return float(stacked.max() if fx == "max" else stacked.min())
+
+
+_HINTED: set[str] = set()
+
+
+def _performance_hints(rt: Runtime, loaders: list[Any], local_processes: int) -> None:
+    """Lightning's two speed hints, once per process, as UserWarnings (silence them with
+    ``gpulayer.pytorch.utilities.disable_possible_user_warnings``)."""
+    import warnings
+
+    if (
+        "tf32" not in _HINTED
+        and rt.device.type == "cuda"
+        and torch.cuda.get_device_capability(rt.device)[0] >= 8
+        and torch.get_float32_matmul_precision() == "highest"
+    ):
+        _HINTED.add("tf32")
+        warnings.warn(
+            f"{torch.cuda.get_device_name(rt.device)} has Tensor Cores: "
+            "torch.set_float32_matmul_precision('high') makes float32 matmuls several times "
+            "faster at slightly lower precision",
+            UserWarning,
+            stacklevel=3,
+        )
+    from gpulayer.pytorch.utilities import suggested_max_num_workers
+
+    bound = suggested_max_num_workers(max(1, local_processes))
+    for loader in loaders:
+        workers = getattr(loader, "num_workers", None)
+        if "workers" not in _HINTED and workers is not None and workers < 2 and bound > 1:
+            _HINTED.add("workers")
+            warnings.warn(
+                f"the training DataLoader has num_workers={workers}; loading may limit speed. "
+                f"This machine can give each process up to num_workers={bound}",
+                UserWarning,
+                stacklevel=3,
+            )
 
 
 def _checkpoints_last(callbacks: list[Callback]) -> list[Callback]:

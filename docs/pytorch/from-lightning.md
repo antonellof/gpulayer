@@ -79,6 +79,29 @@ with `scripts/compare_lightning_api.py` against Lightning's source). How far eac
 - Habana HPUs are not supported. Current Lightning removed them too (`lightning-habana` is
   archived).
 
+## Lightning's speed features
+
+Each of Lightning's performance mechanisms, found in its source, and GPUlayer's equivalent:
+
+| Lightning | GPUlayer |
+|---|---|
+| calls only hooks a model or callback overrides | same |
+| keeps logged values on the device; syncs at log steps | same |
+| `inference_mode` for evaluation (`no_grad` with gloo, FSDP, XLA) | same |
+| `zero_grad(set_to_none=True)`; `no_sync` while accumulating | same |
+| DDP `static_graph`, `gradient_as_bucket_view`, communication hooks | same |
+| one CPU thread share per process | same, set by the worker (`OMP_NUM_THREADS`) |
+| hint to enable TF32 on Tensor Core GPUs; hint when `num_workers` is low | same hints, once per process |
+| keeps every `DataLoader` setting when adding a `DistributedSampler` | same |
+| `benchmark=` for cuDNN autotuning | on by default for CUDA runs of 1,000 steps or more |
+| `torch.compile`, `AsyncCheckpointIO`, `MpDeviceLoader` on TPUs | same |
+| FSDP, activation checkpointing, tensor parallelism, 4-bit and FP8 plugins | same (tested on CPU or with fakes, see below) |
+| SLURM auto-requeue on SIGUSR1 | not needed: GPUlayer retries tasks itself; SIGTERM saves a checkpoint |
+
+GPUlayer's own additions are in [Performance](../architecture/performance.md): one autocast
+object reused across steps, two-level gradient sync with gloo, the direct process launcher and
+placement on the best-connected GPUs.
+
 ## Validated on GPUs
 
 `sync_batchnorm`, 16-mixed with manual optimization, `torch.compile` with Inductor and

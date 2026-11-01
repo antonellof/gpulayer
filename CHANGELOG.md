@@ -5,6 +5,12 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Fix: sharding a DataLoader across processes dropped `persistent_workers`,
+  `prefetch_factor`, `worker_init_fn`, `generator`, `timeout` and the multiprocessing context,
+  so distributed runs lost the user's loader tuning. They are kept now, as in Lightning.
+- Trainer: Lightning's two speed hints (enable TF32 on Tensor Core GPUs; raise a low
+  `num_workers`), once per process, silenced by
+  `gpulayer.pytorch.utilities.disable_possible_user_warnings()`.
 - Trainer: the rest of Lightning's public API (ADR-0024, "Full public API"), checked with the
   new `scripts/compare_lightning_api.py`. Highlights: SIGTERM saves a resumable checkpoint
   and raises `SIGTERMException`; `trainer.init_module()`; FSDP options (sharding strategies,

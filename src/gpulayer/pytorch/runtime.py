@@ -393,6 +393,18 @@ class Runtime:
         sampler: DistributedSampler[Any] = DistributedSampler(
             loader.dataset, num_replicas=replicas, rank=rank, shuffle=shuffle
         )
+        # Keep every loader setting (persistent workers, prefetching, seeding), as Lightning
+        # does: dropping them would silently slow sharded runs.
+        extra: dict[str, Any] = {
+            "worker_init_fn": loader.worker_init_fn,
+            "timeout": loader.timeout,
+            "generator": loader.generator,
+            "multiprocessing_context": loader.multiprocessing_context,
+            "pin_memory_device": getattr(loader, "pin_memory_device", ""),
+        }
+        if loader.num_workers > 0:
+            extra["persistent_workers"] = loader.persistent_workers
+            extra["prefetch_factor"] = loader.prefetch_factor
         return DataLoader(
             loader.dataset,
             batch_size=loader.batch_size,
@@ -401,6 +413,7 @@ class Runtime:
             collate_fn=loader.collate_fn,
             pin_memory=loader.pin_memory,
             drop_last=loader.drop_last,
+            **extra,
         )
 
     def shard(self, model: nn.Module, options: Any = None) -> nn.Module:

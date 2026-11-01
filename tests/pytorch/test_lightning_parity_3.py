@@ -567,3 +567,67 @@ def test_lit_logger_with_a_fake_litlogger(tmp_path, monkeypatch):
     assert [s for s, _ in exp["train_loss"]] == [4, 8] and exp["lr"] == "0.05"
     assert exp["exp-model"][0] == "model" and exp["exp-model"][1].endswith("last.ckpt")
     assert sent["status"] == "success" and lg.url.startswith("https://")
+
+
+# --------------------------------------------------- Lightning's performance tricks
+
+
+def test_sharding_keeps_every_loader_setting():
+    from gpulayer.pytorch.runtime import Runtime
+
+    rt = Runtime("cpu")
+    rt.world_size, rt.global_rank = 2, 1  # as in a two-process run
+
+    def init(_):
+        return None
+
+    loader = DataLoader(ds(), batch_size=4, shuffle=True, num_workers=2, persistent_workers=True,
+                        prefetch_factor=4, worker_init_fn=init, timeout=5)  # fmt: skip
+    out = rt.dataloader(loader)
+    assert out.sampler.num_replicas == 2 and out.sampler.rank == 1
+    assert out.persistent_workers and out.prefetch_factor == 4
+    assert out.worker_init_fn is init and out.timeout == 5 and out.num_workers == 2
+
+
+def test_dataloader_worker_hint_once_and_silenceable(tmp_path, monkeypatch):
+    import warnings
+
+    from gpulayer.pytorch import trainer as trainer_mod
+
+    monkeypatch.setattr(trainer_mod, "_HINTED", set())
+    monkeypatch.setattr(U, "suggested_max_num_workers", lambda n: 7)
+    with pytest.warns(UserWarning, match="num_workers=7"):
+        trainer(tmp_path, max_epochs=1).fit(Lin(), DataLoader(ds(), batch_size=8))
+    with warnings.catch_warnings(record=True) as seen:
+        warnings.simplefilter("always")
+        trainer(tmp_path, max_epochs=1).fit(Lin(), DataLoader(ds(), batch_size=8))
+    assert not [w for w in seen if "num_workers" in str(w.message)]  # once per process
+    monkeypatch.setattr(trainer_mod, "_HINTED", set())
+    with warnings.catch_warnings(record=True) as seen:
+        warnings.simplefilter("always")
+        U.disable_possible_user_warnings()
+        trainer(tmp_path, max_epochs=1).fit(Lin(), DataLoader(ds(), batch_size=8))
+    assert not [w for w in seen if "num_workers" in str(w.message)]
+
+
+def test_tensor_core_hint(monkeypatch):
+    """SIMULATED: an Ampere GPU is faked through torch.cuda's query functions."""
+    import warnings
+
+    from gpulayer.pytorch import trainer as trainer_mod
+
+    monkeypatch.setattr(trainer_mod, "_HINTED", {"workers"})
+    monkeypatch.setattr(torch.cuda, "get_device_capability", lambda d=None: (8, 0))
+    monkeypatch.setattr(torch.cuda, "get_device_name", lambda d=None: "A100")
+    rt = types.SimpleNamespace(device=torch.device("cuda", 0))
+    with pytest.warns(UserWarning, match="A100 has Tensor Cores"):
+        trainer_mod._performance_hints(rt, [], 1)
+    monkeypatch.setattr(trainer_mod, "_HINTED", {"workers"})
+    torch.set_float32_matmul_precision("high")
+    try:
+        with warnings.catch_warnings(record=True) as seen:
+            warnings.simplefilter("always")
+            trainer_mod._performance_hints(rt, [], 1)
+        assert not seen
+    finally:
+        torch.set_float32_matmul_precision("highest")
