@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs" / "assets" / "perf"
 DEFAULT = [
     ROOT / "benchmarks" / "results" / "2026-10-30-gcp" / "summary.json",
-    ROOT / "benchmarks" / "results" / "2026-10-30-gcp-two-level" / "summary.json",
+    ROOT / "benchmarks" / "results" / "2026-11-01-aws-8xt4-gloo" / "summary.json",
     ROOT / "benchmarks" / "results" / "2026-11-01-aws-t4" / "summary.json",
     ROOT / "benchmarks" / "results" / "2026-11-01-vast-4x3070-xeon" / "summary.json",
     ROOT / "benchmarks" / "results" / "2026-11-01-m2pro" / "summary.json",

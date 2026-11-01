@@ -17,7 +17,7 @@ trainer.fit(model, train_loader)        # 2 machines x 4 GPUs, DDP over NCCL
 NVIDIA CUDA, Apple Metal (MPS) and CPU are validated on hardware. AMD ROCm is implemented and
 not yet validated.
 
-> **Status: v0.8.0.** Validated on a Tesla T4, 4× RTX 3070, 2× A100 (NVLink), an Apple M2 Pro,
+> **Status: v0.8.1.** Validated on a Tesla T4, 4× RTX 3070, 2× A100 (NVLink), an Apple M2 Pro,
 > distributed CPU training on up to 16 Google Cloud machines, and NCCL across 8 AWS machines
 > with one Tesla T4 each. Cloud VMs are created by GPUlayer on Google Cloud only. See
 > [Status and roadmap](project/status.md) and

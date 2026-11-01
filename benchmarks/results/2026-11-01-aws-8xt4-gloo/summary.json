@@ -1,0 +1,33 @@
+{
+  "_about": "Strong scaling with the GPUlayer 0.8.0 Trainer (two-level gradient sync, ADR-0020) vs Lightning 2.6.6 under torchrun, 2026-11-01, on 8 AWS g4dn.xlarge (4 vCPU Xeon Platinum 8259CL each, one subnet, CPU training with gloo; the T4s unused). strong-scaling.log. Read by scripts/make_perf_charts.py.",
+  "strong_scaling": {
+    "subtitle": "A CNN on 32,768 images, 2 epochs; AWS g4dn.xlarge (4 vCPU), 4 processes per machine, gloo; same machines for both",
+    "method": "Wall time from start until the last process exits, median of 3 interleaved runs, both trainers on the same machines (GPUlayer pinned with worker_ids). GPUlayer uses two-level gradient sync (the default with gloo); Lightning its default DDP under torchrun.",
+    "rows": [
+      {
+        "nodes": 2,
+        "procs": 8,
+        "gpulayer_s": 78.0,
+        "lightning_s": 78.9,
+        "gpulayer_loss": 2.1313,
+        "lightning_loss": 2.1295
+      },
+      {
+        "nodes": 4,
+        "procs": 16,
+        "gpulayer_s": 47.1,
+        "lightning_s": 50.2,
+        "gpulayer_loss": 2.1412,
+        "lightning_loss": 2.1353
+      },
+      {
+        "nodes": 8,
+        "procs": 32,
+        "gpulayer_s": 32.7,
+        "lightning_s": 39.8,
+        "gpulayer_loss": 2.1619,
+        "lightning_loss": 2.174
+      }
+    ]
+  }
+}

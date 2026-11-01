@@ -274,10 +274,10 @@ const PERF_ROWS: { case: string; gl: number; pl: number; glOver: number; plOver:
 const BEHIND = [
   "Cloud provisioning covers Google Cloud only, with no autoscaling of a standing pool; SkyPilot, dstack and Ray cover more clouds.",
   "Services have no load balancer, rolling updates or autoscaling; dstack, Ray Serve, Modal and Kubernetes have them.",
-  "The PyTorch Trainer has Lightning's hooks, callbacks and loggers but no DeepSpeed, TPU support, plugins or LightningCLI; FSDP is experimental (CPU-tested).",
-  "Multi-node speed against PyTorch Lightning is measured on CPUs with gloo only: 11.9% faster on 8 machines with two-level gradient sync, the same on one machine. NCCL on GPUs is not measured yet.",
+  "The PyTorch Trainer has Lightning's hooks, callbacks and loggers but no DeepSpeed, TPU support, plugins or LightningCLI; FSDP is experimental (trained over NCCL on 8 T4 machines; speed not measured).",
+  "Across machines over NCCL with one GPU each, Lightning is 1 to 9% faster on a CNN (the GPUlayer Trainer is faster on an MLP); with gloo on CPUs the GPUlayer Trainer is 17.8% faster on 8 machines.",
   "Distributed jobs support PyTorch process groups only; no JAX multi-host or MPI launcher yet.",
-  "v0.8.0: validated on machines with up to 4 NVIDIA GPUs (NCCL) and on up to 30 machines; NCCL across up to 8 machines with one GPU each. Not a sandbox for untrusted users.",
+  "v0.8.1: validated on machines with up to 4 NVIDIA GPUs (NCCL) and on up to 30 machines; NCCL across up to 8 machines with one GPU each. Not a sandbox for untrusted users.",
 ];
 
 const FITS = [
@@ -493,9 +493,9 @@ export default function ComparePage() {
                 and Lightning 1.01 to 1.09x faster on a CNN.
               </p>
               <p>
-                One CNN training job on 2, 4 and 8 GCP machines (4 processes each, gloo, same machines and
-                interleaved runs for both trainers) took 118.9, 73.3 and 50.5 s with GPUlayer and 120.8, 77.4
-                and 57.3 s with Lightning under torchrun: 11.9% faster on 8 machines, from summing gradients
+                One CNN training job on 2, 4 and 8 AWS machines (4 processes each, gloo, same machines and
+                interleaved runs for both trainers) took 78.0, 47.1 and 32.7 s with GPUlayer and 78.9, 50.2
+                and 39.8 s with Lightning under torchrun: 17.8% faster on 8 machines, from summing gradients
                 inside each machine before crossing the network. GPUlayer starts every node from one{" "}
                 <code className="font-mono">Trainer(num_nodes=N)</code> call. Charts, method and logs:{" "}
                 <Link href="/docs/get-started/performance-and-comparison/" className="underline underline-offset-2">

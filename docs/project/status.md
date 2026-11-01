@@ -13,7 +13,7 @@ machines named. Everything else says what is missing.
 | Commands, Python functions and the PyTorch Trainer on this machine: logs, results, artifacts, cancel, timeout | tested |
 | Scheduling by requirements, with a reason for every rejected worker; distributed groups placed all at once | tested |
 | A server with workers on other machines (`gpulayer up`, `join`), TLS with a pinned certificate, named tokens | validated on 30 GCP machines in two regions |
-| Distributed PyTorch with gloo | validated on up to 16 machines; GPUlayer Trainer 11.9% faster than Lightning on 8 machines |
+| Distributed PyTorch with gloo | validated on up to 16 machines; GPUlayer Trainer 17.8% faster than Lightning on 8 AWS machines (0.8, 2026-11-01) |
 | Distributed groups kept in one network group, zone or region | validated on GCP: placed by the scheduler, 42.5 s with `prefer` (one zone) against 58.8 s with `any` (two regions), median of five |
 | NVIDIA CUDA | validated on Tesla T4, RTX 3070 and A100; the GPUlayer Trainer 1.08 to 1.38x faster per step than Lightning on one T4 (0.8, 2026-11-01) |
 | Several GPUs per machine with NCCL, choosing the best-connected GPUs | validated on 4× RTX 3070 (PCIe) and 2× A100 SXM4 (NVLink) |

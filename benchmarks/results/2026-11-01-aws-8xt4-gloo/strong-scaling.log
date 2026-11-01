@@ -1,0 +1,5 @@
+nodes procs  GPUlayer s  Lightning s  GL loss  PL loss
+    2     8        78.0         78.9   2.1313   2.1295   speedup GL x1.00, PL x1.00
+    4    16        47.1         50.2   2.1412   2.1353   speedup GL x1.66, PL x1.57
+    8    32        32.7         39.8   2.1619   2.1740   speedup GL x2.38, PL x1.98
+exit 0

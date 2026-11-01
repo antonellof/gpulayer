@@ -205,8 +205,8 @@ The training sweep reaches 4.4x parallelism on 15 slots, because each job also i
 ## One training job on more machines
 
 The same training job (a CNN on 32,768 images, 2 epochs, global batch 256 split across all
-processes) on 2, 4 and 8 GCP `n1-standard-4` machines, 4 processes per machine, gloo over
-the network. GPUlayer runs it with one `Trainer(num_nodes=N, devices=4)` call submitted to the
+processes) on 2, 4 and 8 AWS `g4dn.xlarge` machines (4 vCPU each, trained on the CPU), 4
+processes per machine, gloo over the network. GPUlayer runs it with one `Trainer(num_nodes=N, devices=4)` call submitted to the
 server; Lightning runs `Trainer(num_nodes=N, devices=4, strategy="ddp")` started with
 torchrun on each machine, as its documentation describes.
 
@@ -214,12 +214,14 @@ torchrun on each machine, as its documentation describes.
 
 | Machines | Processes | GPUlayer | Lightning | GPUlayer ahead by | Final loss (GPUlayer, Lightning) |
 |---|---|---|---|---|---|
-| 2 | 8 | 118.9 s | 120.8 s | 1.6% | 2.129, 2.125 |
-| 4 | 16 | 73.3 s | 77.4 s | 5.3% | 2.143, 2.137 |
-| 8 | 32 | 50.5 s | 57.3 s | 11.9% | 2.162, 2.164 |
+| 2 | 8 | 78.0 s | 78.9 s | 1.1% | 2.131, 2.130 |
+| 4 | 16 | 47.1 s | 50.2 s | 6.2% | 2.141, 2.135 |
+| 8 | 32 | 32.7 s | 39.8 s | 17.8% | 2.162, 2.174 |
 
-- The GPUlayer Trainer trains 11.9% faster than Lightning on 8 machines. From 2 to 8 machines it gets
-  2.35x faster, Lightning 2.11x.
+- The GPUlayer Trainer trains 17.8% faster than Lightning on 8 machines. From 2 to 8 machines
+  it gets 2.38x faster, Lightning 1.98x. (On GCP `n1-standard-4` machines with the 0.7
+  Trainer, 2026-10-30, the lead on 8 machines was 11.9%; logs in
+  `benchmarks/results/2026-10-30-gcp-two-level/`.)
 - The lead comes from two-level gradient sync (ADR-0020), the Trainer's default with gloo
   when a job has several machines and several processes per machine: gradients are summed
   inside each machine before one all-reduce among the machines, so a step makes fewer network
@@ -229,12 +231,14 @@ torchrun on each machine, as its documentation describes.
   start torchrun on each machine, with matching ranks and addresses.
 - The losses agree, so both trainers did the same work.
 - With only 2 epochs, fixed costs (start-up, `import torch`, process-group setup) take a
-  growing share as the training time falls. GPUs with NCCL were not measured.
+  growing share as the training time falls. For GPUs over NCCL, see
+  [Across machines with NCCL](#across-machines-with-nccl-against-pytorch-lightning).
 
 Method: both trainers on the same machines (GPUlayer's job pinned with `worker_ids`), runs
 alternating between the two, wall time from start until the last process exits, median of
-three runs. Scripts: `benchmarks/lightning_comparison/scaling.py` and `scaling_run.py`; logs
-in `benchmarks/results/2026-10-30-gcp-two-level/`.
+three runs; GPUlayer 0.8.0, Lightning 2.6.6, torch 2.15.0, 2026-11-01. Scripts:
+`benchmarks/lightning_comparison/scaling.py` and `scaling_run.py`; logs in
+`benchmarks/results/2026-11-01-aws-8xt4-gloo/`.
 
 ## One distributed job in one region
 
