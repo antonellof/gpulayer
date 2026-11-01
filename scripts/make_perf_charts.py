@@ -1,6 +1,6 @@
 """Generate the performance charts in docs/assets/perf/ from a benchmark summary.
 
-    python scripts/make_perf_charts.py [summary.json ...]   (default: the 2026-10-30 runs)
+    python scripts/make_perf_charts.py [summary.json ...]   (default: the latest run of each)
 
 Writes <name>-light.svg and <name>-dark.svg for each chart. Grouped horizontal bars: GPUlayer
 in blue, the baseline in orange (a palette validated for colour-vision deficiency in both
@@ -20,9 +20,10 @@ OUT = ROOT / "docs" / "assets" / "perf"
 DEFAULT = [
     ROOT / "benchmarks" / "results" / "2026-10-30-gcp" / "summary.json",
     ROOT / "benchmarks" / "results" / "2026-10-30-gcp-two-level" / "summary.json",
-    ROOT / "benchmarks" / "results" / "2026-10-31-gcp-t4" / "summary.json",
-    ROOT / "benchmarks" / "results" / "2026-10-31-vast-4x3070-xeon" / "summary.json",
-    ROOT / "benchmarks" / "results" / "2026-10-31-m2pro" / "summary.json",
+    ROOT / "benchmarks" / "results" / "2026-11-01-aws-t4" / "summary.json",
+    ROOT / "benchmarks" / "results" / "2026-11-01-vast-4x3070-xeon" / "summary.json",
+    ROOT / "benchmarks" / "results" / "2026-11-01-m2pro" / "summary.json",
+    ROOT / "benchmarks" / "results" / "2026-11-01-aws-8xt4-nccl" / "summary.json",
 ]
 
 THEMES = {
@@ -175,6 +176,17 @@ def charts(d: dict) -> dict[str, dict]:
             fmt="{:.1f} s",
             note="lower is better",
         )
+    if "multi_node_gpu" in d:
+        mn = d["multi_node_gpu"]
+        out["nccl-step"] = dict(
+            title="One GPU per machine, NCCL across machines: GPUlayer and PyTorch Lightning",
+            subtitle=mn["subtitle"],
+            series=("GPUlayer Trainer(num_nodes=N)", "Lightning under torchrun"),
+            rows=[(r["case"], r["gpulayer_ms"], r["lightning_ms"]) for r in mn["rows"]],
+            unit="milliseconds per step",
+            fmt="{:.1f}",
+            note="lower is better",
+        )
     if "apple_cpu" in d:
         ac = d["apple_cpu"]
         out["apple-cpu-step"] = dict(
@@ -196,8 +208,10 @@ def _base_charts(d: dict) -> dict[str, dict]:
     return {
         "training-step": dict(
             title="Training step time: GPUlayer and PyTorch Lightning",
-            subtitle="Same model, data and optimizer on one Tesla T4 (GCP), torch 2.15, "
-            "Lightning 2.6.6",
+            subtitle=d["training_vs_lightning"].get(
+                "subtitle",
+                "Same model, data and optimizer on one Tesla T4, torch 2.15, Lightning 2.6.6",
+            ),
             series=("GPUlayer Trainer", "Lightning Trainer"),
             rows=[(c["case"], c["gpulayer_ms"], c["lightning_ms"]) for c in tr],
             unit="milliseconds per step",

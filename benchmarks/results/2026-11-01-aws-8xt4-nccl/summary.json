@@ -1,0 +1,56 @@
+{
+  "_about": "One GPU per machine, DDP over NCCL across 2, 4 and 8 AWS g4dn.xlarge (1x Tesla T4, 4 vCPU, up to 25 Gbps, one subnet in us-east-1c), GPUlayer 0.8.0 Trainer(num_nodes=N, target remote) vs Lightning 2.6.6 under torchrun on the same machines, 2026-11-01 (nccl-comparison.log). benchmarks/lightning_comparison/multinode.py: 100 and 600 steps, 3 runs each, one at a time; ms/step = (median 600 - median 100) / 500. Batch per GPU: CNN 128 (16-mixed), MLP 256 (fp32). Read by scripts/make_perf_charts.py.",
+  "multi_node_gpu": {
+    "subtitle": "AWS g4dn.xlarge, one Tesla T4 each, DDP over NCCL, batch per GPU, each trainer's defaults",
+    "rows": [
+      {
+        "case": "CNN fp16, 2 machines",
+        "nodes": 2,
+        "gpulayer_ms": 19.12,
+        "lightning_ms": 17.58,
+        "gpulayer_startup_s": 7.85,
+        "lightning_startup_s": 9.17
+      },
+      {
+        "case": "CNN fp16, 4 machines",
+        "nodes": 4,
+        "gpulayer_ms": 28.33,
+        "lightning_ms": 26.93,
+        "gpulayer_startup_s": 7.91,
+        "lightning_startup_s": 9.25
+      },
+      {
+        "case": "CNN fp16, 8 machines",
+        "nodes": 8,
+        "gpulayer_ms": 43.94,
+        "lightning_ms": 43.69,
+        "gpulayer_startup_s": 8.63,
+        "lightning_startup_s": 9.32
+      },
+      {
+        "case": "MLP fp32, 2 machines",
+        "nodes": 2,
+        "gpulayer_ms": 23.74,
+        "lightning_ms": 30.72,
+        "gpulayer_startup_s": 7.66,
+        "lightning_startup_s": 8.3
+      },
+      {
+        "case": "MLP fp32, 4 machines",
+        "nodes": 4,
+        "gpulayer_ms": 37.44,
+        "lightning_ms": 42.9,
+        "gpulayer_startup_s": 7.47,
+        "lightning_startup_s": 8.32
+      },
+      {
+        "case": "MLP fp32, 8 machines",
+        "nodes": 8,
+        "gpulayer_ms": 52.21,
+        "lightning_ms": 56.28,
+        "gpulayer_startup_s": 7.2,
+        "lightning_startup_s": 8.23
+      }
+    ]
+  }
+}

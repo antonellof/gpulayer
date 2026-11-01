@@ -92,10 +92,11 @@ trainer.fit(model, train_loader, val_loader)`,
 ];
 
 const GPU_RESULTS: { gpu: string; result: string }[] = [
-  { gpu: "Tesla T4", result: "1.14 to 1.39x per step; fp32, bf16, fp16 and torch.compile" },
-  { gpu: "4x RTX 3070 (PCIe)", result: "1.11 to 1.76x on 2 and 4 GPUs; 1.14x slower on one GPU with a CNN" },
+  { gpu: "Tesla T4", result: "1.08 to 1.38x per step; fp32, bf16, fp16 and torch.compile" },
+  { gpu: "4x RTX 3070 (PCIe)", result: "1.45 to 1.60x on 2 and 4 GPUs; 1.12x slower on one GPU with a CNN" },
+  { gpu: "8 machines, 1x T4 each (NCCL)", result: "MLP 1.08 to 1.29x faster; CNN 1.01 to 1.09x slower" },
   { gpu: "2x A100 SXM4 (NVLink)", result: "DDP over NCCL and NVLink; CUDA checks passed" },
-  { gpu: "Apple M2 Pro", result: "1.05 to 1.75x on the GPU and the CPU" },
+  { gpu: "Apple M2 Pro", result: "1.02 to 1.80x on the GPU and the CPU" },
 ];
 
 const FEATURES = [
@@ -253,12 +254,13 @@ export default function Home() {
             <SectionHeader
               eyebrow="Benchmarks"
               title="GPUlayer Trainer against PyTorch Lightning"
-              lede="Same model, data and optimizer, each trainer with its defaults. The GPUlayer Trainer was faster in 10 of 11 GPU cases and every CPU case; each number has a script and a log in the repository."
+              lede="Same model, data and optimizer, each trainer with its defaults. The GPUlayer Trainer (0.8) was faster in 13 of 17 GPU cases and every CPU case, and slower on a CNN on one GPU of one host and across machines over NCCL; each number has a script and a log in the repository."
             />
             <div className="mt-12 grid gap-6 lg:grid-cols-2">
               {[
                 ["training-step", "Training step time on one Tesla T4: GPUlayer and PyTorch Lightning"],
                 ["multigpu-step", "Step time on 1, 2 and 4 RTX 3070 GPUs: GPUlayer and PyTorch Lightning"],
+                ["nccl-step", "Step time with one T4 per machine on 2, 4 and 8 machines over NCCL: GPUlayer and PyTorch Lightning"],
                 ["apple-cpu-step", "Step time on an Apple M2 Pro GPU and CPU: GPUlayer and PyTorch Lightning"],
               ].map(([name, alt]) => (
                 <div key={name}>

@@ -5,6 +5,13 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Benchmarks re-measured with the 0.8 Trainer (2026-11-01) and every Trainer chart regenerated:
+  one T4 on AWS (GPUlayer Trainer 1.08 to 1.38x faster than Lightning), 4x RTX 3070 on Vast.ai
+  (1.26 to 1.60x in 5 of 6 cases, 1.12x slower on the 1-GPU CNN), Apple M2 Pro (1.02 to
+  1.80x), and a new chart, one T4 per machine on 2, 4 and 8 AWS machines over NCCL (MLP 1.08
+  to 1.29x faster, CNN 1.01 to 1.09x slower). `multinode.py` and `scaling_run.py` take the
+  worker layout from `MN_*` variables.
+
 - Validated on hardware (2026-11-01, 8 AWS `g4dn.xlarge`, one Tesla T4 each,
   `benchmarks/results/2026-11-01-aws-8xt4/`): NCCL across machines (DDP on 2, 4 and 8 machines
   with 16-mixed and `sync_batchnorm`, identical weights on every rank; manual optimization on

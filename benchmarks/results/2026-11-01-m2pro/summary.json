@@ -1,0 +1,43 @@
+{
+  "_about": "Apple M2 Pro (10 CPU cores, 32 GB), macOS, Python 3.12, torch 2.15.0, Lightning 2.6.6, GPUlayer 0.8.0 (Lightning-parity Trainer, ADR-0024), 2026-11-01 (lightning-comparison.log). benchmarks/lightning_comparison/run.py, fresh process per run, nothing else running. Read by scripts/make_perf_charts.py.",
+  "apple_cpu": {
+    "subtitle": "Apple M2 Pro, torch 2.15.0, Lightning 2.6.6, GPUlayer 0.8.0, fp32, each trainer's defaults",
+    "rows": [
+      {
+        "case": "MLP, CPU",
+        "gpulayer_ms": 0.53,
+        "lightning_ms": 0.92,
+        "gpulayer_startup_s": 1.47,
+        "lightning_startup_s": 1.62
+      },
+      {
+        "case": "CNN, CPU",
+        "gpulayer_ms": 44.31,
+        "lightning_ms": 45.12,
+        "gpulayer_startup_s": 1.56,
+        "lightning_startup_s": 1.76
+      },
+      {
+        "case": "DDP, 2 CPU processes",
+        "gpulayer_ms": 2.28,
+        "lightning_ms": 4.09,
+        "gpulayer_startup_s": 2.65,
+        "lightning_startup_s": 3.14
+      },
+      {
+        "case": "MLP, Apple GPU (MPS)",
+        "gpulayer_ms": 4.52,
+        "lightning_ms": 6.98,
+        "gpulayer_startup_s": 1.78,
+        "lightning_startup_s": 1.92
+      },
+      {
+        "case": "CNN, Apple GPU (MPS)",
+        "gpulayer_ms": 24.34,
+        "lightning_ms": 25.08,
+        "gpulayer_startup_s": 1.92,
+        "lightning_startup_s": 1.98
+      }
+    ]
+  }
+}

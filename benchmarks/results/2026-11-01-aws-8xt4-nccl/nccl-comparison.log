@@ -1,0 +1,20 @@
+case           nodes trainer   ms/step start-up s
+cnn-gpu-nodes      2 gl          19.12       7.85
+cnn-gpu-nodes      2 pl          17.58       9.17
+cnn-gpu-nodes      2 ratio    pl faster x1.09
+cnn-gpu-nodes      4 gl          28.33       7.91
+cnn-gpu-nodes      4 pl          26.93       9.25
+cnn-gpu-nodes      4 ratio    pl faster x1.05
+cnn-gpu-nodes      8 gl          43.94       8.63
+cnn-gpu-nodes      8 pl          43.69       9.32
+cnn-gpu-nodes      8 ratio    pl faster x1.01
+mlp-gpu-nodes      2 gl          23.74       7.66
+mlp-gpu-nodes      2 pl          30.72       8.30
+mlp-gpu-nodes      2 ratio    gl faster x1.29
+mlp-gpu-nodes      4 gl          37.44       7.47
+mlp-gpu-nodes      4 pl          42.90       8.32
+mlp-gpu-nodes      4 ratio    gl faster x1.15
+mlp-gpu-nodes      8 gl          52.21       7.20
+mlp-gpu-nodes      8 pl          56.28       8.23
+mlp-gpu-nodes      8 ratio    gl faster x1.08
+exit 0

@@ -5,9 +5,10 @@
 # done; the log is ~/gpulayer-setup.log. No secrets are passed here.
 # The AMI's /etc/profile.d/dlami.sh points LD_LIBRARY_PATH at the system CUDA, whose cuDNN
 # clashes with the PyTorch wheel's (convolutions fail with CUDNN_STATUS_SUBLIBRARY_LOADING_FAILED).
-# Clear it for every shell, after dlami.sh, and at the top of the user's .bashrc.
+# Clear it for login shells (after dlami.sh) and in .bashrc right after the AMI's own line that
+# sources dlami.sh for non-interactive shells (ssh commands).
 echo 'unset LD_LIBRARY_PATH' > /etc/profile.d/zz-gpulayer.sh
-sed -i '1i unset LD_LIBRARY_PATH' /home/ubuntu/.bashrc
+sed -i '/profile.d\/dlami.sh/a unset LD_LIBRARY_PATH' /home/ubuntu/.bashrc
 cat > /home/ubuntu/setup.sh <<'SETUP'
 set -euxo pipefail
 cd "$HOME"

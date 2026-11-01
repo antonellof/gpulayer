@@ -90,18 +90,23 @@ The [full quickstart](https://github.com/antonellof/gpulayer/blob/main/docs/get-
 ## Performance
 
 Against PyTorch Lightning, with the same model, data and optimizer and each trainer's
-defaults, the GPUlayer Trainer was faster in 10 of 11 GPU cases and in every CPU case.
+defaults, the GPUlayer Trainer was faster in 13 of 17 GPU cases and in every CPU case
+(GPUlayer 0.8, 2026-11-01). Lightning was faster on one GPU with a CNN on one host, and by 1 to
+9% on a CNN across 2 to 8 machines over NCCL.
 
 ![Training step time: GPUlayer and PyTorch Lightning](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/perf/training-step-light.svg#gh-light-mode-only)
 ![Training step time: GPUlayer and PyTorch Lightning](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/perf/training-step-dark.svg#gh-dark-mode-only)
 ![Several GPUs in one machine](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/perf/multigpu-step-light.svg#gh-light-mode-only)
 ![Several GPUs in one machine](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/perf/multigpu-step-dark.svg#gh-dark-mode-only)
+![One GPU per machine, NCCL across machines](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/perf/nccl-step-light.svg#gh-light-mode-only)
+![One GPU per machine, NCCL across machines](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/perf/nccl-step-dark.svg#gh-dark-mode-only)
 
 | Hardware | GPUlayer Trainer against Lightning |
 |---|---|
-| Tesla T4 | 1.14 to 1.39x per step |
-| 1, 2 and 4 RTX 3070s (DDP over NCCL) | 1.11 to 1.76x in 5 cases; 1.14x slower on one GPU with a CNN |
-| Apple M2 Pro, GPU and CPU | 1.05 to 1.75x |
+| Tesla T4 | 1.08 to 1.38x per step |
+| 1, 2 and 4 RTX 3070s (DDP over NCCL) | 1.26 to 1.60x in 5 cases; 1.12x slower on one GPU with a CNN |
+| 2, 4 and 8 machines with one T4 each (NCCL) | MLP 1.08 to 1.29x faster; CNN 1.01 to 1.09x slower |
+| Apple M2 Pro, GPU and CPU | 1.02 to 1.80x |
 | 8 CPU machines on Google Cloud (gloo) | 11.9% faster (Lightning under torchrun) |
 
 Keeping a 4-machine run in one zone instead of two regions made it 1.38x faster (42.5 s vs

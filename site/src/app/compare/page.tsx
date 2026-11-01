@@ -263,12 +263,12 @@ const NOTES: Note[] = [
 ];
 
 // Measured with the same model, data, optimizer and torch version in both trainers; see the
-// method note under the table. Run of 2026-10-31: CUDA rows on a Tesla T4, the DDP row on a CPU VM.
+// method note under the table. Run of 2026-11-01 (GPUlayer 0.8): every row on one AWS g4dn.xlarge (T4).
 const PERF_ROWS: { case: string; gl: number; pl: number; glOver: number; plOver: number }[] = [
-  { case: "MLP, fp32, batch 256", gl: 4.06, pl: 5.64, glOver: 4.77, plOver: 5.31 },
-  { case: "MLP, fp16 mixed precision", gl: 5.0, pl: 6.25, glOver: 4.82, plOver: 5.55 },
-  { case: "CNN, fp16 mixed precision, batch 128", gl: 10.82, pl: 12.33, glOver: 5.65, plOver: 5.74 },
-  { case: "DDP, 2 CPU processes", gl: 3.2, pl: 9.56, glOver: 10.32, plOver: 9.35 },
+  { case: "MLP, fp32, batch 256", gl: 3.58, pl: 4.94, glOver: 4.09, plOver: 4.46 },
+  { case: "MLP, fp16 mixed precision", gl: 4.22, pl: 5.57, glOver: 4.2, plOver: 4.59 },
+  { case: "CNN, fp16 mixed precision, batch 128", gl: 11.14, pl: 12.07, glOver: 4.35, plOver: 5.12 },
+  { case: "DDP, 2 CPU processes", gl: 4.01, pl: 7.76, glOver: 6.5, plOver: 7.93 },
 ];
 
 const BEHIND = [
@@ -477,8 +477,8 @@ export default function ComparePage() {
             </div>
             <div className="mt-4 max-w-3xl space-y-2 text-xs text-muted-foreground">
               <p>
-                Method: GCP n1-standard-8 with one Tesla T4 (driver 580), Ubuntu 22.04, Python 3.12, torch
-                2.15.0 with CUDA 13.2, Lightning 2.6.6. SGD with momentum and one logged loss per step;
+                Method: AWS g4dn.xlarge (4 vCPU) with one Tesla T4 (driver 595), Ubuntu 22.04, Python 3.12,
+                torch 2.15.0 with CUDA 13.2, Lightning 2.6.6, GPUlayer 0.8.0, 2026-11-01. SGD with momentum and one logged loss per step;
                 Lightning runs without logger, progress bar, model summary or checkpoints, GPUlayer without
                 checkpoints. Each case runs 100 and 600 steps, three times each in fresh processes, one run
                 at a time with nothing else on the GPU; ms per step is the median difference divided by 500
@@ -488,7 +488,9 @@ export default function ComparePage() {
               </p>
               <p>
                 On 1, 2 and 4 RTX 3070 GPUs of one machine (DDP over NCCL, each trainer&apos;s defaults), GPUlayer was
-                faster in 5 of 6 cases, by 1.11 to 1.76x, and 1.14x slower on the 1-GPU CNN.
+                faster in 5 of 6 cases, by 1.26 to 1.60x, and 1.12x slower on the 1-GPU CNN. With one T4 per
+                machine on 2, 4 and 8 machines (DDP over NCCL), GPUlayer was 1.08 to 1.29x faster on an MLP
+                and Lightning 1.01 to 1.09x faster on a CNN.
               </p>
               <p>
                 One CNN training job on 2, 4 and 8 GCP machines (4 processes each, gloo, same machines and
