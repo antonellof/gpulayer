@@ -1,5 +1,7 @@
 # Scheduling
 
+![How the scheduler places a job: compatible workers, then available ones, then the closest group, then the best-connected GPUs](../assets/placement-light.svg)
+
 ## Scheduler (`control_plane/scheduler.py`)
 
 `schedule(spec, workers, job_id) -> SchedulingDecision` is a pure function: no I/O, no provider

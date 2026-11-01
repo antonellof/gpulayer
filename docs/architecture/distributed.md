@@ -5,6 +5,8 @@ A `DistributedJob` runs across `num_workers` nodes with `procs_per_worker` proce
 supervises processes. PyTorch communicates through `gloo` or `nccl`; GPUlayer has no collective
 layer of its own. See ADR-0007.
 
+![One distributed job: the control plane places a group of workers, node 0 publishes the rendezvous address, each node starts its ranks, ranks talk directly, logs and outputs come back per node](../assets/distributed-light.svg)
+
 ## Flow
 
 1. Submission rejects distributed MPS, `nccl` without CUDA, `procs_per_worker > gpu_count` and

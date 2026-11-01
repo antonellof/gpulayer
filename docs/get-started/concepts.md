@@ -54,22 +54,7 @@ jobs get the best-connected GPUs. See [Scheduling](../architecture/scheduling.md
 
 ## Job lifecycle
 
-```mermaid
-stateDiagram-v2
-    [*] --> queued: submit (validated)
-    queued --> provisioning: needs cloud capacity
-    provisioning --> scheduled: provider worker registered
-    queued --> scheduled: placed on worker(s)
-    scheduled --> running: worker started task
-    running --> succeeded
-    running --> failed
-    running --> timed_out
-    queued --> cancelled
-    scheduled --> cancelled
-    running --> cancelled
-    running --> queued: worker lost, retry allowed
-    queued --> failed: unschedulable
-```
+![Job states: queued, provisioning, scheduled, running, then succeeded, failed, timed out or cancelled; a lost worker sends the job back to the queue](../assets/lifecycle-light.svg)
 
 A job has one task per worker per attempt. A task is `lost` when its worker stops sending
 heartbeats; the process may still run, so execution is not guaranteed exactly once.

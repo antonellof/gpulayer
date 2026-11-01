@@ -6,12 +6,12 @@ import { ThemeToggle } from "@/components/site/theme-toggle";
 import { REPO } from "@/lib/docs";
 
 const NAV = [
-  { href: "/docs/", label: "Docs" },
   { href: "/docs/get-started/quickstart/", label: "Quickstart" },
-  { href: "/docs/workloads/commands/", label: "Workloads" },
-  { href: "/docs/pytorch/trainer/", label: "PyTorch" },
-  { href: "/docs/reference/python-api/", label: "API" },
+  { href: "/docs/pytorch/trainer/", label: "Trainer" },
+  { href: "/docs/guides/self-hosting/", label: "Run a server" },
+  { href: "/docs/get-started/performance-and-comparison/", label: "Benchmarks" },
   { href: "/compare/", label: "Compare" },
+  { href: "/docs/", label: "Docs" },
 ];
 
 export function SiteHeader() {

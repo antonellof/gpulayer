@@ -153,25 +153,6 @@ const COMPARISON: { situation: string; without: string; with: string }[] = [
   },
 ];
 
-const STATUS: { label: string; dot: string; items: string }[] = [
-  {
-    label: "Hardware-validated",
-    dot: "bg-emerald-500",
-    items:
-      "NVIDIA CUDA (T4, RTX 3070, A100) and Apple Metal · DDP over NCCL on 4 GPUs of a machine and across 8 machines · FSDP across 8 machines · DeepSpeed ZeRO 1 to 3 · 4-bit and 8-bit quantized training · gloo on 16 machines · Google Cloud VMs per run",
-  },
-  {
-    label: "Implemented, not validated",
-    dot: "bg-amber-500",
-    items: "AMD ROCm · TPU · tensor parallelism · FP8 training · NCCL across multi-GPU machines · NVIDIA GPU workers on Kubernetes",
-  },
-  {
-    label: "Planned",
-    dot: "bg-neutral-400",
-    items: "Other cloud providers · hosted control plane",
-  },
-];
-
 function Inline({ text }: { text: string }) {
   return (
     <>
@@ -305,6 +286,48 @@ export default function Home() {
           </div>
         </section>
 
+        {/* How it works */}
+        <section id="how-it-works" className="border-b border-border">
+          <div className="mx-auto max-w-6xl px-6 py-24">
+            <SectionHeader
+              eyebrow="How it works"
+              title="Your script, the machines you can reach"
+              lede="The Trainer asks the control plane for machines that can run it; workers on those machines start every process and send back logs, checkpoints and metrics. One command turns a machine into a server the others join."
+            />
+            <div className="mt-12 grid gap-10 lg:grid-cols-2">
+              {[
+                ["architecture", "Your training goes through GPUlayer to the machines you can reach", "Architecture", "/docs/architecture/overview/", 980, 460],
+                ["server", "A GPUlayer server: your laptop and joined machines connect to the machine running gpulayer up over HTTPS with a pinned certificate", "Run a server (gpulayer up)", "/docs/guides/self-hosting/", 980, 490],
+              ].map(([name, alt, label, href, w, h]) => (
+                <figure key={name as string}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`/docs-assets/${name}-light.svg`}
+                    alt={alt as string}
+                    className="w-full rounded-xl border border-border dark:hidden"
+                    width={w as number}
+                    height={h as number}
+                  />
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`/docs-assets/${name}-dark.svg`}
+                    alt=""
+                    aria-hidden
+                    className="hidden w-full rounded-xl border border-border dark:block"
+                    width={w as number}
+                    height={h as number}
+                  />
+                  <figcaption className="mt-4">
+                    <Link href={href as string} className="link-arrow">
+                      {label} <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
+                  </figcaption>
+                </figure>
+              ))}
+            </div>
+          </div>
+        </section>
+
         {/* With and without */}
         <section id="comparison" className="border-b border-border">
           <div className="mx-auto max-w-6xl px-6 py-24">
@@ -348,30 +371,6 @@ export default function Home() {
                 When to use it
               </Link>
             </p>
-          </div>
-        </section>
-
-        {/* Status */}
-        <section className="border-b border-border bg-card">
-          <div className="mx-auto max-w-6xl px-6 py-24">
-            <SectionHeader
-              eyebrow="Status"
-              title="What works today"
-            />
-            <dl className="mt-12 divide-y divide-border rounded-xl border border-border bg-background">
-              {STATUS.map((s) => (
-                <div key={s.label} className="grid gap-2 px-6 py-4 sm:grid-cols-[240px_1fr]">
-                  <dt className="flex items-center gap-2.5 text-sm font-medium">
-                    <span className={`h-2 w-2 rounded-full ${s.dot}`} />
-                    {s.label}
-                  </dt>
-                  <dd className="text-sm text-muted-foreground">{s.items}</dd>
-                </div>
-              ))}
-            </dl>
-            <Link href="/docs/project/status/" className="link-arrow mt-8">
-              Status and roadmap <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
           </div>
         </section>
 

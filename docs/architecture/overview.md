@@ -4,6 +4,12 @@ GPUlayer is a modular monolith: one Python package that runs in one process (emb
 as a served control plane with remote workers. See
 [ADR-0001](../decisions/ADR-0001-control-plane-and-deployment-model.md).
 
+![Your training goes through GPUlayer to the machines you can reach](../assets/architecture-light.svg)
+
+How a [server and its machines](../guides/self-hosting.md) connect, how a
+[distributed job](distributed.md) runs and how the [scheduler](scheduling.md) places work each
+have a diagram on their page.
+
 ```
 src/gpulayer/
 ├── contracts/models.py      versioned pydantic contracts (API_VERSION gpulayer.dev/v1alpha1)
