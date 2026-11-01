@@ -1271,6 +1271,26 @@ class Trainer:
                 import deepspeed
             except ImportError as e:
                 raise ValidationFailed("strategy='deepspeed' needs: pip install deepspeed") from e
+            import torch.distributed as dist
+
+            if not dist.is_initialized():
+                # DeepSpeed needs a process group even for one process (without one it tries
+                # MPI discovery): start a one-process group, without rank variables that
+                # would change how GPUlayer sees this process.
+                from gpulayer.runtime.distributed import free_port
+
+                dist.init_process_group(
+                    "nccl" if rt.gpu else "gloo",
+                    init_method=f"tcp://127.0.0.1:{free_port('127.0.0.1')}",
+                    rank=0,
+                    world_size=1,
+                )
+                rt._owns_group = True
+            if "LOCAL_RANK" not in os.environ:
+                # DeepSpeed reads LOCAL_RANK; set it for this run only (Runtime.teardown
+                # removes it, so is_launcher_process() is unchanged afterwards).
+                os.environ["LOCAL_RANK"] = str(rt.local_rank)
+                rt._env_set.append("LOCAL_RANK")
             micro = getattr(train, "batch_size", None)
             cfg = self._strategy.deepspeed_config(
                 self.precision, self.accumulate_grad_batches, self.gradient_clip_val, micro

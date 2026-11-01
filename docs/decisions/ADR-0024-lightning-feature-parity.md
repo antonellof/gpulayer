@@ -171,6 +171,11 @@ closed, and the script reports none missing:
 
 Habana HPUs stay out: Lightning removed them. Tests: the FSDP options, sharded checkpoints,
 tensor parallelism and DDP hooks run with two CPU processes; bitsandbytes, Transformer Engine,
-TensorRT, torch_xla and the hosted loggers run against fake packages. None of these new paths
-has run on GPUs yet.
+TensorRT, torch_xla and the hosted loggers run against fake packages.
+
+**Hardware (2026-11-01).** DeepSpeed (ZeRO 1 to 3, CPU offload; one machine and two over
+NCCL) and `BitsandbytesPrecision` (nf4, int8) were validated on Tesla T4s, after three fixes
+the run found (a process group and `LOCAL_RANK` for single-process DeepSpeed, the job Python's
+`bin` on `PATH`). Results: `benchmarks/results/2026-11-01-aws-2xt4-deepspeed/`. FSDP options,
+tensor parallelism, Transformer Engine, TensorRT and TPUs have not run on that hardware yet.
 

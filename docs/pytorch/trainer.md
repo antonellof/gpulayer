@@ -86,7 +86,7 @@ The common ones; all of them, with Lightning's names, are in the [API reference]
 | `max_epochs`, `max_steps`, `max_time` | `1`, `None`, `None` | when to stop (Lightning's `max_epochs` default is 1000) |
 | `accelerator` | `"auto"` | `"cpu"`, `"cuda"`, `"mps"`, `"rocm"`, `"tpu"` or `"auto"` (the device granted to the job, else CUDA, then MPS, then CPU) |
 | `devices`, `num_nodes` | `1`, `1` | processes per machine (one GPU each) and machines; more than one launches a job |
-| `strategy` | `"ddp"` | `"ddp"`, `glt.DDPStrategy(...)`, `"fsdp"` or `glt.FSDPStrategy(...)` ([experimental](#fsdp-experimental)), `glt.ModelParallelStrategy(...)` ([tensor parallelism](#tensor-parallelism-experimental)), `"deepspeed_stage_2"` and the other DeepSpeed names ([not yet run](#deepspeed-and-tpu)) |
+| `strategy` | `"ddp"` | `"ddp"`, `glt.DDPStrategy(...)`, `"fsdp"` or `glt.FSDPStrategy(...)` ([experimental](#fsdp-experimental)), `glt.ModelParallelStrategy(...)` ([tensor parallelism](#tensor-parallelism-experimental)), `"deepspeed_stage_2"` and the other DeepSpeed names ([validated on T4s](#deepspeed-and-tpu)) |
 | `precision` | `"32-true"` | `"bf16-mixed"`, `"16-mixed"` (CUDA), or `"bf16-true"`, `"16-true"`, `"64-true"` |
 | `target` | `None` | `None` runs here when possible; `"local"`, `"remote"` or `"cloud"` always submits a job |
 | `callbacks`, `logger`, `profiler`, `plugins` | | see [Callbacks, loggers and profilers](callbacks.md) |
@@ -231,16 +231,19 @@ Each data-parallel group reads its own shard of the data. Tested with two CPU pr
 - `plugins=[glt.TransformerEnginePrecision()]` trains in FP8 on Hopper or Ada GPUs (needs
   `transformer_engine`).
 
-The two plugins are tested with fake packages only.
+`BitsandbytesPrecision` was validated on a Tesla T4 (nf4: 145 MB to 27 MB of GPU memory,
+outputs within 0.997 cosine of fp32; [results](../../benchmarks/results/2026-11-01-aws-2xt4-deepspeed/README.md)). `TransformerEnginePrecision` is tested
+with a fake package only.
 
 ## DeepSpeed and TPU
 
-Implemented with Lightning's names, not yet run on hardware:
-
 - **DeepSpeed** (`strategy="deepspeed_stage_2"`, `glt.DeepSpeedStrategy(stage=3,
-  offload_optimizer=True)` or `config=`) needs `pip install deepspeed` and CUDA GPUs. One
-  optimizer, automatic optimization; resuming a DeepSpeed run is not supported yet.
-- **TPU** (`accelerator="tpu"`) needs `torch_xla` on a TPU VM. `devices="auto"` (or the VM's
+  offload_optimizer=True)` or `config=`) needs `pip install deepspeed` (and `ninja` for the
+  CPU-offload optimizer) and CUDA GPUs. Validated on Tesla T4s: ZeRO stages 1 to 3, with and
+  without CPU offload, on one machine and across two over NCCL; stage 3 with offload cut peak
+  GPU memory from 1,036 MB to 458 MB ([results](../../benchmarks/results/2026-11-01-aws-2xt4-deepspeed/README.md)). One optimizer, automatic optimization;
+  resuming a DeepSpeed run is not supported yet.
+- **TPU** (`accelerator="tpu"`, implemented, not yet run on a TPU) needs `torch_xla` on a TPU VM. `devices="auto"` (or the VM's
   device count) trains on every TPU device: as in Lightning, the Trainer starts one process
   per device with `xmp.spawn`, feeds batches through `MpDeviceLoader`, averages gradients in
   `xm.optimizer_step`, reduces metrics with XLA collectives, and loads rank 0's checkpoint

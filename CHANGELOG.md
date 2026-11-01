@@ -5,6 +5,13 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- DeepSpeed validated on Tesla T4s (AWS): ZeRO stages 1 to 3, with and without CPU offload, on
+  one machine and across two over NCCL; `BitsandbytesPrecision` nf4 and int8 on one T4
+  (`benchmarks/results/2026-11-01-aws-2xt4-deepspeed/`). Three bugs found and fixed there:
+  DeepSpeed in one process needs a process group (it tried MPI discovery) and `LOCAL_RANK`,
+  which the Trainer now provides for the run; and jobs did not have their Python's `bin`
+  directory on `PATH`, so DeepSpeed could not find `ninja` to build its CPU Adam. Workers now
+  put it first, as an activated venv does.
 - Fix: sharding a DataLoader across processes dropped `persistent_workers`,
   `prefetch_factor`, `worker_init_fn`, `generator`, `timeout` and the multiprocessing context,
   so distributed runs lost the user's loader tuning. They are kept now, as in Lightning.
@@ -46,8 +53,8 @@ before 1.0, minor versions may change public APIs, with migration notes here.
   is final. Found by the Kubernetes CI job; regression test added.
 - Fix: manual optimization with DDP could hang (seen on a 2-vCPU CI runner). The step no
   longer relies on DDP's reducer internals: `manual_backward` averages the gradients across
-  ranks in one coalesced all-reduce per dtype. (The 8x T4 validation of 2026-11-01 ran the
-  previous code path.)
+  ranks in one coalesced all-reduce per dtype. Re-validated on 2 Tesla T4 machines over NCCL
+  (identical weights on both ranks).
 - Trainer, the rest of Lightning's surface (ADR-0024 amendment): several dataloaders
   (`glt.CombinedLoader` for training; lists for validate/test/predict with `dataloader_idx`);
   `validate`, `test` and `predict` on several devices or machines (each rank on its shard,

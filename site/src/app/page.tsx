@@ -158,12 +158,12 @@ const STATUS: { label: string; dot: string; items: string }[] = [
     label: "Hardware-validated",
     dot: "bg-emerald-500",
     items:
-      "NVIDIA CUDA (T4, RTX 3070, A100) and Apple Metal · DDP over NCCL on 4 GPUs of a machine and across 8 machines · FSDP across 8 machines · gloo on 16 machines · Google Cloud VMs per run",
+      "NVIDIA CUDA (T4, RTX 3070, A100) and Apple Metal · DDP over NCCL on 4 GPUs of a machine and across 8 machines · FSDP across 8 machines · DeepSpeed ZeRO 1 to 3 · 4-bit and 8-bit quantized training · gloo on 16 machines · Google Cloud VMs per run",
   },
   {
     label: "Implemented, not validated",
     dot: "bg-amber-500",
-    items: "AMD ROCm · DeepSpeed · TPU · tensor parallelism · 4-bit and FP8 training · NCCL across multi-GPU machines · NVIDIA GPU workers on Kubernetes",
+    items: "AMD ROCm · TPU · tensor parallelism · FP8 training · NCCL across multi-GPU machines · NVIDIA GPU workers on Kubernetes",
   },
   {
     label: "Planned",

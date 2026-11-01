@@ -1,0 +1,21 @@
+[gpulayer] job-43fdea21996c: validate_nccl.py on 2 node(s) x 1 cuda process(es), target remote
+[rank0] /home/ubuntu/venv/lib/python3.12/site-packages/gpulayer/pytorch/trainer.py:1015: UserWarning: the training DataLoader has num_workers=0; loading may limit speed. This machine can give each process up to num_workers=3
+[rank0]   self._run_fit(rt, model, train_dataloaders, val_dataloaders, ckpt_path)
+[rank0] [gpulayer] training on cuda, rank 0/2, precision 16-mixed, 1000 epoch(s)
+[rank0] epoch 0 done in 0.81s: train_loss=2.3269
+[rank0] epoch 1 done in 0.253s: train_loss=2.3052
+[rank0] epoch 2 done in 0.25s: train_loss=2.2536
+[rank0] epoch 3 done in 0.249s: train_loss=2.0891
+[rank0] epoch 4 done in 0.248s: train_loss=1.7890
+[rank0] epoch 5 done in 0.245s: train_loss=1.3799
+[rank0] epoch 6 done in 0.243s: train_loss=0.9530
+[rank0] epoch 7 done in 0.248s: train_loss=0.5933
+[rank0] epoch 8 done in 0.248s: train_loss=0.3189
+[rank0] epoch 9 done in 0.097s: train_loss=0.1595
+[rank0] RESULT {"case": "manual", "nodes": 2, "world_size": 2, "backend": "nccl", "gpu": "Tesla T4", "precision": "16-mixed", "ms_per_step": 7.79, "losses": [2.2872, 2.3467, 2.0966, 1.9242, 0.8675, 0.6288, 0.1529], "rank_weight_sums": [506.9764, 506.9764], "syncbn": false}
+[rank0] CHECK manual/2 nccl backend: PASS
+[rank0] CHECK manual/2 world size: PASS
+[rank0] CHECK manual/2 loss falls: PASS
+[rank0] CHECK manual/2 identical weights on every rank: PASS
+[gpulayer] job-43fdea21996c succeeded; 2 output file(s) in gpulayer_runs/job-43fdea21996c
+job job-43fdea21996c finished

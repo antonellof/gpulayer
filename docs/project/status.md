@@ -26,11 +26,13 @@ machines named. Everything else says what is missing.
 | Trainer Lightning parity (ADR-0024): hooks, manual optimization, DataModule, scheduler forms, "-true" precisions, DDP options, callbacks (checkpointing, early stopping, SWA, EMA, fine-tuning, pruning, timers, monitors), CSV logger, profilers, tuner | tested on CPU, one process and two DDP processes; step time within 1.4% of 0.7 on an M2 Pro CPU |
 | Every public name of Lightning's Trainer, Module, hooks, callbacks, loggers, profilers, plugins, strategies, accelerators and utilities (`scripts/compare_lightning_api.py` finds none missing) | tested on CPU; SIGTERM checkpoints, `init_module`, eval/train mode hooks tested in one process |
 | FSDP options (sharding strategies, activation checkpointing, CPU offload, sharded checkpoints), `ModelParallelStrategy` (tensor parallelism), DDP communication hooks and post-local SGD | tested with two CPU processes (gloo); not run on GPUs |
-| `BitsandbytesPrecision`, `TransformerEnginePrecision`, `to_tensorrt`, `XLAProfiler`, Comet, W&B, MLflow, TensorBoard and Lit loggers | implemented; tested against fake packages only |
+| Trainer `DeepSpeedStrategy` (ZeRO 1 to 3, CPU offload) | validated on Tesla T4s, one machine and two over NCCL ([results](../../benchmarks/results/2026-11-01-aws-2xt4-deepspeed/README.md)) |
+| `BitsandbytesPrecision` (nf4, int8) | validated on a Tesla T4 |
+| `TransformerEnginePrecision`, `to_tensorrt`, `XLAProfiler`, Comet, W&B, MLflow, TensorBoard and Lit loggers | implemented; tested against fake packages only |
 | Trainer `sync_batchnorm`, `torch.compile` with Inductor, 16-mixed with manual optimization, "-true" precisions, `PyTorchProfiler` on CUDA | validated on Tesla T4 (one GPU, and up to 8 machines for `sync_batchnorm` and manual optimization) |
 | TensorBoard, Weights & Biases and MLflow loggers | implemented; not tested (optional packages) |
 | Trainer: several dataloaders (`CombinedLoader`, `dataloader_idx`), distributed `validate`/`test`/`predict`, `LightningCLI`, plugins (precision, `CheckpointIO`, `AsyncCheckpointIO`) | tested on CPU, distributed cases with two processes |
-| Trainer `DeepSpeedStrategy` and `accelerator="tpu"` (one device, every device of a TPU VM through `xmp.spawn`, or a TPU pod) | implemented and tested with simulated libraries; not run (need DeepSpeed with CUDA GPUs, and torch_xla on a TPU VM) |
+| Trainer `accelerator="tpu"` (one device, every device of a TPU VM through `xmp.spawn`, or a TPU pod) | implemented and tested with a simulated torch_xla; not run on a TPU |
 | Long-running services: replicas, `$PORT`, endpoints, restarts | tested on a local worker and on Kubernetes (kind); no load balancer |
 | Google Cloud provisioning | validated: a CPU VM and a Spot T4 created for a job, joined, ran it and were deleted |
 | Kubernetes Helm chart | tested in CI on kind (jobs, a distributed job, upgrade, server restart); GPU worker pool not run |
@@ -41,8 +43,7 @@ machines named. Everything else says what is missing.
 
 ## Next
 
-- Validate AMD ROCm on AMD hardware, and DeepSpeed and TPU training.
-- Re-run manual optimization under DDP on GPUs: its gradient averaging changed after the 8×T4 run.
+- Validate AMD ROCm on AMD hardware, and TPU training.
 - Why the 1-GPU CNN's CPU work ran about 10% slower than Lightning's on one RTX 3070 host (same GPU kernels).
 - NCCL across multi-GPU machines (only 32 vCPUs of AWS G instances are approved: one GPU each).
 - Why Lightning is faster on the CNN over NCCL across machines.

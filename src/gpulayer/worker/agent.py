@@ -374,6 +374,12 @@ class WorkerAgent:
     def _environment(self, a: TaskAssignment, ws: Path) -> tuple[dict[str, str], list[str]]:
         spec = a.spec
         env = {k: os.environ[k] for k in _ENV_ALLOWLIST if k in os.environ}
+        # Tools installed next to the job's Python (ninja for DeepSpeed's JIT ops, console
+        # scripts) are found, as in an activated venv. Not resolved: a venv's python is a
+        # symlink to the base interpreter. (Found on AWS: DeepSpeed's CPU Adam needs ninja.)
+        bin_dir = str(Path(self.python).parent)
+        if env.get("PATH", "").split(os.pathsep)[0] != bin_dir:
+            env["PATH"] = bin_dir + os.pathsep + env.get("PATH", "")
         env.update(spec.env)
         secret_values = []
         for s in spec.secrets:

@@ -108,3 +108,22 @@ def test_cuda_job_environment_pins_reserved_gpus_in_pci_order(cp, tmp_path):
     assert env1["CUDA_VISIBLE_DEVICES"] == "0" and env2["CUDA_VISIBLE_DEVICES"] == "1,2"
     # nvidia-smi indices only match CUDA's numbering in PCI bus order.
     assert env1["CUDA_DEVICE_ORDER"] == env2["CUDA_DEVICE_ORDER"] == "PCI_BUS_ID"
+
+
+def test_job_path_starts_with_the_job_pythons_bin_dir(cp, tmp_path, monkeypatch):
+    """Found on AWS: DeepSpeed builds its CPU Adam with `ninja`, installed next to the worker's
+    Python but not on the worker's PATH. Jobs now see that bin directory first."""
+    import os
+
+    from gpulayer.worker.agent import WorkerAgent
+    from gpulayer.worker.channel import EmbeddedChannel
+
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    caps = make_caps(accelerators=[cuda_device(0)])
+    ch = EmbeddedChannel.register(cp, "w", caps)
+    cp.submit(gpu_job())
+    a = cp.acquire_task(ch.worker_id)
+    venv_python = tmp_path / "venv" / "bin" / "python"
+    agent = WorkerAgent(ch, caps, tmp_path, python=str(venv_python))
+    env, _ = agent._environment(a, tmp_path)
+    assert env["PATH"].split(os.pathsep) == [str(venv_python.parent), "/usr/bin", "/bin"]

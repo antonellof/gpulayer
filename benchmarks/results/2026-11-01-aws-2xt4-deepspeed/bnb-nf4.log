@@ -1,0 +1,13 @@
+/home/ubuntu/venv/lib/python3.12/site-packages/gpulayer/pytorch/trainer.py:1015: UserWarning: the training DataLoader has num_workers=0; loading may limit speed. This machine can give each process up to num_workers=3
+  self._run_fit(rt, model, train_dataloaders, val_dataloaders, ckpt_path)
+[gpulayer] training on cuda, precision 32-true, 1000 epoch(s)
+epoch 0 done in 0.497s: train_loss=0.6932
+epoch 1 done in 0.211s: train_loss=0.6932
+[gpulayer] training on cuda, precision 16-true, 1000 epoch(s)
+epoch 0 done in 0.405s: train_loss=0.6932
+epoch 1 done in 0.199s: train_loss=0.6931
+RESULT {"case": "bnb-nf4", "layers": ["Linear4bit"], "peak_mb_32true": 145, "peak_mb_quantized": 27, "ms_per_step_32true": 2.92, "ms_per_step_quantized": 2.77, "body_output_cosine_vs_fp32": 0.9969, "head_max_change": 0.00039, "bitsandbytes": "0.50.2"}
+CHECK bnb-nf4 linear layers quantized: PASS
+CHECK bnb-nf4 outputs match fp32 (cosine > 0.95): PASS
+CHECK bnb-nf4 trainable head trained: PASS
+CHECK bnb-nf4 less GPU memory than 32-true: PASS

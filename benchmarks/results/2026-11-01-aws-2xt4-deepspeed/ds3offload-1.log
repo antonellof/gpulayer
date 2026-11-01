@@ -1,0 +1,12 @@
+[gpulayer] job-529d62e3e0c5: validate_deepspeed.py on 1 node(s) x 1 cuda process(es), target remote
+/home/ubuntu/venv/lib/python3.12/site-packages/gpulayer/pytorch/trainer.py:1015: UserWarning: the training DataLoader has num_workers=0; loading may limit speed. This machine can give each process up to num_workers=3
+  self._run_fit(rt, model, train_dataloaders, val_dataloaders, ckpt_path)
+[gpulayer] training on cuda, precision 16-true, 1000 epoch(s)
+epoch 0 done in 15.827s: train_loss=0.3921
+epoch 1 done in 8.604s: train_loss=0.1347
+[gpulayer] job-529d62e3e0c5 succeeded; 4 output file(s) in gpulayer_runs/job-529d62e3e0c5
+RESULT {"case": "stage3-offload/1", "nodes": 1, "world_size": 1, "gpu_peak_mb_rank0": 458, "ms_per_step": 120.58, "losses": [0.6934, 0.52, 0.2036, 0.0561, 0.15], "params": 17840130, "checkpoint_params": 17840130, "gpulayer_job": "job-529d62e3e0c5"}
+CHECK stage3-offload/1 world size: PASS
+CHECK stage3-offload/1 loss falls: PASS
+CHECK stage3-offload/1 full weights in the checkpoint: PASS
+CHECK stage3-offload/1 trained weights came back: PASS

@@ -31,8 +31,8 @@ const MATRIX: { feature: string; marks: Mark[]; note?: string }[] = [
   },
   {
     feature: "DeepSpeed",
-    marks: ["partial", "yes", "yes", "yes", "no", "no", "no", "partial"],
-    note: "GPUlayer: implemented, not yet run on hardware",
+    marks: ["yes", "yes", "yes", "yes", "no", "no", "no", "partial"],
+    note: "GPUlayer: ZeRO 1 to 3 and CPU offload validated on Tesla T4s",
   },
   {
     feature: "Starts every node of a multi-machine run from one call",
@@ -74,7 +74,7 @@ const WHAT: [string, string][] = [
 
 const ELSEWHERE = [
   "You want VMs created for you outside Google Cloud, or autoscaling pools: SkyPilot, dstack or Ray cover more (AWS or Vast.ai machines you start can join GPUlayer).",
-  "You rely on DeepSpeed or TPUs today: they are implemented in the GPUlayer Trainer but not yet run on hardware.",
+  "You train on TPUs today: TPU support in the GPUlayer Trainer is implemented but not yet run on a TPU.",
   "Untrusted users share the machines: GPUlayer does not sandbox jobs.",
   "One GPU on the machine in front of you: a plain training loop is simpler.",
 ];

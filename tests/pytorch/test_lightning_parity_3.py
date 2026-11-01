@@ -631,3 +631,42 @@ def test_tensor_core_hint(monkeypatch):
         assert not seen
     finally:
         torch.set_float32_matmul_precision("highest")
+
+
+def test_deepspeed_in_one_process_gets_a_process_group_and_local_rank(tmp_path, monkeypatch):
+    """SIMULATED deepspeed. Found on a Tesla T4: DeepSpeed needs a process group and
+    LOCAL_RANK even in one process (else it tries MPI discovery). The Trainer provides both for
+    the run and removes them afterwards."""
+    import torch.distributed as dist
+
+    seen = {}
+
+    class Engine:
+        def __init__(self, module, optimizer):
+            self.module, self.optimizer = module, optimizer
+
+        def __call__(self, *a):
+            return self.module(*a)
+
+        def backward(self, loss):
+            loss.backward()
+
+        def is_gradient_accumulation_boundary(self):
+            return True
+
+        def step(self):
+            self.optimizer.step()
+            self.optimizer.zero_grad()
+
+    def initialize(model, optimizer, config):
+        seen["group"] = dist.is_initialized() and dist.get_world_size() == 1
+        seen["local_rank"] = os.environ.get("LOCAL_RANK")
+        return Engine(model, optimizer), optimizer, None, None
+
+    monkeypatch.setitem(sys.modules, "deepspeed", types.SimpleNamespace(initialize=initialize))
+    monkeypatch.delenv("LOCAL_RANK", raising=False)
+    t = trainer(tmp_path, max_epochs=1, strategy="deepspeed_stage_2")
+    t.fit(Lin(), DataLoader(ds(), batch_size=8))
+    assert seen == {"group": True, "local_rank": "0"} and t.global_step == 4
+    assert "LOCAL_RANK" not in os.environ and not dist.is_initialized()
+    assert glt.is_launcher_process()

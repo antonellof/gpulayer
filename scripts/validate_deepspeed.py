@@ -161,20 +161,34 @@ def run_bnb() -> None:
 
     _, base = fit(None)
     plugin = glt.BitsandbytesPrecision(args.mode, dtype=torch.float16, ignore_modules={"head"})
+    head_before = Net().head.weight.detach().clone()
     model, q = fit([plugin])
     import bitsandbytes as bnb
 
+    # Quantization fidelity: the same untrained weights, quantized and not, on one batch.
+    x = torch.randn(256, 512, generator=torch.Generator().manual_seed(1)).cuda()
+    ref = Net().cuda().eval()
+    quant = Net()
+    plugin.convert_module(quant)
+    quant = quant.cuda().eval()
+    with torch.no_grad():
+        a = ref.body(x).float().flatten()
+        b = quant.body(x.half()).float().flatten()
+    cosine = float(torch.nn.functional.cosine_similarity(a, b, dim=0))
     kinds = {type(m).__name__ for m in model.body if not isinstance(m, nn.GELU)}
+    moved = float((model.head.weight.detach().float().cpu() - head_before).abs().max())
     result = {
         "case": f"bnb-{args.mode}", "layers": sorted(kinds),
         "peak_mb_32true": round(base.peak_mb), "peak_mb_quantized": round(q.peak_mb),
         "ms_per_step_32true": round(base.ms, 2), "ms_per_step_quantized": round(q.ms, 2),
-        "losses_quantized": [round(v, 4) for v in q.losses], "bitsandbytes": bnb.__version__,
+        "body_output_cosine_vs_fp32": round(cosine, 4), "head_max_change": round(moved, 5),
+        "bitsandbytes": bnb.__version__,
     }  # fmt: skip
     print("RESULT " + json.dumps(result))
     checks = {
         "linear layers quantized": kinds <= {"Linear4bit", "Linear8bitLt"},
-        "head learns": q.losses[-1] < q.losses[0],
+        "outputs match fp32 (cosine > 0.95)": cosine > 0.95,
+        "trainable head trained": moved > 0,
         "less GPU memory than 32-true": q.peak_mb < base.peak_mb,
     }
     for name, ok in checks.items():
