@@ -97,6 +97,12 @@ def resolve_accelerator(accelerator: str = "auto") -> str:
         raise ValidationFailed(
             "accelerator='tpu' needs torch_xla (pip install torch_xla[tpu]) on a TPU VM"
         )
+    if accelerator in ("hpu", "gaudi"):
+        # Lightning removed its Habana support too (lightning-habana is archived).
+        raise ValidationFailed(
+            "accelerator='hpu' (Habana Gaudi) is not supported, as in PyTorch Lightning, "
+            "which removed it; use 'cuda', 'rocm', 'mps', 'tpu' or 'cpu'"
+        )
     if accelerator not in ("cpu", "cuda", "rocm", "mps", "tpu"):
         raise ValidationFailed(f"unknown accelerator {accelerator!r}")
     return accelerator
@@ -281,9 +287,9 @@ class Runtime:
         GPUs, gloo otherwise). Returns self."""
         if self.gpu:
             torch.cuda.set_device(self.device)
-        if self.distributed and not dist.is_initialized():
-            # On TPUs this gloo group only carries the small CPU reductions (metrics, stop
-            # flags, barriers); gradients go through torch_xla.
+        if self.distributed and not self.xla and not dist.is_initialized():
+            # TPU processes need no process group: reductions use torch_xla's collectives
+            # (xla_all_reduce), which also span the hosts of a TPU pod, as in Lightning.
             backend = os.environ.get("GPULAYER_COMM_BACKEND") or ("nccl" if self.gpu else "gloo")
             dist.init_process_group(backend)
             self._owns_group = True
@@ -297,7 +303,11 @@ class Runtime:
 
     def barrier(self) -> None:
         """Wait until every process reaches this point (no-op in one process)."""
-        if self.distributed and dist.is_initialized():
+        if self.distributed and self.xla:
+            import torch_xla.core.xla_model as xm
+
+            xm.rendezvous("gpulayer-barrier")
+        elif self.distributed and dist.is_initialized():
             dist.barrier()
 
     # ------------------------------------------------------------- wrapping
@@ -470,8 +480,17 @@ class Runtime:
         On CUDA (with ``prefetch``) a background thread loads the next batches and pins them,
         and each one is copied to the GPU on a side stream while the current step runs. The
         training loop then only starts the copy: collating, pinning and copying overlap with
-        GPU work. Elsewhere this is ``to_device`` per batch.
+        GPU work. On TPUs torch_xla's MpDeviceLoader does the same. Elsewhere this is
+        ``to_device`` per batch.
         """
+        if self.xla:
+            # As Lightning's XLAStrategy: MpDeviceLoader loads the next batches in background
+            # threads and copies them to the TPU while the current step runs.
+            from torch_xla.distributed.parallel_loader import MpDeviceLoader
+
+            for batch in MpDeviceLoader(loader, self.device):
+                yield self.to_device(batch)  # only casts with the "-true" precisions
+            return
         if not prefetch or self.device.type != "cuda":
             for batch in loader:
                 yield self.to_device(batch)
@@ -585,8 +604,18 @@ class Runtime:
 
     # ------------------------------------------------------------- reductions
 
+    def xla_all_reduce(self, t: torch.Tensor, op: str = "sum") -> torch.Tensor:
+        """All-reduce a small CPU tensor across TPU processes (``"sum"`` or ``"max"``) with
+        torch_xla's collectives; returns a CPU tensor."""
+        import torch_xla.core.xla_model as xm
+
+        kind = xm.REDUCE_MAX if op == "max" else xm.REDUCE_SUM
+        return xm.all_reduce(kind, t.to(self.device)).cpu()
+
     def any(self, flag: bool) -> bool:
         """True on every rank if ``flag`` is true on any rank."""
+        if self.distributed and self.xla:
+            return bool(self.xla_all_reduce(torch.tensor([float(flag)]), "max").item() > 0)
         if not (self.distributed and dist.is_initialized()):
             return bool(flag)
         t = torch.tensor([1.0 if flag else 0.0], device=self.device if self.gpu else "cpu")
@@ -595,6 +624,10 @@ class Runtime:
 
     def mean_dict(self, values: dict[str, float]) -> dict[str, float]:
         """Average every value across ranks in one all-reduce (keys sorted, so ranks agree)."""
+        if self.distributed and self.xla and values:
+            keys = sorted(values)
+            t = self.xla_all_reduce(torch.tensor([float(values[k]) for k in keys]))
+            return dict(zip(keys, (t / self.world_size).tolist(), strict=True))
         if not (self.distributed and dist.is_initialized()) or not values:
             return {k: float(v) for k, v in values.items()}
         keys = sorted(values)
@@ -607,6 +640,8 @@ class Runtime:
 
     def mean(self, value: float) -> float:
         """The average of ``value`` across processes (one all-reduce)."""
+        if self.distributed and self.xla:
+            return float(self.xla_all_reduce(torch.tensor([float(value)])).item()) / self.world_size
         if not (self.distributed and dist.is_initialized()):
             return float(value)
         t = torch.tensor([float(value)], device=self.device if self.gpu else "cpu")

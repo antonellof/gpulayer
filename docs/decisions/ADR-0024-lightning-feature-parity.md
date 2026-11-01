@@ -122,8 +122,8 @@ Point 2 listed what was not adopted. Most of it is now implemented, with Lightni
   unit-tested for their configuration and error paths, but not run: they need DeepSpeed with
   CUDA GPUs and torch_xla on a TPU VM.
 
-Still not available: Habana HPUs (a separate Lightning package), TPU pods across several TPU
-VMs, resuming DeepSpeed runs from a checkpoint.
+Still not available: resuming DeepSpeed runs from a checkpoint. Habana HPUs are rejected with
+an error: Lightning removed them (`_graveyard/hpu.py`; `lightning-habana` archived).
 
 **Several TPU devices (2026-11-01).** `accelerator="tpu"` with `devices="auto"` (or the VM's
 device count) now trains on every TPU device of one TPU VM, following Lightning's
@@ -132,6 +132,12 @@ GPUlayer job), each process takes its rank from `torch_xla.runtime`, the model i
 in DDP, `xm.optimizer_step` all-reduces the gradients over the TPU interconnect, a gloo group
 carries the small CPU reductions (metrics, stop flags, barriers), and rank 0 saves CPU-tensor
 checkpoints that the launching process loads. Tested with a fake `torch_xla` package
-(`tests/pytorch/test_tpu_spawn.py`); not run on a TPU. Lightning's `MpDeviceLoader` (host to
-device copies overlapped with the step) is not used yet.
+(`tests/pytorch/test_tpu_spawn.py`); not run on a TPU.
+
+Follow-up the same day, closer to Lightning: no gloo group on TPUs. Metrics, stop flags,
+barriers and `all_gather` use torch_xla's collectives (`xm.all_reduce`, `xm.rendezvous`,
+`xm.all_gather`), which also span the hosts of a TPU pod, so a pod is one run when the script
+is started on every host, as Lightning documents. Batches go through `MpDeviceLoader` (next
+batches copied to the device while the step runs), and evaluation uses `torch.no_grad`, as
+Lightning does on XLA. The simulated test covers one VM and a two-host pod.
 

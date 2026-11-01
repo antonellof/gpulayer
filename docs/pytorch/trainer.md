@@ -185,7 +185,10 @@ Implemented with Lightning's names, not yet run on hardware:
   offload_optimizer=True)` or `config=`) needs `pip install deepspeed` and CUDA GPUs. One
   optimizer, automatic optimization; resuming a DeepSpeed run is not supported yet.
 - **TPU** (`accelerator="tpu"`) needs `torch_xla` on a TPU VM. `devices="auto"` (or the VM's
-  device count) trains on every TPU device of the VM: as in Lightning, the Trainer starts one
-  process per device with `xmp.spawn`, `xm.optimizer_step` averages the gradients, and rank 0's
-  checkpoint and metrics come back to your process. Tested with a simulated `torch_xla`; TPU
-  pods (`num_nodes > 1`) are not supported.
+  device count) trains on every TPU device: as in Lightning, the Trainer starts one process
+  per device with `xmp.spawn`, feeds batches through `MpDeviceLoader`, averages gradients in
+  `xm.optimizer_step`, reduces metrics with XLA collectives, and loads rank 0's checkpoint
+  back into your process. On a TPU pod, start the script on every host (`gcloud compute tpus
+  tpu-vm ssh ... --worker=all`), as with Lightning; `num_nodes` and `target` are not used.
+  Tested with a simulated `torch_xla` (one VM and a two-host pod).
+- **Habana HPU** is rejected with an error. Lightning removed it as well.

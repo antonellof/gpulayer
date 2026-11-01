@@ -430,16 +430,23 @@ class Module(HyperparametersMixin, nn.Module):
         dimension (unchanged in a single process)."""
         import torch.distributed as dist
 
-        if not (dist.is_available() and dist.is_initialized()):
+        rt = getattr(self.trainer, "runtime", None) if self.trainer is not None else None
+        xla = rt is not None and rt.xla and rt.distributed
+        if not xla and not (dist.is_available() and dist.is_initialized()):
             return data
         if isinstance(data, dict):
             return {k: self.all_gather(v, sync_grads) for k, v in data.items()}
         if isinstance(data, (list, tuple)):
             return type(data)(self.all_gather(v, sync_grads) for v in data)
         t = data if isinstance(data, torch.Tensor) else torch.tensor(data, device=self.device)
-        if t.device.type == "xla":
-            # TPU processes share a gloo group for small values: gather on the CPU
-            return self.all_gather(t.cpu(), sync_grads).to(t.device)
+        if xla:  # TPU processes: torch_xla's collectives, as Lightning's XLAStrategy
+            if sync_grads:
+                import torch_xla.core.functions as xf
+
+                return xf.all_gather(t.unsqueeze(0), dim=0)
+            import torch_xla.core.xla_model as xm
+
+            return xm.all_gather(t.unsqueeze(0), dim=0)
         if sync_grads:
             from torch.distributed.nn.functional import all_gather as ag
 

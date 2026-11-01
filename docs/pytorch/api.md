@@ -1271,6 +1271,7 @@ glt.Runtime(
 | `step(optimizer, params=None, clip_val=None, clip_algorithm='norm')` | Optimizer step, clipping gradients first: by total norm, or each value to [-clip_val, clip_val] with `clip_algorithm="value"`. |
 | `to_device(batch)` | A batch on this process's device (float tensors in the "-true" precision's dtype). |
 | `uses_two_level_sync()` | Sum gradients inside each machine before crossing the network (ADR-0020). "auto" does it for gloo with several machines and several processes per machine; NCCL plans its own topology-aware rings. |
+| `xla_all_reduce(t, op='sum')` | All-reduce a small CPU tensor across TPU processes (`"sum"` or `"max"`) with torch_xla's collectives; returns a CPU tensor. |
 
 | Property | |
 |---|---|

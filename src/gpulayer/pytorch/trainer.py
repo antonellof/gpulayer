@@ -542,8 +542,10 @@ class Trainer:
             return False
         if self.num_nodes > 1 or self.target is not None:
             raise ValidationFailed(
-                "TPU training runs on the TPU VM it is started on: num_nodes > 1 (TPU pods) "
-                "and target= are not supported with accelerator='tpu' yet"
+                "TPU training runs on the TPU VMs it is started on, so num_nodes and target= "
+                "are not used with accelerator='tpu': on a TPU pod, start the script on every "
+                "host (as with Lightning: gcloud compute tpus tpu-vm ssh ... --worker=all) and "
+                "torch_xla joins them into one run"
             )
         return is_launcher_process() and (self._all_devices or self.devices > 1)
 
@@ -551,15 +553,8 @@ class Trainer:
         """Run ``fit`` in one process per TPU device and load rank 0's results here."""
         import torch_xla.distributed.xla_multiprocessing as xmp
 
-        from gpulayer.runtime.distributed import free_port
-
         out = (self.default_root_dir / _run_name()).resolve()
-        env = {
-            XLA_SPAWNED_ENV: "1",
-            "GPULAYER_OUTPUT_DIR": str(out),
-            "MASTER_ADDR": "127.0.0.1",
-            "MASTER_PORT": str(free_port("127.0.0.1")),
-        }
+        env = {XLA_SPAWNED_ENV: "1", "GPULAYER_OUTPUT_DIR": str(out)}
         saved = {k: os.environ.get(k) for k in env}
         os.environ.update(env)
         try:
@@ -1587,6 +1582,9 @@ class Trainer:
             return flag
         import torch.distributed as dist
 
+        if rt.xla:  # rank 0's flag: everyone else contributes 0 to the sum
+            mine = 1.0 if flag and rt.is_global_zero else 0.0
+            return bool(rt.xla_all_reduce(torch.tensor([mine])).item() > 0)
         t = torch.tensor([1.0 if flag else 0.0], device=rt.device if rt.gpu else "cpu")
         dist.broadcast(t, 0)
         return bool(t.item() > 0)
@@ -1702,6 +1700,8 @@ class Trainer:
 
         if not self.inference_mode:
             return torch.no_grad()
+        if self.runtime is not None and self.runtime.xla:
+            return torch.no_grad()  # as Lightning does on XLA devices
         if dist.is_available() and dist.is_initialized() and dist.get_backend() == "gloo":
             return torch.no_grad()
         if isinstance(self._strategy, FSDPStrategy):
@@ -2186,22 +2186,25 @@ def _fsdp_wrapped(module: Any) -> bool:
 
 def _xla_spawned_fit(index: int, trainer: Trainer, model: Module, *args: Any) -> None:
     """Entry point of each TPU process started by ``Trainer._fit_xla_spawn``: take this
-    process's rank from torch_xla, then run the ordinary ``fit`` (gloo for the small CPU
-    reductions, xm.optimizer_step for the gradients)."""
+    process's rank from torch_xla (global across the hosts of a TPU pod), then run the
+    ordinary ``fit``; xm.optimizer_step averages the gradients and the Runtime's reductions
+    use torch_xla's collectives."""
     import torch_xla.runtime as xr
 
     world = xr.world_size()
-    if not trainer._all_devices and trainer.devices != world:
+    # Processes on this host; on a TPU pod, world spans every host.
+    local = int(getattr(xr, "local_process_count", xr.world_size)())
+    if not trainer._all_devices and trainer.devices != local:
         raise ValidationFailed(
-            f"devices={trainer.devices}, but this TPU VM has {world} TPU devices: torch_xla "
-            f"starts one process per device, so pass devices='auto' (or {world})"
+            f"devices={trainer.devices}, but this TPU VM has {local} TPU devices: torch_xla "
+            f"starts one process per device, so pass devices='auto' (or {local})"
         )
-    rank = xr.global_ordinal()
     os.environ.update(
-        RANK=str(rank),
+        RANK=str(xr.global_ordinal()),
         WORLD_SIZE=str(world),
         LOCAL_RANK=str(xr.local_ordinal()),
-        LOCAL_WORLD_SIZE=str(world),
+        LOCAL_WORLD_SIZE=str(local),
+        GPULAYER_NODE_RANK=str(getattr(xr, "host_index", lambda: 0)()),
     )
     trainer.fit(model, *args)
 
