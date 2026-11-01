@@ -670,3 +670,26 @@ def test_deepspeed_in_one_process_gets_a_process_group_and_local_rank(tmp_path, 
     assert seen == {"group": True, "local_rank": "0"} and t.global_step == 4
     assert "LOCAL_RANK" not in os.environ and not dist.is_initialized()
     assert glt.is_launcher_process()
+
+
+def test_sharded_checkpoint_folders_from_several_nodes_are_merged(tmp_path):
+    """Each node uploads only its own shard files; the launching process puts them together."""
+    out = tmp_path / "job"
+    for node, files in (
+        ("node0", [".metadata", "meta.pt", "__0_0.distcp"]),
+        ("node1", ["__1_0.distcp"]),
+    ):
+        folder = out / node / "checkpoints" / "last.ckpt"
+        folder.mkdir(parents=True)
+        for f in files:
+            (folder / f).write_text(node)
+    t = trainer(tmp_path)
+    t._load_outputs(out, Lin())  # fake shards do not load: metrics only, but merged
+    merged = out / "last.ckpt"
+    assert sorted(p.name for p in merged.iterdir()) == [
+        ".metadata",
+        "__0_0.distcp",
+        "__1_0.distcp",
+        "meta.pt",
+    ]
+    assert t.checkpoint_path == merged

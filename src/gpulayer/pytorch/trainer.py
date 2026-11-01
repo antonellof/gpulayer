@@ -13,6 +13,7 @@ import csv
 import json
 import math
 import os
+import shutil
 import signal
 import threading
 import time
@@ -723,16 +724,33 @@ class Trainer:
     def _load_outputs(self, output_dir: Path, model: Module) -> None:
         """Load the final weights and metrics that the training processes wrote."""
         ckpts = sorted(output_dir.rglob("last.ckpt"))
+        if len(ckpts) > 1 and all(c.is_dir() for c in ckpts):
+            # A sharded checkpoint written on several machines comes back as one folder per
+            # node, each with that node's shard files: put them together, so it loads (and
+            # resumes) without a shared filesystem.
+            merged = output_dir / "last.ckpt"
+            merged.mkdir(exist_ok=True)
+            for part in ckpts:
+                if part != merged:
+                    for f in part.rglob("*"):
+                        if f.is_file():
+                            dest = merged / f.relative_to(part)
+                            dest.parent.mkdir(parents=True, exist_ok=True)
+                            if not dest.exists():
+                                shutil.copy2(f, dest)
+            ckpts = [merged]
         state: dict[str, Any] | None = None
         if ckpts:
             self.checkpoint_path = ckpts[0]  # node0/... sorts first
             try:
                 state = self.checkpoint_io.load_checkpoint(self.checkpoint_path)
-            except Exception as e:  # noqa: BLE001
-                if not self.checkpoint_path.is_dir():
+            except BaseException as e:  # torch's CheckpointException is a BaseException
+                if (
+                    isinstance(e, (KeyboardInterrupt, SystemExit))
+                    or not self.checkpoint_path.is_dir()
+                ):
                     raise
-                # A sharded checkpoint written on several machines comes back split across
-                # node<r>/ folders; it loads only where every shard is (a shared filesystem).
+                # Should not happen after the merge above; keep the metrics if it does.
                 self._say(f"[gpulayer] sharded checkpoint not loaded here ({e}); metrics only")
         if state is not None:
             model.load_state_dict(state["state_dict"], strict=model.strict_loading)
