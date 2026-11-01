@@ -1998,7 +1998,7 @@ glt.Runtime(
 | Hook | |
 |---|---|
 | `setup(backend=None, timeout=None)` | Select the GPU of this process and start the process group when distributed (NCCL on GPUs, gloo otherwise, or `backend`; `timeout` for its collectives). Returns self. |
-| `teardown()` | Destroy the process group if this Runtime started it, and remove the environment variables it set. |
+| `teardown()` | Release the process group if this Runtime started it, and remove the environment variables it set. |
 
 ### `resolve_accelerator`
 

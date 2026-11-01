@@ -5,6 +5,13 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Fix: a job that called the Trainer more than once (fit, then predict or test) could fail
+  intermittently with "Gloo connectFullMesh failed ... Connection refused": the process group
+  was destroyed after each call, and a rank that finished first joined the next call through
+  rank 0's old store. A multi-process group now stays up until the process exits (seen twice
+  in CI; regression test added).
+- Home page: isometric illustrations for the six features, and a dashboard section with
+  screenshots of the overview, a distributed job and the workers.
 - Tests: every public name of the reference trainer API is exercised by at least one behaviour
   test (`tests/pytorch/test_feature_coverage.py`, `test_speed_mechanisms.py`); check it with
   `python scripts/compare_api.py <reference-source> --tests`. The speed-mechanism tests run on

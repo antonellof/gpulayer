@@ -1,17 +1,13 @@
 import Link from "next/link";
 import {
   ArrowRight,
-  Boxes,
   Check,
   Cloud,
-  FileCode2,
-  Flame,
-  Library,
   Minus,
-  ScrollText,
 } from "lucide-react";
 import { HeroLandscape } from "@/components/landing/hero-landscape";
 import { VERSION } from "@/lib/version";
+import { FeatureArt } from "@/components/landing/feature-art";
 import { WorksWith } from "@/components/landing/logos";
 import { Terminal, type TerminalTab } from "@/components/landing/terminal";
 import { SiteFooter } from "@/components/site/footer";
@@ -143,32 +139,32 @@ const GPU_RESULTS: { gpu: string; result: string }[] = [
 
 const FEATURES = [
   {
-    icon: Library,
+    art: "api" as const,
     title: "A complete training API",
     body: "Module, DataModule, hooks, callbacks, loggers, profilers and a CLI, with DDP, FSDP, DeepSpeed and tensor parallelism behind one Trainer.",
   },
   {
-    icon: Flame,
+    art: "scale" as const,
     title: "One Trainer, any scale",
-    body: "The same script runs in your process, as DDP on every GPU of a machine, or across machines with Trainer(num_nodes=N). FSDP is experimental.",
+    body: "The same script runs in your process, as DDP on every GPU of a machine, or across machines with Trainer(num_nodes=N). DDP, FSDP and DeepSpeed are validated on GPUs.",
   },
   {
-    icon: Boxes,
+    art: "placement" as const,
     title: "Placed where it trains fastest",
     body: "A run goes only to machines that can train it, on their best-connected GPUs, in one rack or zone when possible. Otherwise it is rejected with a reason per machine.",
   },
   {
-    icon: Cloud,
+    art: "gpus" as const,
     title: "Every GPU you can reach",
     body: "Laptops, workstations and servers that join with one command, cloud GPUs on AWS and Vast.ai that join the same way, and Google Cloud VMs created for a run. NVIDIA CUDA and Apple Metal are validated.",
   },
   {
-    icon: ScrollText,
+    art: "results" as const,
     title: "Logs, checkpoints, metrics",
     body: "Logs stream while training runs. Checkpoints and metrics come back to your machine, and a dashboard lists every run.",
   },
   {
-    icon: FileCode2,
+    art: "loop" as const,
     title: "Your own loop works too",
     body: "Any training script runs anywhere with two launch() lines; Runtime handles device, DDP and precision in a custom loop.",
   },
@@ -318,10 +314,12 @@ export default function Home() {
           <div className="mx-auto max-w-6xl px-6 py-24">
             <SectionHeader eyebrow="Capabilities" title="What you get" />
             <div className="mt-14 grid overflow-hidden rounded-xl border border-border sm:grid-cols-2 lg:grid-cols-3">
-              {FEATURES.map(({ icon: Icon, title, body }) => (
+              {FEATURES.map(({ art, title, body }) => (
                 <div key={title} className="-mb-px -mr-px border-b border-r border-border p-8">
-                  <Icon className="h-5 w-5 text-muted-foreground" strokeWidth={1.75} />
-                  <h3 className="mt-5 font-medium tracking-[-0.01em]">{title}</h3>
+                  <div className="-mx-2 rounded-lg bg-muted/40 py-2">
+                    <FeatureArt kind={art} label={title} />
+                  </div>
+                  <h3 className="mt-6 font-medium tracking-[-0.01em]">{title}</h3>
                   <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{body}</p>
                 </div>
               ))}
@@ -368,6 +366,62 @@ export default function Home() {
                 </figure>
               ))}
             </div>
+          </div>
+        </section>
+
+        {/* Dashboard */}
+        <section id="dashboard" className="border-b border-border bg-card">
+          <div className="mx-auto max-w-6xl px-6 py-24">
+            <SectionHeader
+              eyebrow="Dashboard"
+              title="Every run and every machine, in one place"
+              lede="gpulayer up serves a dashboard: jobs and their placement, per-rank logs while training runs, the workers with their GPUs, and the reason when a job fails."
+            />
+            <div className="mt-12 overflow-hidden rounded-xl border border-border shadow-frame">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/docs-assets/dashboard/overview-light.png"
+                alt="The GPUlayer dashboard: running and finished jobs, workers and their GPUs"
+                className="w-full dark:hidden"
+                width={1440}
+                height={1180}
+                loading="lazy"
+              />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/docs-assets/dashboard/overview-dark.png"
+                alt=""
+                aria-hidden
+                className="hidden w-full dark:block"
+                width={1440}
+                height={1180}
+                loading="lazy"
+              />
+            </div>
+            <div className="mt-6 grid gap-6 sm:grid-cols-2">
+              {[
+                ["job-ddp-dark", "A distributed job: its placement and every rank's logs"],
+                ["workers-dark", "The workers: their GPUs, frameworks, load and memory"],
+              ].map(([name, caption]) => (
+                <figure key={name}>
+                  <div className="overflow-hidden rounded-xl border border-border">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`/docs-assets/dashboard/${name}.png`}
+                      alt={caption}
+                      className="w-full"
+                      width={1440}
+                      height={1000}
+                      loading="lazy"
+                    />
+                  </div>
+                  <figcaption className="mt-3 text-sm text-muted-foreground">{caption}</figcaption>
+                </figure>
+              ))}
+            </div>
+            <Link href="/docs/guides/monitoring/" className="link-arrow mt-8">
+              Monitoring and the dashboard <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
           </div>
         </section>
 

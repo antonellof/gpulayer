@@ -693,3 +693,28 @@ def test_sharded_checkpoint_folders_from_several_nodes_are_merged(tmp_path):
         "meta.pt",
     ]
     assert t.checkpoint_path == merged
+
+
+def test_a_multi_process_group_outlives_one_trainer_call(monkeypatch):
+    """Found in CI: destroying the group after fit raced with a faster rank joining the next
+    call (predict) through the old store. Several processes keep the group until exit; a
+    one-process group is destroyed at once."""
+    import torch.distributed as dist
+
+    from gpulayer.pytorch import runtime as runtime_mod
+    from gpulayer.runtime.distributed import free_port
+
+    monkeypatch.setattr(runtime_mod, "_EXIT_HOOK", False)
+    registered = []
+    monkeypatch.setattr("atexit.register", lambda fn: registered.append(fn))
+    for world, survives in ((2, True), (1, False)):
+        dist.init_process_group("gloo", init_method=f"tcp://127.0.0.1:{free_port('127.0.0.1')}",
+                                rank=0, world_size=1)  # fmt: skip
+        rt = runtime_mod.Runtime("cpu")
+        rt.world_size, rt._owns_group = world, True
+        rt.teardown()
+        assert dist.is_initialized() is survives
+        if survives:
+            assert len(registered) == 1  # destroyed when the process exits
+            registered[0]()
+            assert not dist.is_initialized()

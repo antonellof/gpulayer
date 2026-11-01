@@ -196,6 +196,25 @@ def _fsdp_modules(model: nn.Module) -> list[Any]:
     return [m for m in model.modules() if isinstance(m, FSDPModule)]
 
 
+_EXIT_HOOK = False
+
+
+def _destroy_group_at_exit() -> None:
+    """Destroy the default process group when the process exits (registered once)."""
+    global _EXIT_HOOK
+    if _EXIT_HOOK:
+        return
+    import atexit
+
+    def destroy() -> None:
+        if dist.is_initialized():
+            with contextlib.suppress(Exception):
+                dist.destroy_process_group()
+
+    atexit.register(destroy)
+    _EXIT_HOOK = True
+
+
 def _has_dtensor(model: nn.Module) -> bool:
     """True when some parameter is a DTensor (tensor parallelism)."""
     try:
@@ -319,10 +338,20 @@ class Runtime:
         return self
 
     def teardown(self) -> None:
-        """Destroy the process group if this Runtime started it, and remove the environment
-        variables it set."""
+        """Release the process group if this Runtime started it, and remove the environment
+        variables it set.
+
+        A group of several processes stays up for the next Trainer call in the same process
+        (fit, then test or predict) and is destroyed when the process exits. Destroying it
+        between calls raced: a rank that finished first could join the next call through the
+        old group's store, still alive on rank 0, and read stale addresses (seen in CI as
+        "Gloo connectFullMesh failed ... Connection refused"). Keeping it also saves setting
+        the group up again. A one-process group (DeepSpeed's) is destroyed at once."""
         if self._owns_group and dist.is_initialized():
-            dist.destroy_process_group()
+            if self.distributed:
+                _destroy_group_at_exit()
+            else:
+                dist.destroy_process_group()
             self._owns_group = False
         for name in self._env_set:
             os.environ.pop(name, None)
