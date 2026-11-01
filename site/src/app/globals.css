@@ -115,3 +115,21 @@
     mask-composite: intersect;
   }
 }
+
+/* Feature art: a gentle dash flow; no motion when the visitor asks for none. */
+.feature-art .fa-dash {
+  animation: fa-dash 1.6s linear infinite;
+}
+@keyframes fa-dash {
+  to {
+    stroke-dashoffset: -8;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .feature-art .fa-dash {
+    animation: none;
+  }
+  .feature-art .fa-move {
+    display: none;
+  }
+}

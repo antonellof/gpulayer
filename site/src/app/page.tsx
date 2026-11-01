@@ -316,7 +316,7 @@ export default function Home() {
             <div className="mt-14 grid overflow-hidden rounded-xl border border-border sm:grid-cols-2 lg:grid-cols-3">
               {FEATURES.map(({ art, title, body }) => (
                 <div key={title} className="-mb-px -mr-px border-b border-r border-border p-8">
-                  <div className="-mx-2 rounded-lg border border-border/60 py-2 [background-image:radial-gradient(hsl(var(--border))_1px,transparent_1px)] [background-size:14px_14px]">
+                  <div className="-mx-2 overflow-hidden rounded-lg border border-border">
                     <FeatureArt kind={art} />
                   </div>
                   <h3 className="mt-6 font-medium tracking-[-0.01em]">{title}</h3>
