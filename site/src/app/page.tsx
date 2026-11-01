@@ -8,6 +8,7 @@ import {
 import { HeroLandscape } from "@/components/landing/hero-landscape";
 import { VERSION } from "@/lib/version";
 import { FeatureArt } from "@/components/landing/feature-art";
+import { DashboardGallery } from "@/components/landing/dashboard-gallery";
 import { WorksWith } from "@/components/landing/logos";
 import { Terminal, type TerminalTab } from "@/components/landing/terminal";
 import { SiteFooter } from "@/components/site/footer";
@@ -313,14 +314,14 @@ export default function Home() {
         <section className="border-b border-border">
           <div className="mx-auto max-w-6xl px-6 py-24">
             <SectionHeader eyebrow="Capabilities" title="What you get" />
-            <div className="mt-14 grid overflow-hidden rounded-xl border border-border sm:grid-cols-2 lg:grid-cols-3">
+            <div className="mt-14 grid grid-cols-2 overflow-hidden rounded-xl border border-border lg:grid-cols-3">
               {FEATURES.map(({ art, title, body }) => (
-                <div key={title} className="-mb-px -mr-px border-b border-r border-border p-8">
-                  <div className="-mx-2 overflow-hidden rounded-lg border border-border">
+                <div key={title} className="-mb-px -mr-px border-b border-r border-border p-3 sm:p-8">
+                  <div className="overflow-hidden rounded-lg border border-border sm:-mx-2">
                     <FeatureArt kind={art} />
                   </div>
-                  <h3 className="mt-6 font-medium tracking-[-0.01em]">{title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{body}</p>
+                  <h3 className="mt-3 text-sm font-medium tracking-[-0.01em] sm:mt-6 sm:text-base">{title}</h3>
+                  <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground sm:mt-2 sm:text-sm">{body}</p>
                 </div>
               ))}
             </div>
@@ -377,48 +378,7 @@ export default function Home() {
               title="Every run and every machine, in one place"
               lede="gpulayer up serves a dashboard: jobs and their placement, per-rank logs while training runs, the workers with their GPUs, and the reason when a job fails."
             />
-            <div className="mt-12 overflow-hidden rounded-xl border border-border shadow-frame">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/docs-assets/dashboard/overview-light.png"
-                alt="The GPUlayer dashboard: running and finished jobs, workers and their GPUs"
-                className="w-full dark:hidden"
-                width={1440}
-                height={1180}
-                loading="lazy"
-              />
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/docs-assets/dashboard/overview-dark.png"
-                alt=""
-                aria-hidden
-                className="hidden w-full dark:block"
-                width={1440}
-                height={1180}
-                loading="lazy"
-              />
-            </div>
-            <div className="mt-6 grid gap-6 sm:grid-cols-2">
-              {[
-                ["job-ddp-dark", "A distributed job: its placement and every rank's logs"],
-                ["workers-dark", "The workers: their GPUs, frameworks, load and memory"],
-              ].map(([name, caption]) => (
-                <figure key={name}>
-                  <div className="overflow-hidden rounded-xl border border-border">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={`/docs-assets/dashboard/${name}.png`}
-                      alt={caption}
-                      className="w-full"
-                      width={1440}
-                      height={1000}
-                      loading="lazy"
-                    />
-                  </div>
-                  <figcaption className="mt-3 text-sm text-muted-foreground">{caption}</figcaption>
-                </figure>
-              ))}
-            </div>
+            <DashboardGallery />
             <Link href="/docs/guides/monitoring/" className="link-arrow mt-8">
               Monitoring and the dashboard <ArrowRight className="h-3.5 w-3.5" />
             </Link>

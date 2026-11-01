@@ -99,7 +99,7 @@ function Grid({ o, n, m }: { o: Pt; n: number; m: number }) {
 function Label({ at, text, cls, start }: { at: Pt; text: string; cls?: string; start?: number }) {
   const w = text.length * 4.6 + 8;
   return (
-    <g className={cls} style={start !== undefined ? delay(start) : undefined}>
+    <g className={`fa-label${cls ? ` ${cls}` : ""}`} style={start !== undefined ? delay(start) : undefined}>
       <rect x={at[0]} y={at[1] - 8} width={w} height={11} rx={1.5} fill="#0a0a0a" stroke={LINE} strokeWidth={0.6} />
       <text x={at[0] + 4} y={at[1] + 0.5} fill="rgba(255,255,255,0.6)" fontSize={6.5} fontFamily={MONO}>
         {text}
@@ -319,7 +319,7 @@ export function FeatureArt({ kind }: { kind: keyof typeof ART }) {
     <svg
       viewBox={`0 0 ${W} ${H}`}
       preserveAspectRatio="xMidYMid slice"
-      className="feature-art block h-48 w-full"
+      className="feature-art block h-28 w-full sm:h-48"
       aria-hidden
     >
       <defs>

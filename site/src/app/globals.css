@@ -160,6 +160,11 @@
 .feature-art .fa-ripple { transform-box: fill-box; transform-origin: center; animation: fa-ripple 3s ease-out infinite both; }
 @keyframes fa-ripple { 0% { transform: scale(0.15); opacity: 0.9; } 100% { transform: scale(1); opacity: 0; } }
 
+/* Two feature cards per row on phones: the panels are narrow, so the labels are hidden. */
+@media (max-width: 639px) {
+  .feature-art .fa-label { display: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .feature-art * { animation: none !important; }
   .feature-art .fa-lit { opacity: 0; }
