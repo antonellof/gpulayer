@@ -122,6 +122,16 @@ Point 2 listed what was not adopted. Most of it is now implemented, with Lightni
   unit-tested for their configuration and error paths, but not run: they need DeepSpeed with
   CUDA GPUs and torch_xla on a TPU VM.
 
-Still not available: Habana HPUs (a separate Lightning package), several TPU cores in one run,
-resuming DeepSpeed runs from a checkpoint.
+Still not available: Habana HPUs (a separate Lightning package), TPU pods across several TPU
+VMs, resuming DeepSpeed runs from a checkpoint.
+
+**Several TPU devices (2026-11-01).** `accelerator="tpu"` with `devices="auto"` (or the VM's
+device count) now trains on every TPU device of one TPU VM, following Lightning's
+`XLAStrategy`: the launching process calls `xmp.spawn` (fork, one process per device, no
+GPUlayer job), each process takes its rank from `torch_xla.runtime`, the model is not wrapped
+in DDP, `xm.optimizer_step` all-reduces the gradients over the TPU interconnect, a gloo group
+carries the small CPU reductions (metrics, stop flags, barriers), and rank 0 saves CPU-tensor
+checkpoints that the launching process loads. Tested with a fake `torch_xla` package
+(`tests/pytorch/test_tpu_spawn.py`); not run on a TPU. Lightning's `MpDeviceLoader` (host to
+device copies overlapped with the step) is not used yet.
 

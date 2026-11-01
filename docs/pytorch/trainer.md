@@ -184,4 +184,8 @@ Implemented with Lightning's names, not yet run on hardware:
 - **DeepSpeed** (`strategy="deepspeed_stage_2"`, `glt.DeepSpeedStrategy(stage=3,
   offload_optimizer=True)` or `config=`) needs `pip install deepspeed` and CUDA GPUs. One
   optimizer, automatic optimization; resuming a DeepSpeed run is not supported yet.
-- **TPU** (`accelerator="tpu"`) needs `torch_xla` on a TPU VM; one TPU device per process.
+- **TPU** (`accelerator="tpu"`) needs `torch_xla` on a TPU VM. `devices="auto"` (or the VM's
+  device count) trains on every TPU device of the VM: as in Lightning, the Trainer starts one
+  process per device with `xmp.spawn`, `xm.optimizer_step` averages the gradients, and rank 0's
+  checkpoint and metrics come back to your process. Tested with a simulated `torch_xla`; TPU
+  pods (`num_nodes > 1`) are not supported.

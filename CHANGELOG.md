@@ -5,6 +5,12 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Trainer: `accelerator="tpu"` with `devices="auto"` trains on every TPU device of a TPU VM,
+  as Lightning's `XLAStrategy` does (one process per device through `xmp.spawn`, gradients
+  averaged by `xm.optimizer_step`, rank 0's checkpoint and metrics loaded in your process).
+  Manual optimization on TPUs now steps through `xm.optimizer_step` and `xm.mark_step`, and TPU
+  checkpoints hold CPU tensors. Tested with a simulated `torch_xla`; not run on a TPU. TPU pods
+  (`num_nodes > 1`) are rejected with an error.
 - Docs and site made shorter: the guides, architecture, reference, PyTorch and get-started
   pages lost 30 to 60% of their words with the same commands, settings and status; the
   Trainer page points to the API reference for the full argument list. The compare page is

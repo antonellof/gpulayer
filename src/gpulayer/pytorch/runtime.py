@@ -59,6 +59,10 @@ def _rocm_build() -> bool:
     return bool(getattr(torch.version, "hip", None))
 
 
+XLA_SPAWNED_ENV = "GPULAYER_XLA_SPAWNED"
+"""Set in the TPU processes the Trainer starts with xmp.spawn (one per TPU device)."""
+
+
 def _xla_available() -> bool:
     try:
         import torch_xla  # noqa: F401
@@ -242,10 +246,11 @@ class Runtime:
             getattr(torch, _TRUE_DTYPES[precision]) if precision in _TRUE_DTYPES else None
         )
         self.xla = self.accelerator == "tpu"
-        if self.xla and self.world_size > 1:
+        if self.xla and self.world_size > 1 and os.environ.get(XLA_SPAWNED_ENV) != "1":
             raise ValidationFailed(
-                "accelerator='tpu' runs one TPU device per process in this version; several "
-                "TPU cores (xmp.spawn / PJRT multi-process) are not supported yet"
+                "several TPU processes are started by the Trainer (devices=N or 'auto' on one "
+                "TPU VM, through torch_xla's xmp.spawn); TPU pods across machines are not "
+                "supported yet"
             )
         if self.gpu:
             self.device = torch.device("cuda", self.local_rank)
@@ -277,6 +282,8 @@ class Runtime:
         if self.gpu:
             torch.cuda.set_device(self.device)
         if self.distributed and not dist.is_initialized():
+            # On TPUs this gloo group only carries the small CPU reductions (metrics, stop
+            # flags, barriers); gradients go through torch_xla.
             backend = os.environ.get("GPULAYER_COMM_BACKEND") or ("nccl" if self.gpu else "gloo")
             dist.init_process_group(backend)
             self._owns_group = True
@@ -299,7 +306,9 @@ class Runtime:
         """Move ``model`` to the device and wrap it in DDP when distributed (with two-level
         gradient sync when it applies)."""
         model.to(self.device)
-        if not self.distributed:
+        if not self.distributed or self.xla:
+            # On TPUs xm.optimizer_step all-reduces the gradients itself (as in Lightning's
+            # XLAStrategy), over the TPU interconnect; DDP is not used.
             return model
         from torch.nn.parallel import DistributedDataParallel as DDP
 
@@ -365,7 +374,9 @@ class Runtime:
         submodules release their gathered parameters after their forward. Call this before
         creating the optimizer. A no-op in a single process."""
         model.to(self.device)
-        if not self.distributed:
+        if not self.distributed or self.xla:
+            # On TPUs xm.optimizer_step all-reduces the gradients itself (as in Lightning's
+            # XLAStrategy), over the TPU interconnect; DDP is not used.
             return model
         if next(model.parameters(recurse=False), None) is not None:
             raise ValidationFailed(

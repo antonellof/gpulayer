@@ -37,6 +37,7 @@ from gpulayer.pytorch.plugins import CheckpointIO, TorchCheckpointIO, apply_plug
 from gpulayer.pytorch.profilers import Profiler, resolve_profiler
 from gpulayer.pytorch.runtime import (
     GRADIENT_SYNC,
+    XLA_SPAWNED_ENV,
     Runtime,
     normalize_precision,
     resolve_accelerator,
@@ -114,6 +115,12 @@ class _ManualOptimizer:
         if scaler is not None:
             out = scaler.step(self._opt, closure, **kwargs) if closure else scaler.step(self._opt)
             scaler.update()
+        elif t.runtime is not None and t.runtime.xla:
+            import torch_xla.core.xla_model as xm
+
+            # all-reduces the gradients across TPU processes, then runs the step's graph
+            out = xm.optimizer_step(self._opt, optimizer_args=kwargs)
+            xm.mark_step()
         else:
             out = self._opt.step(closure, **kwargs) if closure else self._opt.step()
         t.global_step += 1
@@ -219,6 +226,9 @@ class Trainer:
             max_epochs = 1000 if max_steps in (None, -1) else 10**9
         if max_steps == -1:
             max_steps = None
+        # On TPUs, "auto" means every TPU device of the VM (counted by torch_xla when the
+        # processes start).
+        self._all_devices = devices in ("auto", -1)
         if devices in ("auto", -1):
             devices = max(1, torch.cuda.device_count())
         if not isinstance(devices, int):
@@ -513,13 +523,64 @@ class Trainer:
     @property
     def will_launch(self) -> bool:
         """True when ``fit`` will run on GPUlayer workers instead of this process."""
+        if self._uses_tpu():
+            return False  # several TPU devices: xmp.spawn in this process (_fit_xla_spawn)
         return is_launcher_process() and (
             self.target is not None or self.devices * self.num_nodes > 1
         )
 
+    def _uses_tpu(self) -> bool:
+        return self.accelerator in ("tpu", "xla") or (
+            self.accelerator == "auto" and os.environ.get("PJRT_DEVICE") == "TPU"
+        )
+
+    def _xla_spawn_needed(self) -> bool:
+        """True in the launching process when the run wants several TPU devices: the
+        Trainer then starts one process per device with torch_xla's xmp.spawn, as
+        Lightning's XLAStrategy does."""
+        if not self._uses_tpu() or os.environ.get(XLA_SPAWNED_ENV) == "1":
+            return False
+        if self.num_nodes > 1 or self.target is not None:
+            raise ValidationFailed(
+                "TPU training runs on the TPU VM it is started on: num_nodes > 1 (TPU pods) "
+                "and target= are not supported with accelerator='tpu' yet"
+            )
+        return is_launcher_process() and (self._all_devices or self.devices > 1)
+
+    def _fit_xla_spawn(self, model: Module, *args: Any) -> None:
+        """Run ``fit`` in one process per TPU device and load rank 0's results here."""
+        import torch_xla.distributed.xla_multiprocessing as xmp
+
+        from gpulayer.runtime.distributed import free_port
+
+        out = (self.default_root_dir / _run_name()).resolve()
+        env = {
+            XLA_SPAWNED_ENV: "1",
+            "GPULAYER_OUTPUT_DIR": str(out),
+            "MASTER_ADDR": "127.0.0.1",
+            "MASTER_PORT": str(free_port("127.0.0.1")),
+        }
+        saved = {k: os.environ.get(k) for k in env}
+        os.environ.update(env)
+        try:
+            # nprocs=None: one process per TPU device (PJRT supports only all devices or 1).
+            # fork, as Lightning's XLA launcher, so the model and loaders need no pickling.
+            xmp.spawn(_xla_spawned_fit, args=(self, model, *args), nprocs=None, start_method="fork")
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+        self._load_outputs(out, model)
+
     def _launch(self, model: Module, ckpt_path: str | Path | None = None) -> None:
         result = self._launch_job(ckpt_path)
-        ckpts = sorted(result.output_dir.rglob("last.ckpt"))
+        self._load_outputs(result.output_dir, model)
+
+    def _load_outputs(self, output_dir: Path, model: Module) -> None:
+        """Load the final weights and metrics that the training processes wrote."""
+        ckpts = sorted(output_dir.rglob("last.ckpt"))
         if ckpts:
             self.checkpoint_path = ckpts[0]  # node0/... sorts first
             state = self.checkpoint_io.load_checkpoint(self.checkpoint_path)
@@ -530,7 +591,7 @@ class Trainer:
             self.current_epoch = state.get("epoch", 0)
         else:
             # Without checkpoints, the metrics still come back (weights do not).
-            found = sorted(result.output_dir.rglob("metrics.json"))
+            found = sorted(output_dir.rglob("metrics.json"))
             if found:
                 self.history = json.loads(found[0].read_text())
                 self.callback_metrics = dict(self.history[-1]) if self.history else {}
@@ -753,6 +814,13 @@ class Trainer:
             raise ValidationFailed("pass either dataloaders or a datamodule, not both")
         self.datamodule = datamodule
         self.ckpt_path = ckpt_path
+        if self._xla_spawn_needed():
+            self._merge_model_callbacks(model)
+            self._fit_xla_spawn(model, train_dataloaders, val_dataloaders, datamodule, ckpt_path)
+            for cb in self.callbacks:
+                if overrides(cb, "on_fit_end"):
+                    cb.on_fit_end(self, model)
+            return
         if self.will_launch:
             # Training runs on workers (the callbacks run there); here only on_fit_end runs,
             # so callbacks can pick up what came back (e.g. ModelCheckpoint's best file).
@@ -1470,7 +1538,12 @@ class Trainer:
         if rt.scaler is not None:
             loss = rt.scaler.scale(loss)
         self._model.backward(loss, *args, **kwargs)
-        if self._ddp is not None and self._ds_engine is None and not _fsdp_wrapped(self._ddp):
+        if (
+            self._ddp is not None
+            and self._ds_engine is None
+            and not rt.xla  # xm.optimizer_step all-reduces TPU gradients in step()
+            and not _fsdp_wrapped(self._ddp)
+        ):
             _average_gradients(self._model)
         self._call_hook("on_after_backward")
 
@@ -1966,6 +2039,9 @@ class Trainer:
             optim_states = [] if weights_only else [o.state_dict() for o in self.optimizers]
         if rt is not None and not rt.is_global_zero:
             return None
+        if rt is not None and rt.xla:
+            # XLA tensors would load only on a TPU: save them as CPU tensors, as xm.save does
+            model_state, optim_states = _to_cpu(model_state), _to_cpu(optim_states)
         p = Path(filepath)
         if p.is_absolute() or len(p.parts) > 1:
             path = p
@@ -2106,6 +2182,39 @@ def _fsdp_wrapped(module: Any) -> bool:
     from torch.nn.parallel import DistributedDataParallel as DDP
 
     return not isinstance(module, DDP)
+
+
+def _to_cpu(obj: Any) -> Any:
+    """``obj`` with every tensor moved to the CPU (dicts, lists and tuples followed)."""
+    if isinstance(obj, torch.Tensor):
+        return obj.cpu()
+    if isinstance(obj, dict):
+        return {k: _to_cpu(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return type(obj)(_to_cpu(v) for v in obj)
+    return obj
+
+
+def _xla_spawned_fit(index: int, trainer: Trainer, model: Module, *args: Any) -> None:
+    """Entry point of each TPU process started by ``Trainer._fit_xla_spawn``: take this
+    process's rank from torch_xla, then run the ordinary ``fit`` (gloo for the small CPU
+    reductions, xm.optimizer_step for the gradients)."""
+    import torch_xla.runtime as xr
+
+    world = xr.world_size()
+    if not trainer._all_devices and trainer.devices != world:
+        raise ValidationFailed(
+            f"devices={trainer.devices}, but this TPU VM has {world} TPU devices: torch_xla "
+            f"starts one process per device, so pass devices='auto' (or {world})"
+        )
+    rank = xr.global_ordinal()
+    os.environ.update(
+        RANK=str(rank),
+        WORLD_SIZE=str(world),
+        LOCAL_RANK=str(xr.local_ordinal()),
+        LOCAL_WORLD_SIZE=str(world),
+    )
+    trainer.fit(model, *args)
 
 
 def _average_gradients(model: torch.nn.Module) -> None:

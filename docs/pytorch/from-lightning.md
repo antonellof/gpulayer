@@ -63,7 +63,8 @@ Lightning needs torchrun, SLURM or a cluster to start processes on each machine.
 - DeepSpeed and TPU (XLA) are implemented but not yet run on hardware; see
   [DeepSpeed and TPU](trainer.md#deepspeed-and-tpu).
 - `glt.LightningCLI` ([Command line](cli.md)) cannot link arguments between sections.
-- Not available: Habana HPUs and multi-core TPU runs. Run Lightning itself for those with
+- Not available: Habana HPUs (Lightning ships them in the separate `lightning-habana`
+  package) and TPU pods across several TPU VMs. Run Lightning itself for those with
   [`launch()`](launch.md).
 
 ## Validated on GPUs

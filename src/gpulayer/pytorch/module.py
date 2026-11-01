@@ -437,6 +437,9 @@ class Module(HyperparametersMixin, nn.Module):
         if isinstance(data, (list, tuple)):
             return type(data)(self.all_gather(v, sync_grads) for v in data)
         t = data if isinstance(data, torch.Tensor) else torch.tensor(data, device=self.device)
+        if t.device.type == "xla":
+            # TPU processes share a gloo group for small values: gather on the CPU
+            return self.all_gather(t.cpu(), sync_grads).to(t.device)
         if sync_grads:
             from torch.distributed.nn.functional import all_gather as ag
 
