@@ -55,6 +55,27 @@ trainer.fit(model, train_loader, val_loader)`,
       { t: "ok", s: "[gpulayer] job-4f5c1e1bc659 succeeded; checkpoint downloaded" },
     ],
   },
+  // Run on one Mac: `gpulayer up`, a second worker joined from another terminal, and a client
+  // in a third. The address is the one `gpulayer up` printed; tokens are elided.
+  {
+    label: "Server + client",
+    title: "gpulayer up, a worker joins, your laptop trains on both",
+    lines: [
+      { t: "dim", s: "# machine 1: start the server; it runs jobs too" },
+      { t: "cmd", s: "gpulayer up" },
+      { t: "ok", s: "GPUlayer is up at https://192.168.1.56:8470  (TLS, self-signed certificate pinned by fingerprint)" },
+      { t: "out", s: "  gpulayer join https://192.168.1.56:8470 --token glj_… --fingerprint sha256:…" },
+      { t: "dim", s: "# machine 2: a GPU box or cloud VM pastes the join line" },
+      { t: "cmd", s: "gpulayer join https://192.168.1.56:8470 --token glj_… --fingerprint sha256:…" },
+      { t: "ok", s: "worker wkr-3d3577f2b58c registered" },
+      { t: "dim", s: "# your laptop: the client" },
+      { t: "cmd", s: "export GPULAYER_URL=https://192.168.1.56:8470 GPULAYER_TOKEN=glc_… GPULAYER_FINGERPRINT=sha256:…" },
+      { t: "cmd", s: "python train.py --accelerator cpu --nodes 2" },
+      { t: "dim", s: "[gpulayer] job-77b0944e7dba: train.py on 2 node(s) x 1 cpu process(es), target remote" },
+      { t: "out", s: "[rank0] epoch 4 done in 0.047s: train_loss=0.5561 val_loss=0.4698" },
+      { t: "ok", s: "[gpulayer] job-77b0944e7dba succeeded; 3 output file(s) in gpulayer_runs/job-77b0944e7dba" },
+    ],
+  },
   {
     label: "Placement",
     title: "asking for hardware this machine does not have",

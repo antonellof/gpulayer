@@ -1,7 +1,8 @@
 # Quickstart
 
 This walkthrough takes about ten minutes. You train one PyTorch model in several places: your
-current process, two processes with DDP, two nodes, a GPU through a job and a sweep. Every
+current process, two processes with DDP, two nodes, a GPU through a job, a sweep, and a
+server that other machines join. Every
 command was run on an Apple Silicon Mac; the CPU steps work on any machine.
 
 ## 1. Install
@@ -158,31 +159,80 @@ run the command again.
 workers that go offline when it ends; `--all` shows those too, and `gpulayer gc --older-than 1d`
 removes old ones.
 
-## 9. Optional: a server and a second machine
+## 9. A server, a second machine and a client
 
-Start a server on one machine. It also runs jobs on its own hardware:
+So far every job ran on workers inside your script. `gpulayer up` starts a server that keeps
+running: other machines join it as workers, and your laptop sends jobs to it. You can try all
+of it on one machine by running each step in its own terminal; the joined worker then counts as
+a second node.
+
+Start the server. It also runs jobs on its own hardware:
 
 ```bash
 gpulayer up
 ```
 
-It prints three things: a `gpulayer join ...` line, a `gl.connect(...)` line and an
-`export ...` line. Paste the join line on a second machine (a GPU box or a cloud VM):
+```text
+GPUlayer is up at https://192.168.1.56:8470  (TLS, self-signed certificate pinned by fingerprint)
+Worker on this machine: my-mac (mps, 10 CPU cores)
 
-```bash
-gpulayer join https://192.168.1.56:8470 --token glj_... --fingerprint sha256:...
+Add a machine (GPU server, workstation, cloud VM) by running on it:
+  gpulayer join https://192.168.1.56:8470 --token glj_... --fingerprint sha256:...
+...
+Or from a shell:
+  export GPULAYER_URL=https://192.168.1.56:8470 GPULAYER_TOKEN=glc_... GPULAYER_FINGERPRINT=sha256:...
 ```
 
-Then, on your laptop, paste the export line and run the same training file. Jobs now go to the
-server's workers:
+Paste the join line on a second machine (a GPU box or a cloud VM), or in a second terminal:
+
+```bash
+gpulayer join https://192.168.1.56:8470 --token glj_... --fingerprint sha256:... --name gpu-box
+```
+
+```text
+worker wkr-3d3577f2b58c registered (existing; mps:Apple arm64 GPU (Metal))
+```
+
+On your laptop, or in a third terminal, paste the export line. The CLI, the SDK and the
+Trainer all read it:
 
 ```bash
 export GPULAYER_URL=https://192.168.1.56:8470 GPULAYER_TOKEN=glc_... GPULAYER_FINGERPRINT=sha256:...
-python examples/trainer_regression/train.py --accelerator cpu --nodes 2   # one node per machine
 gpulayer worker status
 ```
 
-More in [Run a server](../guides/self-hosting.md).
+```text
+wkr-ed1b305e5b95   my-mac       idle   remote mps   tasks=0
+wkr-3d3577f2b58c   gpu-box      idle   remote mps   tasks=0
+```
+
+Run the same training file. With two nodes, each worker runs one:
+
+```bash
+python examples/trainer_regression/train.py --accelerator cpu --nodes 2
+```
+
+```text
+[gpulayer] job-77b0944e7dba: train.py on 2 node(s) x 1 cpu process(es), target remote
+[rank0] [gpulayer] training on cpu, rank 0/2, precision 32-true, 5 epoch(s)
+...
+[rank0] epoch 4 done in 0.047s: train_loss=0.5561 val_loss=0.4698
+[gpulayer] job-77b0944e7dba succeeded; 3 output file(s) in gpulayer_runs/job-77b0944e7dba
+checkpoint: gpulayer_runs/job-77b0944e7dba/node0/checkpoints/last.ckpt
+```
+
+`gpulayer job status` shows where each node ran:
+
+```text
+scheduling: placed on worker group ['wkr-3d3577f2b58c', 'wkr-ed1b305e5b95'] (target remote, policy spread)
+task      task-ef750caafbd6 attempt=1 node=0 worker=wkr-3d3577f2b58c succeeded exit=0
+task      task-a54604d48aa6 attempt=1 node=1 worker=wkr-ed1b305e5b95 succeeded exit=0
+```
+
+The nodes reach each other directly for the PyTorch rendezvous, so every worker must be able to
+connect to the others' addresses (here 192.168.1.56). Stop the worker and the server with
+Ctrl+C. More in [Run a server](../guides/self-hosting.md) and
+[Remote workers](../guides/remote-workers.md).
 
 ## 10. Not only PyTorch
 

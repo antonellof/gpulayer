@@ -71,8 +71,16 @@ python examples/trainer_regression/train.py
 python examples/trainer_regression/train.py --accelerator cpu --devices 2
 python examples/trainer_regression/train.py --accelerator cpu --nodes 2 --devices 2
 
-# More machines: run this on one, then paste the printed `gpulayer join` line on the others
-gpulayer up
+```
+
+More machines: start a server on one, join the others, and point your laptop at it. Each
+line is printed by `gpulayer up`; on a single machine, use three terminals.
+
+```bash
+gpulayer up                                                    # machine 1: the server, runs jobs too
+gpulayer join https://192.168.1.56:8470 --token glj_... --fingerprint sha256:...   # each GPU machine
+export GPULAYER_URL=https://192.168.1.56:8470 GPULAYER_TOKEN=glc_... GPULAYER_FINGERPRINT=sha256:...
+python examples/trainer_regression/train.py --accelerator cpu --nodes 2   # one node per worker
 ```
 
 The [full quickstart](https://github.com/antonellof/gpulayer/blob/main/docs/get-started/quickstart.md) shows the output of each step.

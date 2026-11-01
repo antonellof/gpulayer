@@ -53,39 +53,56 @@ const TRACKS: Track[] = [
     id: "fleet",
     label: "Across your machines",
     icon: Network,
-    blurb: "A small self-hosted server. Machines join it; your laptop sends work to it.",
+    blurb:
+      "A small self-hosted server. Machines join it; your laptop sends work to it. No second machine yet? Run each step in its own terminal on one machine: the joined worker counts as a second node.",
     steps: [
       {
         title: "Start a server",
-        body: "On any machine. TLS with a self-signed certificate is set up for you, and the machine runs jobs too.",
+        body: "On any machine. TLS with a self-signed certificate is set up for you, and the machine runs jobs too. It prints the three lines used below.",
         command: "gpulayer up",
         output: [
           "GPUlayer is up at https://192.168.1.56:8470  (TLS, self-signed certificate pinned by fingerprint)",
-          "Add a machine by running on it:",
+          "Add a machine (GPU server, workstation, cloud VM) by running on it:",
           "  gpulayer join https://192.168.1.56:8470 --token glj_… --fingerprint sha256:…",
+          "Or from a shell:",
+          "  export GPULAYER_URL=https://192.168.1.56:8470 GPULAYER_TOKEN=glc_… GPULAYER_FINGERPRINT=sha256:…",
         ],
       },
       {
         title: "Join each GPU machine or cloud VM",
-        body: "Paste the line printed by `gpulayer up`. The worker reports its GPUs and frameworks.",
+        body: "Paste the join line. The worker reports its GPUs and frameworks, and stays connected until you stop it.",
         command:
-          "gpulayer join https://192.168.1.56:8470 \\\n  --token glj_… --fingerprint sha256:…",
-        output: ["worker wkr-4ad94eaeee80 registered (existing; mps:Apple arm64 GPU (Metal))"],
+          "gpulayer join https://192.168.1.56:8470 \\\n  --token glj_… --fingerprint sha256:… --name gpu-box",
+        output: ["worker wkr-3d3577f2b58c registered (existing; mps:Apple arm64 GPU (Metal))"],
       },
       {
         title: "Point your laptop at the server",
-        body: "Also printed by `gpulayer up`. The SDK, CLI and PyTorch API all pick it up.",
+        body: "Paste the export line. The SDK, CLI and PyTorch API all read it. Check which workers are online.",
         command:
-          "export GPULAYER_URL=https://192.168.1.56:8470 \\\n  GPULAYER_TOKEN=glc_… \\\n  GPULAYER_FINGERPRINT=sha256:…",
+          "export GPULAYER_URL=https://192.168.1.56:8470 \\\n  GPULAYER_TOKEN=glc_… GPULAYER_FINGERPRINT=sha256:…\ngpulayer worker status",
+        output: [
+          "wkr-ed1b305e5b95   my-mac       idle   remote mps   tasks=0",
+          "wkr-3d3577f2b58c   gpu-box      idle   remote mps   tasks=0",
+        ],
       },
       {
         title: "Train there",
-        body: "The same Trainer script, now on the machines that joined. A command or a Python function works the same way.",
-        command:
-          "gpulayer submit --accelerator cuda -- python infer.py\npython examples/trainer_regression/train.py \\\n  --accelerator cpu --nodes 2",
+        body: "The same Trainer script, one node on each worker. Checkpoints and outputs come back to your laptop.",
+        command: "python examples/trainer_regression/train.py \\\n  --accelerator cpu --nodes 2",
         output: [
-          "[gpulayer] job-03d2e9fb3b51: train.py on 2 node(s) x 1 cpu process(es), target remote",
-          "[gpulayer] job-03d2e9fb3b51 succeeded; 2 output file(s) in gpulayer_runs/job-03d2e9fb3b51",
+          "[gpulayer] job-77b0944e7dba: train.py on 2 node(s) x 1 cpu process(es), target remote",
+          "[rank0] epoch 4 done in 0.047s: train_loss=0.5561 val_loss=0.4698",
+          "[gpulayer] job-77b0944e7dba succeeded; 3 output file(s) in gpulayer_runs/job-77b0944e7dba",
+        ],
+      },
+      {
+        title: "See where it ran",
+        body: "Why each worker was eligible, and which node ran where.",
+        command: "gpulayer job status job-77b0944e7dba",
+        output: [
+          "scheduling: placed on worker group ['wkr-3d3577f2b58c', 'wkr-ed1b305e5b95'] (target remote, policy spread)",
+          "task      task-ef750caafbd6 attempt=1 node=0 worker=wkr-3d3577f2b58c succeeded exit=0",
+          "task      task-a54604d48aa6 attempt=1 node=1 worker=wkr-ed1b305e5b95 succeeded exit=0",
         ],
       },
     ],
@@ -191,7 +208,9 @@ export function Quickstart() {
                       key={line}
                       className={cn(
                         "whitespace-pre-wrap break-words [overflow-wrap:anywhere]",
-                        /succeeded|registered|is up/.test(line) && "text-neutral-100",
+                        /succeeded|registered|is up/.test(line) &&
+                          !line.startsWith("task") &&
+                          "text-neutral-100",
                       )}
                     >
                       {line}
