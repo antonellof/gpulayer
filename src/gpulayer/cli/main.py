@@ -267,11 +267,12 @@ def cmd_up(args: argparse.Namespace) -> int:
             gpus=_gpus(args.gpus),
             **_location(args),
         )
-        channel = EmbeddedChannel.register(cp, args.name or caps.hostname, caps)
+        worker_name = args.name or caps.hostname
+        channel = EmbeddedChannel.register(cp, worker_name, caps)
         agent = WorkerAgent(channel, caps, home / "workers" / channel.worker_id, python=python)
         threading.Thread(target=agent.run, daemon=True).start()
         devices = ", ".join(d.accelerator.value for d in caps.accelerators) or "cpu"
-        worker_desc = f"{caps.hostname} ({devices}, {caps.cpu_cores} CPU cores)"
+        worker_desc = f"{worker_name} ({devices}, {caps.cpu_cores} CPU cores)"
 
     fp_flag = f" --fingerprint {fingerprint}" if fingerprint else ""
     fp_arg = f', fingerprint="{fingerprint}"' if fingerprint else ""

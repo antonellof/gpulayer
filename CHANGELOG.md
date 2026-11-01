@@ -9,6 +9,8 @@ before 1.0, minor versions may change public APIs, with migration notes here.
   work and warn; they are removed in 0.9.0. Migration: replace `profile="jax-cuda"` with
   `accelerator="cuda", frameworks={"jax": ">=0.4", "jaxlib": ">=0.4"}` (and `cupy>=12` for
   `cupy-cuda`).
+- Fix: `gpulayer up --name NAME` printed the hostname as the local worker's name; the banner
+  now shows NAME, as `gpulayer worker status` does.
 - Docs and site: the home page terminal has a "Server + client" tab, and the quickstart (site,
   docs and README) walks through `gpulayer up`, a joined worker and a client training on two
   nodes, with output from a run on one Mac in three terminals.

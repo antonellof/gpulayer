@@ -30,7 +30,11 @@ def _start(args, home, log):
 @pytest.mark.skipif(shutil.which("openssl") is None, reason="openssl not installed")
 def test_up_join_connect(tmp_path):
     up_log = tmp_path / "up.log"
-    up = _start(["up", "--host", "127.0.0.1", "--port", "0", "--tls"], tmp_path / "server", up_log)
+    up = _start(
+        ["up", "--host", "127.0.0.1", "--port", "0", "--tls", "--name", "box1"],
+        tmp_path / "server",
+        up_log,
+    )
     procs = [up]
     try:
         for _ in range(60):
@@ -43,6 +47,8 @@ def test_up_join_connect(tmp_path):
         client_token = re.search(r'token="(glc_[^"]+)"', text).group(1)
         fingerprint = re.search(r"--fingerprint (sha256:[0-9a-f]{64})", text).group(1)
         assert url.startswith("https://127.0.0.1:")
+        # The banner names the local worker by --name, as the worker list does.
+        assert "Worker on this machine: box1 (" in text
 
         procs.append(
             _start(
@@ -66,6 +72,7 @@ def test_up_join_connect(tmp_path):
                 break
             time.sleep(0.5)
         assert sorted(w.capabilities.origin.value for w in client.workers()) == ["existing"] * 2
+        assert sorted(w.name for w in client.workers()) == ["box1", "box2"]
 
         from remote_pkg.funcs import add
 
