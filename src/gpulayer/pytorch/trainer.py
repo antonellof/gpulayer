@@ -2184,17 +2184,6 @@ def _fsdp_wrapped(module: Any) -> bool:
     return not isinstance(module, DDP)
 
 
-def _to_cpu(obj: Any) -> Any:
-    """``obj`` with every tensor moved to the CPU (dicts, lists and tuples followed)."""
-    if isinstance(obj, torch.Tensor):
-        return obj.cpu()
-    if isinstance(obj, dict):
-        return {k: _to_cpu(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return type(obj)(_to_cpu(v) for v in obj)
-    return obj
-
-
 def _xla_spawned_fit(index: int, trainer: Trainer, model: Module, *args: Any) -> None:
     """Entry point of each TPU process started by ``Trainer._fit_xla_spawn``: take this
     process's rank from torch_xla, then run the ordinary ``fit`` (gloo for the small CPU
