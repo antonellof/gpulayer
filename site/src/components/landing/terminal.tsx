@@ -81,7 +81,7 @@ export function Terminal({ tabs }: { tabs: TerminalTab[] }) {
       >
         {tab.lines.map((line, i) =>
           line.t === "code" ? (
-            <div key={i} className="mb-4 rounded-lg border border-neutral-800 bg-neutral-900/60 p-3.5">
+            <div key={i} className="mb-4 rounded-lg border border-neutral-800 bg-neutral-900/60 p-3.5 text-[#abb2bf]">
               <CodeLines code={line.s} />
             </div>
           ) : line.t === "cmd" ? (
