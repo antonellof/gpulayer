@@ -116,20 +116,62 @@
   }
 }
 
-/* Feature art: a gentle dash flow; no motion when the visitor asks for none. */
-.feature-art .fa-dash {
-  animation: fa-dash 1.6s linear infinite;
+/* Feature art (components/landing/feature-art.tsx): looping scenes, a still frame when the
+   visitor asks for reduced motion. Glowing overlays (.fa-lit) are hidden until their keyframes
+   show them. */
+.feature-art .fa-lit,
+.feature-art .fa-late,
+.feature-art .fa-chosen,
+.feature-art .fa-scale-3 {
+  animation-fill-mode: both;
+  animation-iteration-count: infinite;
 }
-@keyframes fa-dash {
-  to {
-    stroke-dashoffset: -8;
-  }
+.feature-art .fa-breathe { animation: fa-breathe 4s ease-in-out infinite both; }
+@keyframes fa-breathe { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(var(--lift)); } }
+
+.feature-art .fa-climb { animation: fa-climb 4s ease-in-out infinite both; }
+@keyframes fa-climb { 0% { opacity: 0; } 6% { opacity: 1; } 20% { opacity: 1; } 28% { opacity: 0; } 100% { opacity: 0; } }
+
+.feature-art .fa-scale-0 { animation: fa-scale-0 5s ease-out infinite both; }
+.feature-art .fa-scale-1 { animation: fa-scale-1 5s ease-out infinite both; }
+.feature-art .fa-scale-2 { animation: fa-scale-2 5s ease-out infinite both; }
+.feature-art .fa-scale-3 { animation: fa-scale-3 5s ease-out infinite both; }
+@keyframes fa-scale-0 { 0% { opacity: 0; } 4% { opacity: 1; } 86% { opacity: 1; } 94%, 100% { opacity: 0; } }
+@keyframes fa-scale-1 { 0%, 18% { opacity: 0; } 22% { opacity: 1; } 86% { opacity: 1; } 94%, 100% { opacity: 0; } }
+@keyframes fa-scale-2 { 0%, 36% { opacity: 0; } 40% { opacity: 1; } 86% { opacity: 1; } 94%, 100% { opacity: 0; } }
+@keyframes fa-scale-3 { 0%, 54% { opacity: 0; } 58% { opacity: 1; } 86% { opacity: 1; } 94%, 100% { opacity: 0; } }
+
+.feature-art .fa-scan { animation: fa-scan 4.5s ease-in-out infinite both; }
+@keyframes fa-scan {
+  0% { transform: translate(0, 0); opacity: 0; }
+  5% { opacity: 0.9; }
+  42% { opacity: 0.9; }
+  48% { transform: translate(var(--scan-x), var(--scan-y)); opacity: 0; }
+  100% { transform: translate(var(--scan-x), var(--scan-y)); opacity: 0; }
 }
+.feature-art .fa-chosen { animation-name: fa-chosen; animation-duration: 4.5s; animation-timing-function: ease-out; }
+@keyframes fa-chosen { 0%, 40% { opacity: 0; } 48% { opacity: 1; } 90% { opacity: 1; } 98%, 100% { opacity: 0; } }
+.feature-art .fa-dash { stroke-dasharray: 2 2; animation: fa-dash 1.2s linear infinite, fa-chosen 4.5s ease-out infinite both; }
+@keyframes fa-dash { to { stroke-dashoffset: -8; } }
+
+.feature-art .fa-arrive { animation: fa-flash 2.7s ease-out infinite both; }
+.feature-art .fa-pass { animation: fa-flash 6s ease-out infinite both; }
+@keyframes fa-flash { 0% { opacity: 1; } 18% { opacity: 0; } 100% { opacity: 0; } }
+
+.feature-art .fa-pulse-glow { animation: fa-pulse 2.4s ease-in-out infinite; }
+@keyframes fa-pulse { 0%, 100% { opacity: 0.75; } 50% { opacity: 1; } }
+
+.feature-art .fa-grow { transform-box: fill-box; transform-origin: 50% 100%; animation: fa-grow 5s cubic-bezier(0.2, 0.7, 0.2, 1) infinite both; }
+@keyframes fa-grow { 0% { transform: scaleY(0); opacity: 0; } 14% { transform: scaleY(1); opacity: 1; } 88% { transform: scaleY(1); opacity: 1; } 98%, 100% { transform: scaleY(1); opacity: 0; } }
+.feature-art .fa-draw { stroke-dasharray: 100; animation: fa-draw 5s ease-in-out infinite both; }
+@keyframes fa-draw { 0%, 25% { stroke-dashoffset: 100; } 55% { stroke-dashoffset: 0; } 88% { stroke-dashoffset: 0; opacity: 1; } 98%, 100% { stroke-dashoffset: 0; opacity: 0; } }
+.feature-art .fa-late { animation-name: fa-late; animation-duration: 5s; }
+@keyframes fa-late { 0%, 55% { opacity: 0; } 62% { opacity: 1; } 88% { opacity: 1; } 98%, 100% { opacity: 0; } }
+
 @media (prefers-reduced-motion: reduce) {
-  .feature-art .fa-dash {
-    animation: none;
-  }
-  .feature-art .fa-move {
-    display: none;
-  }
+  .feature-art * { animation: none !important; }
+  .feature-art .fa-lit { opacity: 0; }
+  .feature-art .fa-still { opacity: 1; }
+  .feature-art .fa-move, .feature-art .fa-scan { display: none; }
+  .feature-art .fa-draw { stroke-dashoffset: 0; }
 }

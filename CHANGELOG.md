@@ -10,8 +10,8 @@ before 1.0, minor versions may change public APIs, with migration notes here.
   was destroyed after each call, and a rank that finished first joined the next call through
   rank 0's old store. A multi-process group now stays up until the process exits (seen twice
   in CI; regression test added).
-- Home page: dark wireframe scenes with one glowing element for the six features (gentle
-  motion, none with reduced motion), and a dashboard section with
+- Home page: dark wireframe scenes for the six features, each animating what the card
+  describes (a still frame with reduced motion), and a dashboard section with
   screenshots of the overview, a distributed job and the workers.
 - Tests: every public name of the reference trainer API is exercised by at least one behaviour
   test (`tests/pytorch/test_feature_coverage.py`, `test_speed_mechanisms.py`); check it with
