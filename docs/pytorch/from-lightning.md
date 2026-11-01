@@ -102,6 +102,9 @@ Each of Lightning's performance mechanisms, found in its source, and GPUlayer's 
 | FSDP, activation checkpointing, tensor parallelism, 4-bit and FP8 plugins | same (validated on T4s except FP8, which needs Hopper or Ada GPUs) |
 | SLURM auto-requeue on SIGUSR1 | not needed: GPUlayer retries tasks itself; SIGTERM saves a checkpoint |
 
+Each row has a behaviour test in `tests/pytorch/test_speed_mechanisms.py` (for example, the
+number of host-device synchronisations does not grow with the number of steps); cuDNN
+autotuning and `MpDeviceLoader` are covered by the T4 measurements and the simulated TPU tests.
 GPUlayer's own additions are in [Performance](../architecture/performance.md): one autocast
 object reused across steps, two-level gradient sync with gloo, the direct process launcher and
 placement on the best-connected GPUs.
