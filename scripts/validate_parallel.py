@@ -25,7 +25,9 @@ from torch.utils.data import DataLoader, TensorDataset
 import gpulayer.pytorch as glt
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--case", choices=["fsdp", "tp", "single", "tensorrt"], default="fsdp")
+ap.add_argument("--case", choices=["fsdp", "tp", "single", "tensorrt", "ddp"], default="fsdp")
+ap.add_argument("--hook", choices=["none", "fp16", "postlocal"], default="none",
+                help="ddp: a communication hook (fp16 compression, post-local SGD)")  # fmt: skip
 ap.add_argument("--nodes", type=int, default=2)
 ap.add_argument("--steps", type=int, default=200)
 ap.add_argument("--ac", action="store_true", help="fsdp: activation checkpointing per Block")
@@ -136,6 +138,15 @@ class Report(glt.Callback):
             (p.to_local() if hasattr(p, "to_local") else p).device.type == "cpu"
             for p in pl_module.parameters()
         )
+        if args.case == "ddp":
+            ddp = trainer._ddp
+            info = ddp._get_ddp_logging_data() if hasattr(ddp, "_get_ddp_logging_data") else {}
+            out["comm_hook"] = info.get("comm_hook", "")
+            out["optimizer"] = type(trainer.optimizers[0]).__name__
+            total = torch.stack([p.detach().float().sum() for p in pl_module.parameters()]).sum()
+            out["rank_weight_sums"] = [
+                float(v) for v in pl_module.all_gather(total.reshape(1)).flatten()
+            ]
         if trainer.is_global_zero:
             (trainer.runtime.output_dir() / "result.json").write_text(json.dumps(out))
 
@@ -152,6 +163,29 @@ def train() -> tuple[glt.Trainer, glt.Module]:
         )  # fmt: skip
         t = glt.Trainer(num_nodes=args.nodes, target="remote", strategy=strategy, **common)
         model: glt.Module = Net()
+    elif args.case == "ddp":
+        hook: dict = {}
+        if args.hook == "fp16":
+            from torch.distributed.algorithms.ddp_comm_hooks import default_hooks
+
+            hook = {"ddp_comm_hook": default_hooks.fp16_compress_hook}
+        elif args.hook == "postlocal":
+            from torch.distributed.algorithms.ddp_comm_hooks.post_localSGD_hook import (
+                PostLocalSGDState,
+                post_localSGD_hook,
+            )
+
+            hook = {
+                "ddp_comm_state": PostLocalSGDState(
+                    process_group=None, subgroup=None, start_localSGD_iter=20
+                ),
+                "ddp_comm_hook": post_localSGD_hook,
+                "model_averaging_period": 4,
+            }
+        t = glt.Trainer(
+            num_nodes=args.nodes, target="remote", strategy=glt.DDPStrategy(**hook), **common
+        )
+        model = Net()
     elif args.case == "tp":
         strategy = glt.ModelParallelStrategy(
             data_parallel_size=1, tensor_parallel_size=args.nodes, save_distributed_checkpoint=False
@@ -210,6 +244,7 @@ else:
     if glt.is_launcher_process():
         r = json.loads(sorted(trainer.launch_result.output_dir.rglob("result.json"))[0].read_text())
         label = args.case + (f"-{args.sharding}" if args.case == "fsdp" else "")
+        label += f"-{args.hook}" if args.case == "ddp" else ""
         label += "-ac" if args.ac else ""
         label += "-offload" if args.offload else ""
         label += "-sharded" if args.sharded else ""
@@ -223,6 +258,8 @@ else:
             "local_param_fraction": round(r["local_param_fraction"], 3),
             "fc1_local_shape": r["fc1_local_shape"], "activation_checkpointing": r["activation_checkpointing"],
             "params_on_cpu": r["params_on_cpu"], "checkpoint": str(ckpt) if ckpt else None,
+            "comm_hook": r.get("comm_hook"), "optimizer": r.get("optimizer"),
+            "rank_weight_sums": [round(v, 4) for v in r.get("rank_weight_sums", [])],
             "checkpoint_is_folder": bool(ckpt and ckpt.is_dir()),
         }  # fmt: skip
         print("RESULT " + json.dumps(result))
@@ -247,6 +284,20 @@ else:
             checks["resumed after the saved steps"] = (
                 r["trained"] < args.steps and r["step"] == args.steps
             )
+        if args.case == "ddp":
+            sums = r["rank_weight_sums"]
+            checks["identical weights on both ranks"] = len(sums) == args.nodes and max(sums) - min(
+                sums
+            ) <= 1e-3 * max(1.0, abs(sums[0]))
+            if args.hook == "fp16":
+                checks["fp16 compression hook registered"] = "fp16_compress_hook" in str(
+                    r["comm_hook"]
+                )
+            if args.hook == "postlocal":
+                checks["post-local SGD optimizer"] = r["optimizer"] == "PostLocalSGDOptimizer"
+                checks["post-local SGD hook registered"] = "post_localSGD_hook" in str(
+                    r["comm_hook"]
+                )
         if args.case == "tp":
             checks["fc1 split across GPUs"] = r["fc1_local_shape"] == [
                 4 * WIDTH // args.nodes,
