@@ -174,3 +174,8 @@
   .feature-art .fa-ripple { display: none; }
   .feature-art .fa-draw { stroke-dashoffset: 0; }
 }
+
+/* Click to enlarge (components/site/image-zoom.tsx). */
+[data-zoom] {
+  cursor: zoom-in;
+}

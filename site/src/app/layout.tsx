@@ -5,6 +5,7 @@ import { JetBrains_Mono } from "next/font/google";
 import { THEME_SCRIPT } from "@/components/site/theme-toggle";
 import { GA_ID, OG_IMAGE, SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/site";
 import "./globals.css";
+import { ImageZoom } from "@/components/site/image-zoom";
 
 const code = JetBrains_Mono({ subsets: ["latin"], variable: "--font-code", display: "swap" });
 
@@ -55,6 +56,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-screen bg-background font-sans">
         {children}
+        <ImageZoom />
         {/* Google Analytics (gtag.js), loaded after the page is interactive. */}
         <Script src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} strategy="afterInteractive" />
         <Script id="gtag-init" strategy="afterInteractive">

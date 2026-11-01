@@ -280,6 +280,7 @@ export default function Home() {
                   <img
                     src={`/docs-assets/perf/${name}-light.svg`}
                     alt={alt}
+                    data-zoom
                     className="w-full rounded-xl border border-border dark:hidden"
                     width={760}
                     height={352}
@@ -289,6 +290,7 @@ export default function Home() {
                     src={`/docs-assets/perf/${name}-dark.svg`}
                     alt=""
                     aria-hidden
+                    data-zoom
                     className="hidden w-full rounded-xl border border-border dark:block"
                     width={760}
                     height={352}
@@ -346,6 +348,7 @@ export default function Home() {
                   <img
                     src={`/docs-assets/${name}-light.svg`}
                     alt={alt as string}
+                    data-zoom
                     className="w-full rounded-xl border border-border dark:hidden"
                     width={w as number}
                     height={h as number}
@@ -355,6 +358,7 @@ export default function Home() {
                     src={`/docs-assets/${name}-dark.svg`}
                     alt=""
                     aria-hidden
+                    data-zoom
                     className="hidden w-full rounded-xl border border-border dark:block"
                     width={w as number}
                     height={h as number}

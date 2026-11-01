@@ -45,7 +45,12 @@ export function Mermaid({ chart }: { chart: string }) {
   return (
     <figure className="my-8 flex justify-center overflow-x-auto rounded-lg border border-border bg-card p-4">
       {svg ? (
-        <div className="max-w-full [&_svg]:h-auto [&_svg]:max-w-full" dangerouslySetInnerHTML={{ __html: svg }} />
+        <div
+          data-zoom
+          aria-label="Diagram"
+          className="max-w-full [&_svg]:h-auto [&_svg]:max-w-full"
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
       ) : (
         <div className="py-8 text-xs text-muted-foreground">Loading diagram…</div>
       )}

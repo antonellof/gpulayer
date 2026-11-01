@@ -54,9 +54,10 @@ export function Markdown({ content, file }: { content: string; file: string }) {
               return (
                 <>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={url} alt={alt ?? ""} className="rounded-lg border border-border dark:hidden" />
+                  <img data-zoom src={url} alt={alt ?? ""} className="rounded-lg border border-border dark:hidden" />
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
+                    data-zoom
                     src={url.replace(/-light\.svg$/, "-dark.svg")}
                     alt=""
                     aria-hidden
@@ -66,7 +67,7 @@ export function Markdown({ content, file }: { content: string; file: string }) {
               );
             }
             // eslint-disable-next-line @next/next/no-img-element
-            return <img src={url} alt={alt ?? ""} className="rounded-lg border border-border" />;
+            return <img data-zoom src={url} alt={alt ?? ""} className="rounded-lg border border-border" />;
           },
         }}
       >

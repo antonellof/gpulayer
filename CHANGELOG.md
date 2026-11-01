@@ -14,6 +14,7 @@ before 1.0, minor versions may change public APIs, with migration notes here.
   what the card describes (a still frame with reduced motion), and a dashboard section with
   screenshots of the overview, a distributed job and the workers in one row (click to
   enlarge). Feature cards show two per row on phones.
+- Site: charts and diagrams on the home page and in the docs open full size on a click.
 - Tests: every public name of the reference trainer API is exercised by at least one behaviour
   test (`tests/pytorch/test_feature_coverage.py`, `test_speed_mechanisms.py`); check it with
   `python scripts/compare_api.py <reference-source> --tests`. The speed-mechanism tests run on
