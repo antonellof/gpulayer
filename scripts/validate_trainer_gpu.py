@@ -67,9 +67,9 @@ class MLP(glt.Module):
 
 def fit(model: glt.Module, **kw) -> glt.Trainer:
     kw.setdefault("max_epochs", 3)
+    kw.setdefault("log_every_n_steps", 0)
     t = glt.Trainer(
         accelerator="cuda",
-        log_every_n_steps=0,
         enable_checkpointing=False,
         num_sanity_val_steps=0,
         logger=False,
