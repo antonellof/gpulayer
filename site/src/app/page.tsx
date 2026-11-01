@@ -256,9 +256,9 @@ export default function Home() {
                 </div>
               ))}
             </div>
-            <dl className="mt-10 grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
+            <dl className="mt-10 grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-5">
               {GPU_RESULTS.map((g) => (
-                <div key={g.gpu} className="bg-background p-6">
+                <div key={g.gpu} className="bg-background p-6 sm:last:col-span-2 lg:last:col-span-1">
                   <dt className="text-sm font-medium">{g.gpu}</dt>
                   <dd className="mt-2 text-sm text-muted-foreground">{g.result}</dd>
                 </div>
