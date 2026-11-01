@@ -8,6 +8,11 @@
 #                                                        # validate_multigpu.py with 2+ GPUs)
 #   benchmarks/cloud/aws.sh fetch gl-gpu4 benchmarks/results/<date>-aws/
 #   benchmarks/cloud/aws.sh down gl-gpu4 [more...]       # terminate
+#   GL_AWS_SPOT=1 benchmarks/cloud/aws.sh up ...         # Spot instead of on-demand
+#   GL_AWS_AZ=us-east-1b benchmarks/cloud/aws.sh up ...  # one zone, for NCCL across machines
+#   benchmarks/cloud/aws.sh allow 203.0.113.7 [8470]     # let one outside IP reach a GPUlayer
+#                                                        # server on these instances (TLS port)
+#   benchmarks/cloud/aws.sh revoke 203.0.113.7 [8470]
 #
 # Instances use the AWS Deep Learning Base OSS NVIDIA driver AMI (Ubuntu 22.04), the default
 # VPC, a key pair and a security group named gpulayer-bench (SSH from this machine's public IP,
@@ -56,7 +61,12 @@ case "$cmd" in
   up)
     name=$1 type=${2:-g4dn.12xlarge}
     sg=$(setup)
-    aws ec2 run-instances "${A[@]}" --image-id "$(ami)" --instance-type "$type" \
+    market=()
+    if [ -n "${GL_AWS_AZ:-}" ]; then market+=(--placement "AvailabilityZone=$GL_AWS_AZ"); fi
+    if [ "${GL_AWS_SPOT:-}" = 1 ]; then
+      market+=(--instance-market-options 'MarketType=spot,SpotOptions={SpotInstanceType=one-time,InstanceInterruptionBehavior=terminate}')
+    fi
+    aws ec2 run-instances "${A[@]}" --image-id "$(ami)" --instance-type "$type" "${market[@]}" \
       --key-name gpulayer-bench --security-group-ids "$sg" \
       --block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeSize=150,VolumeType=gp3}' \
       --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$name},{Key=purpose,Value=gpulayer-bench}]" \
@@ -81,6 +91,13 @@ case "$cmd" in
     on "$vm" 'cd gpulayer && $HOME/.local/bin/uv pip freeze --python .venv-validate/bin/python' > "$dest/pip-freeze.txt" || true
     for f in "$dest"/*; do [ -f "$f" ] && sed -i.bak "s#/home/[A-Za-z0-9_.-]*#/home/user#g" "$f" && rm -f "$f.bak"; done
     ls -la "$dest" ;;
+  allow|revoke)
+    ip=$1 port=${2:-8470}
+    sg=$(aws ec2 describe-security-groups "${A[@]}" --filters Name=group-name,Values=gpulayer-bench \
+      --query "SecurityGroups[0].GroupId" --output text)
+    verb=authorize; [ "$cmd" = revoke ] && verb=revoke
+    aws ec2 "$verb-security-group-ingress" "${A[@]}" --group-id "$sg" --protocol tcp \
+      --port "$port" --cidr "$ip/32" >/dev/null && echo "$cmd $ip:$port" ;;
   down)
     for vm in "$@"; do
       id=$(id_of "$vm"); [ -n "$id" ] && aws ec2 terminate-instances "${A[@]}" --instance-ids $id \

@@ -30,15 +30,19 @@ class Profiler:
         self.dirpath = Path(dirpath) if dirpath is not None else None
         self.filename = filename
 
-    def start(self, action_name: str) -> None: ...
+    def start(self, action_name: str) -> None:
+        """Start timing ``action_name``."""
 
-    def stop(self, action_name: str) -> None: ...
+    def stop(self, action_name: str) -> None:
+        """Stop timing ``action_name``."""
 
     def summary(self) -> str:
+        """The report as text."""
         return ""
 
     @contextmanager
     def profile(self, action_name: str) -> Iterator[None]:
+        """Context manager: time the code inside as ``action_name``."""
         self.start(action_name)
         try:
             yield
@@ -46,6 +50,7 @@ class Profiler:
             self.stop(action_name)
 
     def setup(self, stage: str, local_rank: int | None = None, log_dir: str | None = None) -> None:
+        """Called when a run starts; ``log_dir`` becomes ``dirpath`` when none was given."""
         if self.dirpath is None and log_dir is not None:
             self.dirpath = Path(log_dir)
 
@@ -57,7 +62,8 @@ class Profiler:
             (self.dirpath / f"{self.filename}.txt").write_text(text)
         return text
 
-    def teardown(self, stage: str | None = None) -> None: ...
+    def teardown(self, stage: str | None = None) -> None:
+        """Called when the run ends, before the report is printed."""
 
 
 class PassThroughProfiler(Profiler):

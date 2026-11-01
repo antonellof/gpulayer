@@ -91,6 +91,7 @@ class EarlyStopping(_Monitor):
     # GPUlayer 0.7 name
     @property
     def wait(self) -> int:
+        """Checks without improvement so far (``wait_count``)."""
         return self.wait_count
 
     def state_dict(self) -> dict[str, Any]:
@@ -223,6 +224,7 @@ class ModelCheckpoint(_Monitor):
 
     @property
     def kth_best_model_path(self) -> Path | None:
+        """The worst of the kept checkpoints (the next to be replaced)."""
         if not self.best_k_models:
             return None
         return self._worst(self.best_k_models)[0]

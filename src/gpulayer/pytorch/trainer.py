@@ -148,6 +148,11 @@ class Trainer:
     With one device and no ``target`` the loop runs in this process. With ``devices`` > 1,
     ``num_nodes`` > 1 or a ``target``, ``fit`` submits a job and the same script runs on
     GPUlayer workers, one process per rank; the trained weights come back to ``model``.
+
+    Every argument is described in the guide's table:
+    [Trainer arguments](trainer.md#trainer-arguments). Names and meanings follow PyTorch
+    Lightning; the GPUlayer-only ones are ``target``, ``gradient_sync``, ``prefetch`` and
+    ``launch_options``.
     """
 
     def __init__(
@@ -385,85 +390,105 @@ class Trainer:
 
     @property
     def strategy(self) -> DDPStrategy | FSDPStrategy:
+        """The strategy object (``DDPStrategy`` or ``FSDPStrategy``) from ``strategy=``."""
         return self._strategy
 
     @property
     def lightning_module(self) -> Module | None:
+        """The Module being trained or evaluated (Lightning's name)."""
         return self._model
 
     @property
     def model(self) -> Any:
+        """The Module as the loop calls it: wrapped in DDP when distributed, else the Module."""
         return self._ddp if self._ddp is not None else self._model
 
     @property
     def logger(self) -> Logger | None:
+        """The first logger, or None."""
         return self.loggers[0] if self.loggers else None
 
     @property
     def log_dir(self) -> str | None:
+        """The first logger's directory, else the run's output directory."""
         if self.loggers and self.loggers[0].log_dir:
             return self.loggers[0].log_dir
         return str(self._out_dir) if self._out_dir is not None else None
 
     @property
     def is_global_zero(self) -> bool:
+        """True in the process with global rank 0 (and in a single process)."""
         return self.runtime.is_global_zero if self.runtime else True
 
     @property
     def global_rank(self) -> int:
+        """This process's rank among all processes (0 in a single process)."""
         return self.runtime.global_rank if self.runtime else 0
 
     @property
     def local_rank(self) -> int:
+        """This process's rank on its machine."""
         return self.runtime.local_rank if self.runtime else 0
 
     @property
     def node_rank(self) -> int:
+        """This machine's rank among the machines of the job."""
         return self.runtime.node_rank if self.runtime else 0
 
     @property
     def world_size(self) -> int:
+        """Number of processes training together."""
         return self.runtime.world_size if self.runtime else 1
 
     @property
     def num_devices(self) -> int:
+        """Processes (devices) per node, from ``devices=``."""
         return int(self.devices)
 
     @property
     def training(self) -> bool:
+        """True while training batches run."""
         return self.state.stage == "train"
 
     @property
     def validating(self) -> bool:
+        """True while validation runs (inside fit or ``validate``)."""
         return self.state.stage == "validate"
 
     @property
     def testing(self) -> bool:
+        """True while ``test`` runs."""
         return self.state.stage == "test"
 
     @property
     def predicting(self) -> bool:
+        """True while ``predict`` runs."""
         return self.state.stage == "predict"
 
     @property
     def sanity_checking(self) -> bool:
+        """True during the validation check before training."""
         return self.state.stage == "sanity_check"
 
     @property
     def checkpoint_callbacks(self) -> list[ModelCheckpoint]:
+        """Every ``ModelCheckpoint`` among the callbacks."""
         return [c for c in self.callbacks if isinstance(c, ModelCheckpoint)]
 
     @property
     def checkpoint_callback(self) -> ModelCheckpoint | None:
+        """The first ``ModelCheckpoint``, or None."""
         found = self.checkpoint_callbacks
         return found[0] if found else None
 
     @property
     def early_stopping_callbacks(self) -> list[EarlyStopping]:
+        """Every ``EarlyStopping`` among the callbacks."""
         return [c for c in self.callbacks if isinstance(c, EarlyStopping)]
 
     @property
     def early_stopping_callback(self) -> EarlyStopping | None:
+        """The first ``EarlyStopping``, or None."""
         found = self.early_stopping_callbacks
         return found[0] if found else None
 

@@ -25,36 +25,47 @@ class Logger:
 
     @property
     def name(self) -> str | None:
+        """Experiment name, or None."""
         return None
 
     @property
     def version(self) -> int | str | None:
+        """Run version within the experiment, or None."""
         return None
 
     @property
     def save_dir(self) -> str | None:
+        """Root directory of the logs, or None."""
         return None
 
     @property
     def log_dir(self) -> str | None:
+        """Directory of this run's logs (default: ``save_dir``)."""
         return self.save_dir
 
     @property
     def experiment(self) -> Any:
+        """The underlying object (SummaryWriter, wandb run, MlflowClient), created on first use."""
         return None
 
-    def log_metrics(self, metrics: dict[str, float], step: int | None = None) -> None: ...
+    def log_metrics(self, metrics: dict[str, float], step: int | None = None) -> None:
+        """Record ``metrics`` at optimizer step ``step`` (rank 0 only)."""
 
-    def log_hyperparams(self, params: dict[str, Any]) -> None: ...
+    def log_hyperparams(self, params: dict[str, Any]) -> None:
+        """Record the model's and DataModule's hyperparameters once, at the start of fit."""
 
-    def log_graph(self, model: Any, input_array: Any = None) -> None: ...
+    def log_graph(self, model: Any, input_array: Any = None) -> None:
+        """Record the model graph, when the logger supports it."""
 
-    def save(self) -> None: ...
+    def save(self) -> None:
+        """Flush what was logged so far."""
 
     def finalize(self, status: str) -> None:
+        """Called once at the end of fit with ``status`` ("success" or "failed")."""
         self.save()
 
-    def after_save_checkpoint(self, checkpoint_path: Path) -> None: ...
+    def after_save_checkpoint(self, checkpoint_path: Path) -> None:
+        """Called after each checkpoint is written (for loggers that upload them)."""
 
 
 def _next_version(root: Path) -> int:

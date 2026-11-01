@@ -77,6 +77,7 @@ class HyperparametersMixin:
 
     @property
     def hparams(self) -> AttributeDict:
+        """The arguments recorded by ``save_hyperparameters``, as an ``AttributeDict``."""
         return self.__dict__.setdefault("_gl_hparams", AttributeDict())
 
 
@@ -111,9 +112,11 @@ class Module(HyperparametersMixin, nn.Module):
         raise NotImplementedError("implement training_step(batch, batch_idx) -> loss")
 
     def validation_step(self, batch: Any, batch_idx: int) -> Any:
+        """One validation batch: compute metrics and ``self.log`` them (optional)."""
         return None
 
     def test_step(self, batch: Any, batch_idx: int) -> Any:
+        """One test batch, run by ``Trainer.test``: compute metrics and ``self.log`` them."""
         raise NotImplementedError("implement test_step(batch, batch_idx) to use Trainer.test")
 
     def predict_step(self, batch: Any, batch_idx: int) -> Any:
@@ -216,6 +219,7 @@ class Module(HyperparametersMixin, nn.Module):
     def optimizer_zero_grad(
         self, epoch: int, batch_idx: int, optimizer: torch.optim.Optimizer
     ) -> None:
+        """Reset gradients after an optimizer step (``set_to_none=True``); override to change it."""
         optimizer.zero_grad(set_to_none=True)
 
     # ------------------------------------------------------------------ logging
@@ -273,6 +277,7 @@ class Module(HyperparametersMixin, nn.Module):
         )
 
     def log_dict(self, dictionary: dict[str, Any], **kwargs: Any) -> None:
+        """``self.log`` for each item of ``dictionary``, with the same options."""
         for k, v in dictionary.items():
             self.log(k, v, **kwargs)
 
@@ -285,6 +290,8 @@ class Module(HyperparametersMixin, nn.Module):
 
     @property
     def automatic_optimization(self) -> bool:
+        """True (default): the Trainer runs backward and the optimizer step. Set False for manual
+        optimization."""
         return self._gl_automatic_optimization
 
     @automatic_optimization.setter
@@ -303,6 +310,7 @@ class Module(HyperparametersMixin, nn.Module):
         return opts[0] if len(opts) == 1 else opts
 
     def lr_schedulers(self) -> Any:
+        """The scheduler(s) from ``configure_optimizers``: one, a list, or None."""
         scheds = [c.scheduler for c in self._trainer().lr_scheduler_configs]
         if not scheds:
             return None
@@ -313,6 +321,7 @@ class Module(HyperparametersMixin, nn.Module):
         self._trainer()._manual_backward(loss, *args, **kwargs)
 
     def backward(self, loss: torch.Tensor, *args: Any, **kwargs: Any) -> None:
+        """Run the backward pass; override to pass arguments to ``loss.backward``."""
         loss.backward(*args, **kwargs)
 
     def clip_gradients(
@@ -335,6 +344,7 @@ class Module(HyperparametersMixin, nn.Module):
                 p.requires_grad = False
 
     def untoggle_optimizer(self, optimizer: torch.optim.Optimizer) -> None:
+        """Restore ``requires_grad`` changed by ``toggle_optimizer``."""
         saved = getattr(self, "_gl_toggled", {})
         for p in self.parameters():
             if id(p) in saved:
@@ -343,6 +353,7 @@ class Module(HyperparametersMixin, nn.Module):
 
     @contextmanager
     def toggled_optimizer(self, optimizer: torch.optim.Optimizer) -> Iterator[None]:
+        """Context manager: ``toggle_optimizer`` on entry, ``untoggle_optimizer`` on exit."""
         self.toggle_optimizer(optimizer)
         try:
             yield
@@ -353,22 +364,27 @@ class Module(HyperparametersMixin, nn.Module):
 
     @property
     def current_epoch(self) -> int:
+        """The Trainer's current epoch (0 when not attached)."""
         return self.trainer.current_epoch if self.trainer is not None else 0
 
     @property
     def global_step(self) -> int:
+        """Optimizer steps taken so far."""
         return self.trainer.global_step if self.trainer is not None else 0
 
     @property
     def global_rank(self) -> int:
+        """This process's rank among all processes."""
         return self.trainer.global_rank if self.trainer is not None else 0
 
     @property
     def local_rank(self) -> int:
+        """This process's rank on its machine."""
         return self.trainer.local_rank if self.trainer is not None else 0
 
     @property
     def device(self) -> torch.device:
+        """The device of the first parameter (or buffer); CPU for a model without either."""
         for p in self.parameters():
             return p.device
         for b in self.buffers():
@@ -377,20 +393,24 @@ class Module(HyperparametersMixin, nn.Module):
 
     @property
     def dtype(self) -> torch.dtype:
+        """The dtype of the first parameter."""
         for p in self.parameters():
             return p.dtype
         return torch.get_default_dtype()
 
     @property
     def on_gpu(self) -> bool:
+        """True when the parameters are on a CUDA (or ROCm) device."""
         return self.device.type == "cuda"
 
     @property
     def logger(self) -> Any:
+        """The Trainer's first logger, or None."""
         return self.trainer.logger if self.trainer is not None else None
 
     @property
     def loggers(self) -> list[Any]:
+        """The Trainer's loggers."""
         return self.trainer.loggers if self.trainer is not None else []
 
     def all_gather(self, data: Any, sync_grads: bool = False) -> Any:
@@ -420,6 +440,7 @@ class Module(HyperparametersMixin, nn.Module):
         self.eval()
 
     def unfreeze(self) -> None:
+        """Gradients for every parameter again, and training mode."""
         for p in self.parameters():
             p.requires_grad = True
         self.train()
@@ -508,21 +529,27 @@ class DataModule(HyperparametersMixin):
     def teardown(self, stage: str) -> None: ...
 
     def train_dataloader(self) -> Any:
+        """The training loader (needed for ``fit``)."""
         raise NotImplementedError("implement train_dataloader() to use this DataModule for fit")
 
     def val_dataloader(self) -> Any:
+        """The validation loader, or None."""
         return None
 
     def test_dataloader(self) -> Any:
+        """The test loader (needed for ``test``)."""
         raise NotImplementedError("implement test_dataloader() to use Trainer.test")
 
     def predict_dataloader(self) -> Any:
+        """The prediction loader (needed for ``predict``)."""
         raise NotImplementedError("implement predict_dataloader() to use Trainer.predict")
 
     def state_dict(self) -> dict[str, Any]:
+        """State saved in checkpoints (empty by default)."""
         return {}
 
-    def load_state_dict(self, state_dict: dict[str, Any]) -> None: ...
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
+        """Restore what ``state_dict`` returned, when resuming."""
 
     def on_before_batch_transfer(self, batch: Any, dataloader_idx: int) -> Any:
         return batch
@@ -581,3 +608,13 @@ class _TrainingStep(nn.Module):
 
     def forward(self, batch: Any, batch_idx: int) -> Any:
         return self.module.training_step(batch, batch_idx)
+
+
+def _document_hooks() -> None:
+    from gpulayer.pytorch.hooks import apply_hook_docs
+
+    apply_hook_docs(Module)
+    apply_hook_docs(DataModule)
+
+
+_document_hooks()

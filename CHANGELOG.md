@@ -3,6 +3,20 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
+## Unreleased
+
+- Docs: a generated [PyTorch API reference](docs/pytorch/api.md) with every public class,
+  method, property and hook of `gpulayer.pytorch` (`scripts/make_api_reference.py`; a test
+  fails when it is out of date or a public member has no docstring). The Trainer guide gains
+  a hook-order diagram; callbacks, loggers, profilers and the tuner moved to
+  [their own page](docs/pytorch/callbacks.md), and [Moving from Lightning](docs/pytorch/from-lightning.md)
+  has a side-by-side example and a table of differences.
+- Docstrings for every public member of `gpulayer.pytorch`; hooks share one description of when
+  they run (`gpulayer.pytorch.hooks`). `BackboneFinetuning`'s default `lambda_func` is now the
+  named function `multiplicative`, as in Lightning.
+- `benchmarks/cloud/aws.sh`: `GL_AWS_SPOT=1`, `GL_AWS_AZ=...` and `allow`/`revoke` for one
+  outside IP.
+
 ## 0.8.0 (2026-11-01)
 
 Lightning feature parity for the GPUlayer Trainer ([ADR-0024](docs/decisions/ADR-0024-lightning-feature-parity.md)).

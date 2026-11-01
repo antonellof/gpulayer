@@ -118,12 +118,15 @@ class Timer(Callback):
         self._offset = 0.0
 
     def start_time(self, stage: str = "train") -> float | None:
+        """Monotonic start time of ``stage`` ("train", "validate", "test"), or None."""
         return self._start.get(stage)
 
     def end_time(self, stage: str = "train") -> float | None:
+        """Monotonic end time of ``stage``, or None while it runs."""
         return self._end.get(stage)
 
     def time_elapsed(self, stage: str = "train") -> float:
+        """Seconds spent in ``stage`` (training time includes time before a resume)."""
         start = self._start.get(stage)
         if start is None:
             return 0.0
@@ -131,6 +134,7 @@ class Timer(Callback):
         return end - start + (self._offset if stage == "train" else 0.0)
 
     def time_remaining(self, stage: str = "train") -> float | None:
+        """Seconds left of ``duration``, or None without one."""
         if self._duration is None:
             return None
         return self._duration.total_seconds() - self.time_elapsed(stage)
@@ -203,9 +207,11 @@ class GradientAccumulationScheduler(Callback):
             self.scheduling = {0: 1, **self.scheduling}
 
     def going_to_accumulate_grad_batches(self) -> bool:
+        """True if any epoch accumulates more than one batch."""
         return any(v > 1 for v in self.scheduling.values())
 
     def get_accumulate_grad_batches(self, epoch: int) -> int:
+        """Batches accumulated per optimizer step in ``epoch``."""
         value = 1
         for start, n in self.scheduling.items():
             if epoch >= start:
@@ -417,9 +423,11 @@ class ProgressBar(Callback):
         self._t0 = 0.0
 
     def disable(self) -> None:
+        """Stop drawing the bar."""
         self._enabled = False
 
     def enable(self) -> None:
+        """Draw the bar again."""
         self._enabled = True
 
     def on_train_epoch_start(self, trainer: Trainer, pl_module: Module) -> None:
@@ -491,11 +499,13 @@ class BasePredictionWriter(Callback):
         batch_idx: int,
         dataloader_idx: int,
     ) -> None:
+        """Write one batch's prediction; ``batch_indices`` are its samples' dataset indices."""
         raise NotImplementedError
 
     def write_on_epoch_end(
         self, trainer: Trainer, pl_module: Module, predictions: list[Any], batch_indices: Any
     ) -> None:
+        """Write all predictions at the end, with each batch's dataset indices."""
         raise NotImplementedError
 
     def on_predict_batch_end(

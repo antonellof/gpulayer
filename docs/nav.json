@@ -33,6 +33,14 @@
           "title": "Trainer and Module"
         },
         {
+          "slug": "pytorch/callbacks",
+          "title": "Callbacks, loggers and profilers"
+        },
+        {
+          "slug": "pytorch/from-lightning",
+          "title": "Moving from Lightning"
+        },
+        {
           "slug": "pytorch/distributed",
           "title": "Distributed training"
         },
@@ -43,6 +51,10 @@
         {
           "slug": "pytorch/runtime",
           "title": "Runtime helpers"
+        },
+        {
+          "slug": "pytorch/api",
+          "title": "PyTorch API reference"
         }
       ]
     },

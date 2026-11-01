@@ -56,11 +56,14 @@ import gpulayer.pytorch as glt
 
 | Name | Description | Page |
 |---|---|---|
-| `glt.Module` | `nn.Module` with `training_step`, `validation_step`, `configure_optimizers`, `log`, `load_from_checkpoint` | [Trainer and Module](../pytorch/trainer.md) |
-| `glt.Trainer(...)` | `fit(model, train, val=None, ckpt_path=None)`, `validate(model, loader)` | [Trainer and Module](../pytorch/trainer.md) |
+| `glt.Module` (`glt.LightningModule`) | `nn.Module` with Lightning's steps and hooks, `log`, `save_hyperparameters`, manual optimization, `load_from_checkpoint` | [Trainer and Module](../pytorch/trainer.md) |
+| `glt.DataModule` (`glt.LightningDataModule`) | `prepare_data`, `setup`, the four loaders | [Trainer and Module](../pytorch/trainer.md#datamodule) |
+| `glt.Trainer(...)` | `fit(model, train, val, datamodule=, ckpt_path=)`, `validate`, `test`, `predict`, `save_checkpoint` | [Trainer and Module](../pytorch/trainer.md) |
+| Callbacks, loggers, profilers, `glt.Tuner` | `ModelCheckpoint`, `EarlyStopping`, `EMAWeightAveraging`, `CSVLogger`, `SimpleProfiler`, ... | [Callbacks, loggers and profilers](../pytorch/callbacks.md) |
 | `glt.launch(...) -> LaunchResult or None` | run this script on GPUlayer workers | [launch()](../pytorch/launch.md) |
 | `glt.Runtime(accelerator, precision)` | device, DDP, sharding and precision helpers | [Runtime helpers](../pytorch/runtime.md) |
 | `glt.is_launcher_process()`, `glt.in_gpulayer_job()` | where the code is running | |
 | `glt.resolve_accelerator(name)`, `glt.seed_everything(seed)` | utilities | |
 
+Every class, method, property and hook with its signature: [PyTorch API reference](../pytorch/api.md).
 `gpulayer.pytorch` imports torch; `import gpulayer` does not.

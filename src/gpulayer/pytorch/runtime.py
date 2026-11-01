@@ -236,13 +236,17 @@ class Runtime:
 
     @property
     def distributed(self) -> bool:
+        """True when more than one process trains (``WORLD_SIZE`` > 1)."""
         return self.world_size > 1
 
     @property
     def is_global_zero(self) -> bool:
+        """True in the process with global rank 0."""
         return self.global_rank == 0
 
     def setup(self) -> Runtime:
+        """Select the GPU of this process and start the process group when distributed (NCCL on
+        GPUs, gloo otherwise). Returns self."""
         if self.gpu:
             torch.cuda.set_device(self.device)
         if self.distributed and not dist.is_initialized():
@@ -252,17 +256,21 @@ class Runtime:
         return self
 
     def teardown(self) -> None:
+        """Destroy the process group if this Runtime started it."""
         if self._owns_group and dist.is_initialized():
             dist.destroy_process_group()
             self._owns_group = False
 
     def barrier(self) -> None:
+        """Wait until every process reaches this point (no-op in one process)."""
         if self.distributed and dist.is_initialized():
             dist.barrier()
 
     # ------------------------------------------------------------- wrapping
 
     def module(self, model: nn.Module) -> nn.Module:
+        """Move ``model`` to the device and wrap it in DDP when distributed (with two-level
+        gradient sync when it applies)."""
         model.to(self.device)
         if not self.distributed:
             return model
@@ -411,6 +419,7 @@ class Runtime:
         return model
 
     def to_device(self, batch: Any) -> Any:
+        """A batch on this process's device (float tensors in the "-true" precision's dtype)."""
         if self.param_dtype is not None:
             return self._to_device(batch)
         if self.device.type == "cpu":
@@ -492,6 +501,8 @@ class Runtime:
     # ------------------------------------------------------------- precision
 
     def autocast(self) -> contextlib.AbstractContextManager[Any]:
+        """The mixed-precision context for the forward pass (a no-op for 32-true and "-true"
+        precisions)."""
         if self.precision == "32-true" or self.param_dtype is not None:
             return _NOOP
         if self._autocast is None:
@@ -500,6 +511,7 @@ class Runtime:
         return self._autocast
 
     def backward(self, loss: torch.Tensor) -> None:
+        """``loss.backward()``, through the gradient scaler with 16-mixed."""
         if self.scaler is not None:
             self.scaler.scale(loss).backward()
         else:
@@ -549,6 +561,7 @@ class Runtime:
         return dict(zip(keys, t.tolist(), strict=True))
 
     def mean(self, value: float) -> float:
+        """The average of ``value`` across processes (one all-reduce)."""
         if not (self.distributed and dist.is_initialized()):
             return float(value)
         t = torch.tensor([float(value)], device=self.device if self.gpu else "cpu")

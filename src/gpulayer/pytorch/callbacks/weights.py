@@ -50,6 +50,8 @@ class WeightAveraging(Callback):
         self._loaded_average: dict[str, Any] | None = None
 
     def should_update(self, step_idx: int | None = None, epoch_idx: int | None = None) -> bool:
+        """Whether to average now: after the optimizer step ``step_idx``, or at the end of epoch
+        ``epoch_idx``. Default: every step."""
         return step_idx is not None
 
     def on_fit_start(self, trainer: Trainer, pl_module: Module) -> None:
@@ -230,15 +232,19 @@ class BaseFinetuning(Callback):
     trainable parameters only (``filter(lambda p: p.requires_grad, self.parameters())``)."""
 
     def freeze_before_training(self, pl_module: Module) -> None:
+        """Freeze the parts to fine-tune later (called in ``setup``, before the optimizers are
+        built)."""
         raise NotImplementedError
 
     def finetune_function(
         self, pl_module: Module, epoch: int, optimizer: torch.optim.Optimizer
     ) -> None:
+        """Called at the start of each epoch for each optimizer: unfreeze parts here."""
         raise NotImplementedError
 
     @staticmethod
     def flatten_modules(modules: nn.Module | Iterable[nn.Module]) -> list[nn.Module]:
+        """The leaf modules (and modules with their own parameters) of ``modules``."""
         if isinstance(modules, nn.Module):
             modules = [modules]
         out: list[nn.Module] = []
@@ -250,6 +256,8 @@ class BaseFinetuning(Callback):
     def filter_params(
         modules: nn.Module | Iterable[nn.Module], train_bn: bool = True, requires_grad: bool = True
     ) -> Iterable[nn.Parameter]:
+        """Parameters of ``modules`` with the given ``requires_grad``, optionally without
+        BatchNorm."""
         for m in BaseFinetuning.flatten_modules(modules):
             if isinstance(m, nn.modules.batchnorm._BatchNorm) and not train_bn:
                 continue
@@ -259,6 +267,7 @@ class BaseFinetuning(Callback):
 
     @staticmethod
     def make_trainable(modules: nn.Module | Iterable[nn.Module]) -> None:
+        """Turn gradients on for ``modules`` and put them in training mode."""
         for m in BaseFinetuning.flatten_modules(modules):
             for p in m.parameters(recurse=False):
                 p.requires_grad = True
@@ -266,6 +275,8 @@ class BaseFinetuning(Callback):
 
     @staticmethod
     def freeze_module(module: nn.Module) -> None:
+        """Turn gradients off for one module's own parameters (BatchNorm stops tracking
+        statistics)."""
         for p in module.parameters(recurse=False):
             p.requires_grad = False
         if isinstance(module, nn.modules.batchnorm._BatchNorm):
@@ -273,6 +284,7 @@ class BaseFinetuning(Callback):
 
     @staticmethod
     def freeze(modules: nn.Module | Iterable[nn.Module], train_bn: bool = True) -> None:
+        """Freeze ``modules``; with ``train_bn`` their BatchNorm layers keep training."""
         for m in BaseFinetuning.flatten_modules(modules):
             if isinstance(m, nn.modules.batchnorm._BatchNorm) and train_bn:
                 BaseFinetuning.make_trainable(m)
@@ -283,6 +295,7 @@ class BaseFinetuning(Callback):
     def filter_on_optimizer(
         optimizer: torch.optim.Optimizer, params: Iterable[nn.Parameter]
     ) -> list[nn.Parameter]:
+        """The parameters of ``params`` that ``optimizer`` does not have yet."""
         have = {id(p) for g in optimizer.param_groups for p in g["params"]}
         return [p for p in params if id(p) not in have]
 
@@ -294,6 +307,8 @@ class BaseFinetuning(Callback):
         initial_denom_lr: float = 10.0,
         train_bn: bool = True,
     ) -> None:
+        """Unfreeze ``modules`` and add their parameters to ``optimizer`` as a new group with
+        ``lr`` (default: the first group's rate / ``initial_denom_lr``)."""
         BaseFinetuning.make_trainable(modules)
         group_lr = optimizer.param_groups[0]["lr"]
         params = BaseFinetuning.filter_on_optimizer(
@@ -313,6 +328,11 @@ class BaseFinetuning(Callback):
             self.finetune_function(pl_module, trainer.current_epoch, opt)
 
 
+def multiplicative(epoch: int) -> float:
+    """BackboneFinetuning's default: multiply the backbone's learning rate by 1.5 per epoch."""
+    return 1.5
+
+
 class BackboneFinetuning(BaseFinetuning):
     """Freeze ``pl_module.backbone`` and unfreeze it at ``unfreeze_backbone_at_epoch`` with a
     learning rate of ``backbone_initial_lr`` (or the current rate times
@@ -322,7 +342,7 @@ class BackboneFinetuning(BaseFinetuning):
     def __init__(
         self,
         unfreeze_backbone_at_epoch: int = 10,
-        lambda_func: Callable[[int], float] = lambda epoch: 1.5,
+        lambda_func: Callable[[int], float] = multiplicative,
         backbone_initial_ratio_lr: float = 10e-2,
         backbone_initial_lr: float | None = None,
         should_align: bool = True,
@@ -430,6 +450,7 @@ class ModelPruning(Callback):
         ]
 
     def apply(self, pl_module: Module, amount: float | int) -> None:
+        """Prune ``amount`` (a fraction or a count) of the target weights now."""
         from torch.nn.utils import prune
 
         targets = self._targets(pl_module)
@@ -453,6 +474,7 @@ class ModelPruning(Callback):
                 trainer._say(f"[gpulayer] pruned to {zeros / max(total, 1):.1%} zeros")
 
     def make_permanent(self, pl_module: Module) -> None:
+        """Fold the pruning masks into the weights and remove the pruning hooks."""
         from torch.nn.utils import prune
 
         for m in pl_module.modules():

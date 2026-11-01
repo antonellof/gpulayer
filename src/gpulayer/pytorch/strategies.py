@@ -49,6 +49,7 @@ class DDPStrategy:
     name = "ddp"
 
     def ddp_kwargs(self) -> dict[str, Any]:
+        """Keyword arguments passed to ``DistributedDataParallel``."""
         out = dict(self.kwargs)
         if self.find_unused_parameters:
             out["find_unused_parameters"] = True
@@ -66,6 +67,7 @@ class FSDPStrategy:
     name = "fsdp"
 
     def ddp_kwargs(self) -> dict[str, Any]:
+        """Always empty: FSDP does not use DistributedDataParallel."""
         return {}
 
 

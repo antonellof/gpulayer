@@ -56,6 +56,7 @@ class LaunchResult:
 
     @property
     def succeeded(self) -> bool:
+        """True when the job finished successfully."""
         return self.status.state == JobState.SUCCEEDED
 
 

@@ -31,7 +31,8 @@ class Callback:
         """State saved in checkpoints and restored when resuming."""
         return {}
 
-    def load_state_dict(self, state_dict: dict[str, Any]) -> None: ...
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
+        """Restore what ``state_dict`` returned, when resuming from a checkpoint."""
 
     def setup(self, trainer: Trainer, pl_module: Module, stage: str) -> None: ...
     def teardown(self, trainer: Trainer, pl_module: Module, stage: str) -> None: ...
@@ -179,3 +180,12 @@ def _call(callbacks: list[Callback], hook: str, *args: Any) -> None:
     for cb in callbacks:
         if overrides(cb, hook):
             getattr(cb, hook)(*args)
+
+
+def _document_hooks() -> None:
+    from gpulayer.pytorch.hooks import apply_hook_docs
+
+    apply_hook_docs(Callback, "Callback form, with ``trainer, pl_module`` first. ")
+
+
+_document_hooks()
