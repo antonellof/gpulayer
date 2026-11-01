@@ -176,72 +176,95 @@ function AnyScale() {
 }
 
 function Placement() {
-  // a job (glowing cube) drops into the one slot that fits; the slot lights when it lands
-  const o: Pt = [130, 62];
-  const slot = [1, 1];
-  const tiles = [];
-  for (let r = 0; r < 3; r++)
-    for (let c = 0; c < 3; c++) {
-      const isSlot = r === slot[0] && c === slot[1];
-      tiles.push(
-        isSlot ? (
-          <LitBox key={`${r}${c}`} cls="fa-chosen" at={0} still o={o} x={r * 1.3} y={c * 1.3} w={1} d={1} h={0.3} />
-        ) : (
-          <Box key={`${r}${c}`} o={o} x={r * 1.3} y={c * 1.3} w={1} d={1} h={0.3} dim={(r + c) % 2 === 1} />
-        ),
-      );
+  // a target: rings ripple out from the one pillar that fits; the others stay dark
+  const o: Pt = [130, 52];
+  const c = 3.5;
+  const ring = (r: number) => {
+    const pts: Pt[] = [];
+    for (let i = 0; i <= 48; i++) {
+      const a = (i / 48) * Math.PI * 2;
+      pts.push(iso(o, c + r * Math.cos(a), c + r * Math.sin(a), 0));
     }
+    return `M${pts.map(([a, b]) => `${a.toFixed(1)} ${b.toFixed(1)}`).join(" L")} Z`;
+  };
+  const others = [
+    { x: 0.2, y: 1.2, h: 1.6 },
+    { x: 5.6, y: 0.4, h: 2.2 },
+    { x: 0.6, y: 5.8, h: 1.2 },
+    { x: 6.0, y: 5.4, h: 1.8 },
+  ];
+  const back = others.filter((p) => p.x + p.y < 2 * c);
+  const front = others.filter((p) => p.x + p.y >= 2 * c);
   return (
     <>
-      <Zoom k={1.6} dy={2}>
-        <Grid o={[130, 64]} n={4} m={4} />
-        {tiles}
-        <g className="fa-drop">
-          <Box o={o} x={slot[0] * 1.3 + 0.15} y={slot[1] * 1.3 + 0.15} z={0.3} w={0.7} d={0.7} h={0.7} glow />
+      <Zoom k={1.15} dy={4}>
+        <Grid o={o} n={7} m={7} />
+        {[1.2, 2.2, 3.2].map((r) => (
+          <path key={r} d={ring(r)} fill="none" stroke={LINE} strokeWidth={0.6} />
+        ))}
+        <path d={ring(3.2)} fill="none" stroke={ACCENT} strokeWidth={1} className="fa-ripple" />
+        <path d={ring(3.2)} fill="none" stroke={ACCENT} strokeWidth={1} className="fa-ripple" style={delay(-1.5)} />
+        {back.map((p, i) => (
+          <Box key={i} o={o} x={p.x} y={p.y} w={0.8} d={0.8} h={p.h} dim />
+        ))}
+        <g className="fa-pulse-glow">
+          <Box o={o} x={c - 0.45} y={c - 0.45} w={0.9} d={0.9} h={3} glow />
         </g>
+        {front.map((p, i) => (
+          <Box key={i} o={o} x={p.x} y={p.y} w={0.8} d={0.8} h={p.h} dim />
+        ))}
       </Zoom>
-      <Label at={[186, 34]} text="best fit" cls="fa-chosen" start={0} />
+      <Label at={[186, 34]} text="best fit" />
     </>
   );
 }
 
+/** A GPU chip: a dark package with pins on its two front edges and a die that lights up. */
+function Chip({ o, x, y, s, step }: { o: Pt; x: number; y: number; s: number; step: number }) {
+  const pins = [];
+  const n = Math.round(s * 3);
+  for (let i = 1; i < n; i++) {
+    const t = (i / n) * s;
+    const [a, b] = [iso(o, x + t, y + s, 0.1), iso(o, x + t, y + s + 0.3, 0)];
+    const [p, q] = [iso(o, x + s, y + t, 0.1), iso(o, x + s + 0.3, y + t, 0)];
+    pins.push(<line key={`a${i}`} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} />);
+    pins.push(<line key={`b${i}`} x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} />);
+  }
+  const die = s * 0.5;
+  return (
+    <g>
+      <g stroke={LINE} strokeWidth={0.6}>{pins}</g>
+      <Box o={o} x={x} y={y} w={s} d={s} h={0.25} />
+      <LitBox cls={`fa-scale-${step}`} at={0} still o={o} x={x + (s - die) / 2} y={y + (s - die) / 2} z={0.25} w={die} d={die} h={0.25} />
+    </g>
+  );
+}
+
 function Fanout() {
-  // one server reaches a laptop, a workstation, a server and a cloud VM; pulses go out to each
-  const o: Pt = [130, 42];
-  const hub = iso(o, 4, 4, 1.6);
-  const nodes = [
-    { key: "workstation", x: 0.6, y: 0.6, z: 0, w: 1.1, d: 1.1, h: 1.2 },
-    { key: "laptop", x: 0.4, y: 6.6, z: 0, w: 1.5, d: 1.1, h: 0.2 },
-    { key: "server", x: 6.6, y: 0.6, z: 0, w: 1, d: 1.2, h: 2.2 },
-    { key: "cloud", x: 6.6, y: 6.6, z: 1.2, w: 1.2, d: 1.2, h: 0.8 },
+  // every GPU: three chips of different sizes, their dies lighting one after another
+  const o: Pt = [130, 40];
+  const chips = [
+    { x: 0.4, y: 5.2, s: 1.6, label: "M2" },
+    { x: 2.6, y: 2.6, s: 2.2, label: "T4" },
+    { x: 5.0, y: 0.2, s: 3, label: "A100" },
   ];
-  const parts = nodes.map((n, i) => {
-    const t = iso(o, n.x + n.w / 2, n.y + n.d / 2, n.z + n.h);
-    const begin = i * 0.6;
-    const path = `M${hub[0].toFixed(1)} ${hub[1].toFixed(1)} L${t[0].toFixed(1)} ${t[1].toFixed(1)}`;
-    return {
-      depth: n.x + n.y,
-      el: (
-        <g key={n.key}>
-          <path d={path} stroke={ACCENT} strokeOpacity={0.45} strokeWidth={0.7} strokeDasharray="1.5 2" />
-          <LitBox cls="fa-arrive" at={begin + 2.3} o={o} x={n.x} y={n.y} z={n.z} w={n.w} d={n.d} h={n.h} />
-          <Packet path={path} dur={2.7} begin={begin} />
-        </g>
-      ),
-    };
-  });
   return (
     <>
-      <Zoom k={1.2}>
+      <Zoom k={1.5} dy={12}>
         <Grid o={o} n={8} m={8} />
-        {parts.filter((p) => p.depth < 8).map((p) => p.el)}
-        <g className="fa-pulse-glow">
-          <Box o={o} x={3.4} y={3.4} w={1.2} d={1.2} h={1.6} glow />
-        </g>
-        {parts.filter((p) => p.depth >= 8).map((p) => p.el)}
+        {chips.map((ch, i) => (
+          <Chip key={ch.label} o={o} x={ch.x} y={ch.y} s={ch.s} step={i} />
+        ))}
+        {chips.map((ch) => {
+          const [a, b] = iso(o, ch.x + ch.s + 0.6, ch.y + ch.s + 0.6, 0);
+          return (
+            <text key={ch.label} x={a - 6} y={b + 6} fill="rgba(255,255,255,0.55)" fontSize={5.5} fontFamily={MONO}>
+              {ch.label}
+            </text>
+          );
+        })}
       </Zoom>
       <Label at={[20, 30]} text="gpulayer up" />
-      <Label at={[204, 140]} text="join" />
     </>
   );
 }
@@ -276,31 +299,32 @@ function Results() {
 }
 
 function Loop() {
-  // your own loop: a light runs round a ring on the floor, around a glowing core
+  // your own loop: a light runs an infinity path between your script and the GPU
   const o: Pt = [130, 46];
   const c = 3.5;
-  const ring: Pt[] = [];
-  for (let i = 0; i <= 48; i++) {
-    const a = (i / 48) * Math.PI * 2;
-    ring.push(iso(o, c + 3 * Math.cos(a), c + 3 * Math.sin(a), 0));
+  const k = 0.75;
+  const at = (u: number, v: number, z = 0) => iso(o, c + (u + v) * k, c + (v - u) * k, z);
+  const pts: Pt[] = [];
+  for (let i = 0; i <= 96; i++) {
+    const t = (i / 96) * Math.PI * 2;
+    const den = 1 + Math.sin(t) ** 2;
+    pts.push(at((3.4 * Math.cos(t)) / den, (3.4 * Math.sin(t) * Math.cos(t)) / den));
   }
-  const path = `M${ring.map(([a, b]) => `${a.toFixed(1)} ${b.toFixed(1)}`).join(" L")} Z`;
-  const ticks = [0, 1, 2, 3].map((k) => {
-    const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
-    const [p, q] = [iso(o, c + 2.6 * Math.cos(a), c + 2.6 * Math.sin(a), 0), iso(o, c + 3.4 * Math.cos(a), c + 3.4 * Math.sin(a), 0)];
-    return <line key={k} x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke={LINE} strokeWidth={0.8} />;
-  });
+  const path = `M${pts.map(([a, b]) => `${a.toFixed(1)} ${b.toFixed(1)}`).join(" L")} Z`;
+  const box = (u: number, s: number) => ({ x: c + u * k * 1 - s / 2 + 0, y: c - u * k - s / 2 });
+  const left = box(-2.3, 1);
+  const right = box(2.3, 1.1);
   return (
     <>
-      <Zoom k={1.25} dy={-4}>
-        <Grid o={[130, 46]} n={7} m={7} />
-        <path d={path} fill="none" stroke={ACCENT} strokeOpacity={0.35} strokeWidth={0.9} />
-        {ticks}
+      <Zoom k={1.6} dy={4}>
+        <Grid o={o} n={7} m={7} />
+        <path d={path} fill="none" stroke={ACCENT} strokeOpacity={0.4} strokeWidth={0.9} />
+        <Box o={o} x={left.x} y={left.y} w={1} d={1} h={0.5} />
         <g className="fa-pulse-glow">
-          <Box o={o} x={c - 0.7} y={c - 0.7} w={1.4} d={1.4} h={1.6} glow />
+          <Box o={o} x={right.x} y={right.y} w={1.1} d={1.1} h={1.1} glow />
         </g>
-        <circle r={2.4} fill={ACCENT_TOP} filter="url(#fa-glow)" className="fa-move">
-          <animateMotion dur="4s" repeatCount="indefinite" path={path} />
+        <circle r={2.2} fill={ACCENT_TOP} filter="url(#fa-glow)" className="fa-move">
+          <animateMotion dur="5s" repeatCount="indefinite" path={path} />
         </circle>
       </Zoom>
       <Label at={[22, 128]} text="launch()" />

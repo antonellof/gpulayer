@@ -157,21 +157,15 @@
 .feature-art .fa-late { animation-name: fa-late; animation-duration: 5s; }
 @keyframes fa-late { 0%, 55% { opacity: 0; } 62% { opacity: 1; } 88% { opacity: 1; } 98%, 100% { opacity: 0; } }
 
-.feature-art .fa-drop { animation: fa-drop 4.5s cubic-bezier(0.5, 0, 0.75, 0) infinite both; }
-@keyframes fa-drop {
-  0% { transform: translateY(-46px); opacity: 0; }
-  8% { opacity: 1; }
-  40% { transform: translateY(0); }
-  44% { transform: translateY(-2px); }
-  48%, 90% { transform: translateY(0); opacity: 1; }
-  98%, 100% { transform: translateY(0); opacity: 0; }
-}
+.feature-art .fa-ripple { transform-box: fill-box; transform-origin: center; animation: fa-ripple 3s ease-out infinite both; }
+@keyframes fa-ripple { 0% { transform: scale(0.15); opacity: 0.9; } 100% { transform: scale(1); opacity: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
   .feature-art * { animation: none !important; }
   .feature-art .fa-lit { opacity: 0; }
   .feature-art .fa-still { opacity: 1; }
   .feature-art .fa-move { display: none; }
-  .feature-art .fa-drop, .feature-art .fa-late { opacity: 1; }
+  .feature-art .fa-late { opacity: 1; }
+  .feature-art .fa-ripple { display: none; }
   .feature-art .fa-draw { stroke-dashoffset: 0; }
 }
