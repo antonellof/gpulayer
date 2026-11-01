@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install the GPUlayer CLI into its own virtual environment, without sudo.
 #
-#   curl -fsSL https://raw.githubusercontent.com/antonellof/gpulayer/main/install.sh | sh
+#   curl -fsSL https://gpulayer.dev/install.sh | sh
 #
 # Options (environment variables):
 #   GPULAYER_REF=main              git branch, tag or commit to install

@@ -1,0 +1,14 @@
+{
+  "rewrites": [
+    {
+      "source": "/install.sh",
+      "destination": "https://raw.githubusercontent.com/antonellof/gpulayer/main/install.sh"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/install.sh",
+      "headers": [{ "key": "Content-Type", "value": "text/plain; charset=utf-8" }]
+    }
+  ]
+}

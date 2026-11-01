@@ -11,7 +11,6 @@ import {
   ScrollText,
 } from "lucide-react";
 import { ArchitectureDiagram } from "@/components/landing/architecture-diagram";
-import { CopyCommand } from "@/components/landing/copy-command";
 import { HeroLandscape } from "@/components/landing/hero-landscape";
 import { VERSION } from "@/lib/version";
 import { WorksWith } from "@/components/landing/logos";
@@ -238,7 +237,6 @@ export default function Home() {
               <Link href="/docs/" className="btn-secondary">
                 Documentation
               </Link>
-              <CopyCommand command="gpulayer up" />
             </div>
             <div className="mt-16">
               <Terminal tabs={TERMINAL_TABS} />

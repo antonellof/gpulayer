@@ -5,6 +5,8 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Install script at a short URL: `curl -fsSL https://gpulayer.dev/install.sh | sh` (the site
+  proxies the repository's `install.sh`). The home hero no longer shows a `gpulayer up` button.
 - Site: the home page hero has an animated wireframe landscape (mountains, lakes, hills) behind
   the headline, drawn with three.js loaded after the page renders. It pauses offscreen and in
   hidden tabs, shows one still frame with reduced motion, uses a lighter grid on phones and

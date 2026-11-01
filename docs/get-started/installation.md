@@ -18,7 +18,7 @@ interpreter, so that environment needs the frameworks your jobs import.
 ## With the install script
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/antonellof/gpulayer/main/install.sh | sh
+curl -fsSL https://gpulayer.dev/install.sh | sh
 ```
 
 The script installs the CLI into its own virtual environment (default
@@ -35,7 +35,7 @@ It never uses sudo. Read it first if you prefer: [`install.sh`](../../install.sh
 | `GPULAYER_SOURCE` | GitHub | a local checkout or pip URL to install instead |
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/antonellof/gpulayer/main/install.sh | GPULAYER_EXTRAS=examples sh
+curl -fsSL https://gpulayer.dev/install.sh | GPULAYER_EXTRAS=examples sh
 ```
 
 The one-line form needs the repository to be publicly readable. Until then, clone the

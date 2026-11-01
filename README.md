@@ -50,7 +50,7 @@ To train with PyTorch, install it too: `pip install "gpulayer[torch]"`.
 | Method | Command |
 |---|---|
 | As a standalone CLI with [uv](https://docs.astral.sh/uv/) | `uv tool install gpulayer` |
-| Install script (own virtual environment, no sudo) | `curl -fsSL https://raw.githubusercontent.com/antonellof/gpulayer/main/install.sh \| sh` |
+| Install script (own virtual environment, no sudo) | `curl -fsSL https://gpulayer.dev/install.sh \| sh` |
 | Docker | `docker pull ghcr.io/antonellof/gpulayer:0.8.1` (also `:0.8.1-torch`; see [deploy/docker](https://github.com/antonellof/gpulayer/tree/main/deploy/docker)) |
 | Kubernetes (Helm) | `helm install gpulayer deploy/kubernetes/helm/gpulayer -n gpulayer --create-namespace` (see [Kubernetes](https://github.com/antonellof/gpulayer/blob/main/docs/guides/kubernetes.md)) |
 | From source, to run the examples | `git clone https://github.com/antonellof/gpulayer && cd gpulayer && pip install -e ".[dev,examples]"` |
