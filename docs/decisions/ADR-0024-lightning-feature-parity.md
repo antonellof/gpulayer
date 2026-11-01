@@ -86,8 +86,10 @@ Lightning's speed-related choices are few, and the GPUlayer Trainer already had 
 5. **Validation status.** Every feature has a CPU test (`tests/pytorch/test_lightning_parity.py`);
    manual optimization with DDP and the DDP options run in a two-process test. CUDA-only
    features (`sync_batchnorm`, 16-mixed with manual optimization, `torch.compile` with
-   Inductor, `PyTorchProfiler` CUDA tables) are implemented and named as such until a GPU run
-   validates them.
+   Inductor, `PyTorchProfiler` CUDA tables) were validated on 2026-11-01 on Tesla T4s, across
+   up to 8 AWS machines over NCCL (`benchmarks/results/2026-11-01-aws-8xt4/`). That run found
+   one bug, fixed in the same change: `clip_gradients` with manual optimization and 16-mixed
+   unscaled the gradients twice.
 
 ## Consequences
 

@@ -19,13 +19,13 @@ machines named. Everything else says what is missing.
 | Several GPUs per machine with NCCL, choosing the best-connected GPUs | validated on 4× RTX 3070 (PCIe) and 2× A100 SXM4 (NVLink) |
 | GPUlayer Trainer against Lightning on an Apple M2 Pro (GPU and CPU) | GPUlayer Trainer faster in all 5 cases (1.05 to 1.75x) |
 | GPUlayer Trainer on several GPUs against Lightning | measured on 1, 2 and 4 RTX 3070s: GPUlayer Trainer faster in 5 of 6 cases (1.11 to 1.76x), 1.14x slower on the 1-GPU CNN on one host |
-| NCCL across machines | implemented; not run yet |
+| NCCL across machines | validated on 2, 4 and 8 AWS machines with one Tesla T4 each: DDP with `sync_batchnorm`, manual optimization, FSDP; identical weights on every rank ([results](../../benchmarks/results/2026-11-01-aws-8xt4/README.md)) |
 | Apple Silicon (PyTorch MPS, MLX) | validated on an M2 Pro |
 | AMD ROCm | implemented (devices, `HIP_VISIBLE_DEVICES`, Trainer `accelerator="rocm"`, RCCL); not run on AMD hardware |
 | Other GPU libraries (JAX, CuPy, TensorFlow, ONNX Runtime, Transformers) | detected on workers; not validated on a GPU (a validation run was stopped before it finished) |
-| Trainer FSDP (`strategy="fsdp"`) | experimental; tested on CPU only |
+| Trainer FSDP (`strategy="fsdp"`) | experimental; validated over NCCL on 2 and 8 T4 machines (32-true; each rank held 1/N of the parameters) |
 | Trainer Lightning parity (ADR-0024): hooks, manual optimization, DataModule, scheduler forms, "-true" precisions, DDP options, callbacks (checkpointing, early stopping, SWA, EMA, fine-tuning, pruning, timers, monitors), CSV logger, profilers, tuner | tested on CPU, one process and two DDP processes; step time within 1.4% of 0.7 on an M2 Pro CPU |
-| Trainer `sync_batchnorm`, `torch.compile` with Inductor, 16-mixed with manual optimization | implemented; need a GPU run |
+| Trainer `sync_batchnorm`, `torch.compile` with Inductor, 16-mixed with manual optimization, "-true" precisions, `PyTorchProfiler` on CUDA | validated on Tesla T4 (one GPU, and up to 8 machines for `sync_batchnorm` and manual optimization) |
 | TensorBoard, Weights & Biases and MLflow loggers | implemented; not tested (optional packages) |
 | Long-running services: replicas, `$PORT`, endpoints, restarts | tested on a local worker and on Kubernetes (kind); no load balancer |
 | Google Cloud provisioning | validated: a CPU VM and a Spot T4 created for a job, joined, ran it and were deleted |
@@ -39,9 +39,9 @@ machines named. Everything else says what is missing.
 
 - Validate AMD ROCm on AMD hardware.
 
-- NCCL across machines.
 - Why the 1-GPU CNN's CPU work ran about 10% slower than Lightning's on one RTX 3070 host (same GPU kernels).
-- FSDP and `torch.compile` on CUDA.
+- NCCL across multi-GPU machines (only 32 vCPUs of AWS G instances are approved: one GPU each).
+- Speed against Lightning with NCCL across machines.
 - A second cloud provider.
 - A CUDA container image.
 

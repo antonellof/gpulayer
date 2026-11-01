@@ -66,8 +66,10 @@ DeepSpeed, TPU/HPU/XLA, `plugins=`, `LightningCLI`, several dataloaders per stag
 distributed `predict`. Keep Lightning for those and run it with [`launch()`](launch.md), which
 gives it the same placement: GPUlayer picks the machines and starts torchrun's environment.
 
-## Not yet validated on GPUs
+## Validated on GPUs
 
 `sync_batchnorm`, 16-mixed with manual optimization, `torch.compile` with Inductor and the
-CUDA tables of `PyTorchProfiler` are implemented and tested on CPU where possible, but have not
-run on GPUs yet. FSDP is experimental and CPU-tested. See [Project status](../project/status.md).
+CUDA tables of `PyTorchProfiler` were validated on Tesla T4s (2026-11-01), across up to 8
+machines over NCCL for `sync_batchnorm` and manual optimization. FSDP is experimental: it
+trained over NCCL on 2 and 8 T4 machines, but FSDP's speed and larger models are not measured.
+See [Project status](../project/status.md).

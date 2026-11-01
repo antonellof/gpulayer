@@ -1,0 +1,6 @@
+[rank0] RESULT {"case": "manual", "nodes": 8, "world_size": 8, "backend": "nccl", "gpu": "Tesla T4", "precision": "16-mixed", "ms_per_step": 17.69, "losses": [2.2733, 2.231, 1.9552, 0.4897, 0.0465, 0.012, 0.008], "rank_weight_sums": [531.8782, 531.8782, 531.8782, 531.8782, 531.8782, 531.8782, 531.8782, 531.8782], "syncbn": false}
+[rank0] CHECK manual/8 nccl backend: PASS
+[rank0] CHECK manual/8 world size: PASS
+[rank0] CHECK manual/8 loss falls: PASS
+[rank0] CHECK manual/8 identical weights on every rank: PASS
+[gpulayer] job-1e05b54de3df succeeded; 2 output file(s) in gpulayer_runs/job-1e05b54de3df

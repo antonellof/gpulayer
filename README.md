@@ -26,8 +26,8 @@ NVIDIA CUDA, Apple Metal (MPS) and CPU are validated on hardware. AMD ROCm is im
 not yet validated. Docs: [gpulayer.dev/docs](https://www.gpulayer.dev/docs/).
 
 > **v0.8.0.** Validated on a Tesla T4, 4× RTX 3070, 2× A100 (NVLink), an Apple M2 Pro, and
-> distributed CPU training on up to 16 Google Cloud machines. NCCL across machines is
-> implemented but not validated. See
+> distributed CPU training on up to 16 Google Cloud machines. NCCL across machines is validated
+> on 8 AWS machines with one Tesla T4 each (DDP, `sync_batchnorm`, manual optimization, FSDP). See
 > [Status](https://github.com/antonellof/gpulayer/blob/main/docs/project/status.md).
 
 ## Install

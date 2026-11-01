@@ -18,8 +18,8 @@ NVIDIA CUDA, Apple Metal (MPS) and CPU are validated on hardware. AMD ROCm is im
 not yet validated.
 
 > **Status: v0.8.0.** Validated on a Tesla T4, 4× RTX 3070, 2× A100 (NVLink), an Apple M2 Pro,
-> and distributed CPU training on up to 16 Google Cloud machines. NCCL across machines is
-> implemented but not validated, and cloud VMs are created on Google Cloud only. See
+> distributed CPU training on up to 16 Google Cloud machines, and NCCL across 8 AWS machines
+> with one Tesla T4 each. Cloud VMs are created by GPUlayer on Google Cloud only. See
 > [Status and roadmap](project/status.md) and
 > [Performance and comparison](get-started/performance-and-comparison.md).
 
@@ -59,7 +59,8 @@ as jobs. The [Architecture overview](architecture/overview.md) has the details.
 
 - **One GPU on the machine you are using.** A plain training loop is simpler.
 - **Untrusted users.** Jobs run as normal processes, not in a sandbox.
-- **Beyond what is validated.** NCCL across machines and AMD GPUs have not been run yet.
+- **Beyond what is validated.** AMD GPUs have not been run yet, and NCCL has run across up to 8
+  machines with one GPU each, not across multi-GPU machines.
 
 Code ships as files (the directory of your script), and function arguments and results must
 be JSON.

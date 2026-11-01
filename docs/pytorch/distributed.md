@@ -88,4 +88,4 @@ glt.launch(nodes=2, devices=4, accelerator="cuda", target="remote")
 | Nodes on different machines | validated with gloo on up to 16 GCP VMs |
 | NCCL on several GPUs in one machine | validated: all-reduce across 4× RTX 3070 and 2× A100 SXM4 as a GPUlayer job |
 | Trainer DDP on several GPUs | implemented; not run on GPUs yet |
-| NCCL across machines | implemented, not validated yet |
+| NCCL across machines | validated on 2, 4 and 8 AWS machines with one Tesla T4 each (DDP, FSDP) |

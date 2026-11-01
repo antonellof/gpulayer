@@ -88,7 +88,7 @@ other jobs state their own framework requirements.
 - **GPU interconnect is part of the capabilities** (`AcceleratorDevice.links`, `numa_node`,
   ADR-0021), read from `nvidia-smi topo -m`; validated on PCIe (`PHB`/`SYS`) and NVLink (`NV4`).
 - **CUDA is hardware-validated on more than one GPU per machine** (NCCL across 4 GPUs) and on
-  three GPU generations (T4, RTX 3070, A100); NCCL across machines is still implemented only.
+  three GPU generations (T4, RTX 3070, A100), and NCCL across up to 8 machines (2026-11-01).
 - **Discovery cost matters for start-up.** Probing torch in a new interpreter took 0.7 s on a
   Mac and seconds on a GPU machine. When the worker runs the same interpreter as a launching
   script that already imported torch, the probe now reads it in-process (device properties

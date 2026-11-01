@@ -86,8 +86,14 @@ Validated on two multi-GPU machines rented on Vast.ai (2026-10-31, torch 2.15 wi
 | 2× A100 SXM4 40 GB | `NV4` (NVLink) | 8/8 CUDA checks; NCCL all-reduce across both GPUs over NVLink |
 
 Both machines needed a C compiler for `torch.compile` (`apt-get install gcc`); rented
-containers often lack one. NCCL across machines has not been run yet. Logs:
-`benchmarks/results/2026-10-31-vast-4x3070/` and `2026-10-31-vast-2xa100sxm4/`.
+containers often lack one. Logs: `benchmarks/results/2026-10-31-vast-4x3070/` and
+`2026-10-31-vast-2xa100sxm4/`.
+
+NCCL across machines was validated on 2026-11-01 on 8 AWS `g4dn.xlarge` machines (one Tesla T4
+each, one subnet, driver 595): DDP with 16-mixed and `sync_batchnorm` on 2, 4 and 8 machines,
+manual optimization on 8 and FSDP on 2 and 8 trained, with identical weights on every rank for
+DDP. The same run validated Inductor `torch.compile`, 16-mixed manual optimization, "-true"
+precisions and `PyTorchProfiler` on one T4. Logs: `benchmarks/results/2026-11-01-aws-8xt4/`.
 
 Repeat the validation on any NVIDIA machine:
 

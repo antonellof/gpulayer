@@ -277,7 +277,7 @@ const BEHIND = [
   "The PyTorch Trainer has Lightning's hooks, callbacks and loggers but no DeepSpeed, TPU support, plugins or LightningCLI; FSDP is experimental (CPU-tested).",
   "Multi-node speed against PyTorch Lightning is measured on CPUs with gloo only: 11.9% faster on 8 machines with two-level gradient sync, the same on one machine. NCCL on GPUs is not measured yet.",
   "Distributed jobs support PyTorch process groups only; no JAX multi-host or MPI launcher yet.",
-  "v0.8.0: validated on machines with up to 4 NVIDIA GPUs (NCCL) and on up to 30 machines; NCCL across machines is not validated yet. Not a sandbox for untrusted users.",
+  "v0.8.0: validated on machines with up to 4 NVIDIA GPUs (NCCL) and on up to 30 machines; NCCL across up to 8 machines with one GPU each. Not a sandbox for untrusted users.",
 ];
 
 const FITS = [

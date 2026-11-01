@@ -1,0 +1,6 @@
+[rank0] RESULT {"case": "fsdp", "nodes": 2, "world_size": 2, "backend": "nccl", "gpu": "Tesla T4", "precision": "32-true", "ms_per_step": 24.87, "losses": [2.2873, 2.3565, 2.1137, 2.0109, 0.7714, 0.6364, 0.1087], "rank_weight_sums": [], "syncbn": false, "local_param_fraction": 0.5}
+[rank0] CHECK fsdp/2 nccl backend: PASS
+[rank0] CHECK fsdp/2 world size: PASS
+[rank0] CHECK fsdp/2 loss falls: PASS
+[rank0] CHECK fsdp/2 parameters sharded: PASS
+[gpulayer] job-39aee8d5859b succeeded; 3 output file(s) in gpulayer_runs/job-39aee8d5859b

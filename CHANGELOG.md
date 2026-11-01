@@ -5,6 +5,17 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Validated on hardware (2026-11-01, 8 AWS `g4dn.xlarge`, one Tesla T4 each,
+  `benchmarks/results/2026-11-01-aws-8xt4/`): NCCL across machines (DDP on 2, 4 and 8 machines
+  with 16-mixed and `sync_batchnorm`, identical weights on every rank; manual optimization on
+  8; FSDP on 2 and 8), and on one T4 Inductor `torch.compile`, 16-mixed manual optimization,
+  `16-true`/`bf16-true`, `PyTorchProfiler` CUDA columns, EMA and device stats.
+- Fix: `clip_gradients` with manual optimization and 16-mixed unscaled the gradients twice
+  (it received the wrapper from `self.optimizers()`), so such runs did not learn. Found on the
+  8-machine run; regression test added.
+- Docs: the NVIDIA guide explains `CUDNN_STATUS_SUBLIBRARY_LOADING_FAILED` from a system
+  `LD_LIBRARY_PATH` (AWS Deep Learning AMIs) and how to start workers without it.
+
 - Docs: a generated [PyTorch API reference](docs/pytorch/api.md) with every public class,
   method, property and hook of `gpulayer.pytorch` (`scripts/make_api_reference.py`; a test
   fails when it is out of date or a public member has no docstring). The Trainer guide gains

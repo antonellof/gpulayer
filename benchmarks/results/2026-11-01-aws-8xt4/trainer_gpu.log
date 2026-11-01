@@ -1,0 +1,58 @@
+GPU Tesla T4 torch 2.15.0+cu132 cuda 13.2
+[gpulayer] training on cuda, precision 32-true, 3 epoch(s)
+epoch 0 done in 0.175s: train_loss=0.6358
+epoch 1 done in 0.023s: train_loss=0.4837
+epoch 2 done in 0.022s: train_loss=0.3726
+[gpulayer] training on cuda, precision 32-true, 3 epoch(s)
+/home/ubuntu/venv/lib/python3.12/site-packages/triton/knobs.py:504: UserWarning: TRITON_DEFAULT_FP_FUSION is unset: defaulting to FP fusion ENABLED for backward compatibility in Triton 3.9. The default will change to DISABLED in Triton 3.10; set TRITON_DEFAULT_FP_FUSION=1 to keep fusion enabled or =0 to adopt the new default early and silence this warning.
+  warn_once(FP_FUSION_DEFAULT_WARNING)
+epoch 0 done in 1.82s: train_loss=0.6358
+epoch 1 done in 0.029s: train_loss=0.4837
+epoch 2 done in 0.029s: train_loss=0.3726
+CHECK torch.compile (Inductor) trains: PASS eager 0.3726 compiled 0.3726
+[gpulayer] training on cuda, precision 16-mixed, 3 epoch(s)
+epoch 0 done in 0.145s: train_loss=0.6358
+epoch 1 done in 0.036s: train_loss=0.4837
+epoch 2 done in 0.036s: train_loss=0.3725
+CHECK 16-mixed manual optimization: PASS steps 48 loss 0.6358 -> 0.3725
+[gpulayer] training on cuda, precision 16-true, 3 epoch(s)
+epoch 0 done in 0.038s: train_loss=0.6358
+epoch 1 done in 0.027s: train_loss=0.4837
+epoch 2 done in 0.027s: train_loss=0.3725
+CHECK precision 16-true: PASS torch.float16 loss 0.3725
+[gpulayer] training on cuda, precision bf16-true, 3 epoch(s)
+epoch 0 done in 0.028s: train_loss=0.6367
+epoch 1 done in 0.026s: train_loss=0.4862
+epoch 2 done in 0.026s: train_loss=0.3762
+CHECK precision bf16-true: PASS torch.bfloat16 loss 0.3762
+USDT:2026-11-01 10:13:38 2151:2151 SyncActivityProfilerHandler.cpp:39] profiler_start
+[gpulayer] training on cuda, precision 32-true, 1 epoch(s)
+epoch 0 done in 0.056s: train_loss=0.6358
+USDT:2026-11-01 10:13:38 2151:2151 SyncActivityProfilerHandler.cpp:46] profiler_stop
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+                                                   Name    Self CPU %      Self CPU   CPU total %     CPU total  CPU time avg     Self CUDA   Self CUDA %    CUDA total  CUDA time avg    # of Calls  
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+                                     run_training_batch         0.00%       0.000us         0.00%       0.000us       0.000us       3.087ms       212.15%       3.087ms     192.944us            16  
+                                     run_training_batch         2.51%       1.746ms        40.45%      28.153ms       1.760ms       0.000us         0.00%     612.122us      38.258us            16  
+                                  train_dataloader_next         0.00%       0.000us         0.00%       0.000us       0.000us     589.080us        40.48%     589.080us      36.817us            16  
+    autograd::engine::evaluate_function: AddmmBackward0         1.11%     769.439us         8.90%       6.191ms     193.480us       0.000us         0.00%     567.865us      17.746us            32  
+                                         AddmmBackward0         0.74%     512.613us         5.76%       4.007ms     125.219us       0.000us         0.00%     322.234us      10.070us            32  
+                                               aten::mm         2.96%       2.059ms         4.12%       2.870ms      59.782us     322.234us        22.14%     322.234us       6.713us            48  
+                                           aten::linear         0.14%      95.788us         3.12%       2.169ms      67.790us       0.000us         0.00%     286.522us       8.954us            32  
+                                            aten::addmm         1.72%       1.197ms         2.57%       1.790ms      55.924us     286.522us        19.69%     286.522us       8.954us            32  
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+Self CPU time total: 69.594ms
+Self CUDA time total: 1.455ms
+
+CHECK PyTorchProfiler CUDA columns: PASS
+[gpulayer] training on cuda, precision 16-mixed, 3 epoch(s)
+epoch 0 step 10 train_loss=0.6297
+epoch 0 done in 0.093s: train_loss=0.6358
+epoch 1 step 20 train_loss=0.5241
+epoch 1 step 30 train_loss=0.4534
+epoch 1 done in 0.043s: train_loss=0.4837
+epoch 2 step 40 train_loss=0.3159
+epoch 2 done in 0.042s: train_loss=0.3725
+CHECK EMA with 16-mixed: PASS
+CHECK DeviceStatsMonitor CUDA memory: PASS {'device/memory_allocated_mb': 0.6, 'device/memory_reserved_mb': 24.0, 'device/max_memory_allocated_mb': 9.0}
+ALL CHECKS PASSED

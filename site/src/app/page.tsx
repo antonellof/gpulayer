@@ -164,12 +164,12 @@ const STATUS: { label: string; dot: string; items: string }[] = [
     label: "Hardware-validated",
     dot: "bg-emerald-500",
     items:
-      "Trainer on NVIDIA CUDA (Tesla T4, RTX 3070, A100) and Apple Metal · DDP over NCCL on up to 4 GPUs of a machine · distributed training with gloo on up to 16 machines · Google Cloud VMs created per job",
+      "Trainer on NVIDIA CUDA (Tesla T4, RTX 3070, A100) and Apple Metal · DDP over NCCL on up to 4 GPUs of a machine and across 8 machines · FSDP across 8 machines · distributed training with gloo on up to 16 machines · Google Cloud VMs created per job",
   },
   {
     label: "Implemented, not validated",
     dot: "bg-amber-500",
-    items: "NCCL across machines · AMD ROCm · FSDP (experimental) · Trainer features that need a GPU: sync_batchnorm, torch.compile with Inductor · NVIDIA GPU workers on Kubernetes",
+    items: "AMD ROCm · NCCL across multi-GPU machines · FSDP speed (experimental) · NVIDIA GPU workers on Kubernetes",
   },
   {
     label: "Planned",

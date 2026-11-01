@@ -1,0 +1,7 @@
+[rank0] RESULT {"case": "ddp", "nodes": 4, "world_size": 4, "backend": "nccl", "gpu": "Tesla T4", "precision": "16-mixed", "ms_per_step": 19.51, "losses": [2.3047, 2.237, 1.8551, 0.7298, 0.1116, 0.0092, 0.005], "rank_weight_sums": [529.8072, 529.8072, 529.8072, 529.8072], "syncbn": true}
+[rank0] CHECK ddp/4 nccl backend: PASS
+[rank0] CHECK ddp/4 world size: PASS
+[rank0] CHECK ddp/4 loss falls: PASS
+[rank0] CHECK ddp/4 identical weights on every rank: PASS
+[rank0] CHECK ddp/4 SyncBatchNorm: PASS
+[gpulayer] job-3b9431711eec succeeded; 2 output file(s) in gpulayer_runs/job-3b9431711eec

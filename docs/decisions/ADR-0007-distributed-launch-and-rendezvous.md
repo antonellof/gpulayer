@@ -1,6 +1,6 @@
 # ADR-0007: Distributed launch and rendezvous
 
-- **Status:** Accepted. Validated: several processes and GPUs on one host (NCCL on 4 GPUs), and across machines with gloo (up to 16). Not validated: NCCL across machines (see the 2026-10-31 amendment).
+- **Status:** Accepted. Validated: several processes and GPUs on one host (NCCL on 4 GPUs), and across machines with gloo (up to 16). NCCL across machines validated on 2026-11-01: 2, 4 and 8 AWS machines with one Tesla T4 each (`benchmarks/results/2026-11-01-aws-8xt4/`).
 - **Date:** 2026-10-29
 
 ## Context

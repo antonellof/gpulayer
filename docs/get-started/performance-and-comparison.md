@@ -14,8 +14,9 @@ comparisons with PyTorch Lightning.
 | 1x T4, 1x RTX 3070, 1x A100 | Trainer in fp32, bf16, fp16, `torch.compile`, as a job | passed |
 | Apple M2 Pro (Metal GPU and CPU) | Trainer vs Lightning, MLP and CNN on the GPU and the CPU, DDP on 2 CPU processes | GPUlayer Trainer faster in all 5 (1.05 to 1.75x) |
 
-Not measured yet: NCCL across machines, more than 4 GPUs, and GPUs with NVLink for training
-speed. Every number comes from a script in
+NCCL across machines was validated on 8 AWS machines with one Tesla T4 each, but not compared
+with Lightning ([results](../../benchmarks/results/2026-11-01-aws-8xt4/README.md)). Not measured yet: speed against Lightning
+with NCCL across machines, and GPUs with NVLink for training speed. Every number comes from a script in
 [`benchmarks/`](https://github.com/antonellof/gpulayer/tree/main/benchmarks), and the raw logs
 are in [`benchmarks/results/`](https://github.com/antonellof/gpulayer/tree/main/benchmarks/results).
 Charts are generated from those logs by `scripts/make_perf_charts.py`.
@@ -266,7 +267,8 @@ work in 60 s on 32 slots, 87% of the ideal.
 
 ## What has not been measured
 
-- NCCL across machines, more than 4 GPUs, training speed on NVLink GPUs, and FSDP on GPUs.
+- Speed against Lightning with NCCL across machines (validated for correctness on 8 T4
+  machines, not compared), training speed on NVLink GPUs, and FSDP speed.
 - Training that runs for hours, and more than 30 machines.
 - AMD GPUs.
 

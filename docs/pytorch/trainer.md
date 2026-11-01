@@ -173,7 +173,7 @@ from datasets.
 | `launch_options` | `{}` | extra arguments for [`launch()`](launch.md), for example `{"env": {...}, "timeout_seconds": 3600}` |
 
 A model passed through `torch.compile(model, ...)` trains compiled, with the options it was
-compiled with (tested with `backend="eager"` on CPU; Inductor on a GPU is not validated yet).
+compiled with (Inductor validated on a Tesla T4: the same loss as eager).
 
 Unsupported combinations fail with an error instead of quietly doing something else. Examples:
 `precision="16-mixed"` on MPS, `accelerator="cuda"` on a machine without CUDA, `devices=2` with
@@ -322,8 +322,9 @@ trainer = glt.Trainer(accelerator="cuda", devices=8, num_nodes=2, strategy="fsdp
   `ckpt_path` work as with DDP.
 - Precision `32-true` and `bf16-mixed`; `16-mixed` is rejected for now.
 - Tested with two CPU processes (gloo): FSDP trains exactly like DDP (identical losses), each
-  process holds a part of the model, and a run resumes from its checkpoint. It has not been
-  run on CUDA GPUs yet.
+  process holds a part of the model, and a run resumes from its checkpoint.
+- Validated over NCCL on 2 and 8 AWS machines with one Tesla T4 each (32-true): each rank held
+  1/N of the parameters and the loss fell as with DDP. Speed and large models are not measured.
 
 ## Validate, test and predict
 
