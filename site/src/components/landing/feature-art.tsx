@@ -47,72 +47,83 @@ function Rings() {
   );
 }
 
-function Contours() {
-  // a contour grid with one traced path through it
-  const lines = [];
-  for (let i = 0; i < 8; i++) {
-    const y = 22 + i * 14;
-    lines.push(
-      <path
-        key={`h${i}`}
-        d={`M20 ${y} C80 ${y - 10 + (i % 3) * 6} 160 ${y + 10 - (i % 2) * 8} 220 ${y}`}
-        opacity={0.22}
-      />,
-    );
+function Pillars() {
+  // a floor grid in perspective with wire pillars rising from it
+  const vx = 120; // vanishing point
+  const vy = -10;
+  const floor = [];
+  for (let i = 0; i <= 10; i++) {
+    const x = 20 + i * 20;
+    // lines towards the vanishing point, cut at the horizon
+    const t = 0.55;
+    floor.push(<path key={`r${i}`} d={`M${x} 128 L${x + (vx - x) * t} ${128 + (vy - 128) * t}`} opacity={0.18} />);
   }
-  for (let i = 0; i < 10; i++) {
-    const x = 28 + i * 21;
-    lines.push(<path key={`v${i}`} d={`M${x} 16 L${x} 124`} opacity={0.12} />);
+  for (let j = 0; j < 6; j++) {
+    const k = j / 6;
+    const y = 128 + (vy - 128) * (0.55 * k);
+    const half = 100 * (1 - 0.55 * k);
+    floor.push(<path key={`h${j}`} d={`M${vx - half} ${y} L${vx + half} ${y}`} opacity={0.18} />);
   }
+  const pillars = [
+    [82, 104, 22, 0.35],
+    [104, 96, 34, 0.5],
+    [128, 92, 58, 1],
+    [150, 96, 52, 1],
+    [170, 104, 26, 0.45],
+  ];
   return (
     <>
-      {lines}
-      <path d="M28 110 C70 108 80 60 112 62 S170 30 212 28" strokeWidth={1.8} />
-      {[
-        [28, 110],
-        [112, 62],
-        [212, 28],
-      ].map(([x, y]) => (
-        <circle key={x} cx={x} cy={y} r={3.5} fill="currentColor" stroke="none" />
+      {floor}
+      {pillars.map(([x, y, h, o]) => (
+        <g key={x} opacity={o}>
+          <path d={`M${x - 6} ${y} L${x - 6} ${y - h} L${x + 6} ${y - h} L${x + 6} ${y}`} />
+          <path d={`M${x - 6} ${y - h} L${x - 1} ${y - h - 4} L${x + 11} ${y - h - 4} L${x + 6} ${y - h}`} />
+          <path d={`M${x + 6} ${y} L${x + 11} ${y - 4} L${x + 11} ${y - h - 4}`} />
+        </g>
       ))}
     </>
   );
 }
 
-function Globe() {
-  // a wireframe globe with a few linked nodes on it
+function Ripples() {
+  // ripples spreading from one point, with nodes on the rings
   const cx = 120;
-  const cy = 70;
-  const r = 52;
+  const cy = 120;
+  const rings = [14, 30, 48, 66, 84, 100];
   const nodes = [
-    [cx - 30, cy - 24],
-    [cx + 34, cy - 6],
-    [cx + 4, cy + 34],
-    [cx - 40, cy + 18],
+    [1, -130],
+    [2, -60],
+    [3, -150],
+    [3, -35],
+    [4, -105],
+    [5, -70],
+    [5, -160],
+    [5, -20],
   ];
   return (
     <>
-      <circle cx={cx} cy={cy} r={r} opacity={0.7} />
-      {[-0.6, -0.3, 0, 0.3, 0.6].map((t) => (
-        <ellipse
-          key={`lat${t}`}
-          cx={cx}
-          cy={cy + t * r}
-          rx={r * Math.sqrt(1 - t * t)}
-          ry={r * 0.18 * Math.sqrt(1 - t * t)}
-          opacity={0.3}
+      {rings.map((r, i) => (
+        <path
+          key={r}
+          d={`M${cx - r} ${cy} A${r} ${r} 0 0 1 ${cx + r} ${cy}`}
+          opacity={0.9 - i * 0.13}
         />
       ))}
-      {[0.2, 0.5, 0.8].map((t) => (
-        <ellipse key={`lon${t}`} cx={cx} cy={cy} rx={r * t} ry={r} opacity={0.3} />
-      ))}
-      {nodes.map(([x, y], i) => {
-        const [nx, ny] = nodes[(i + 1) % nodes.length];
+      <path d="M16 120 H224" opacity={0.25} />
+      <circle cx={cx} cy={cy} r={4} fill="currentColor" stroke="none" />
+      {nodes.map(([ri, deg]) => {
+        const r = rings[ri];
+        const a = (deg * Math.PI) / 180;
         return (
-          <g key={i}>
-            <path d={`M${x} ${y} L${nx} ${ny}`} strokeDasharray="3 3" opacity={0.6} />
-            <circle cx={x} cy={y} r={3.5} fill="currentColor" stroke="none" />
-          </g>
+          <circle
+            key={`${ri}${deg}`}
+            cx={cx + r * Math.cos(a)}
+            cy={cy + r * Math.sin(a)}
+            r={2.8}
+            fill="currentColor"
+            stroke="none"
+            opacity={1 - ri * 0.1}
+          />
         );
       })}
     </>
@@ -136,31 +147,35 @@ function Waves() {
   return <>{out}</>;
 }
 
-function Orbit() {
-  // an orbit of ellipses around a core
+function Twist() {
+  // a twisting stack of rounded squares, each turned a little more
   const cx = 120;
   const cy = 70;
+  const out = [];
+  for (let i = 0; i < 7; i++) {
+    const size = 112 - i * 14;
+    out.push(
+      <rect
+        key={i}
+        x={cx - size / 2}
+        y={cy - size / 2}
+        width={size}
+        height={size}
+        rx={size * 0.22}
+        transform={`rotate(${i * 8} ${cx} ${cy})`}
+        opacity={0.22 + i * 0.13}
+      />,
+    );
+  }
   return (
     <>
-      {[0, 30, 60, 90, 120, 150].map((a, i) => (
-        <ellipse
-          key={a}
-          cx={cx}
-          cy={cy}
-          rx={78}
-          ry={24}
-          transform={`rotate(${a} ${cx} ${cy})`}
-          opacity={0.18 + i * 0.08}
-        />
-      ))}
-      <circle cx={cx} cy={cy} r={12} />
-      <circle cx={cx} cy={cy} r={4} fill="currentColor" stroke="none" />
-      <circle cx={cx + 78} cy={cy} r={3.5} fill="currentColor" stroke="none" />
+      {out}
+      <circle cx={cx} cy={cy} r={3.5} fill="currentColor" stroke="none" />
     </>
   );
 }
 
-const ART = { api: Planes, scale: Rings, placement: Contours, gpus: Globe, results: Waves, loop: Orbit };
+const ART = { api: Planes, scale: Rings, placement: Pillars, gpus: Ripples, results: Waves, loop: Twist };
 
 export function FeatureArt({ kind }: { kind: keyof typeof ART }) {
   const Art = ART[kind];
