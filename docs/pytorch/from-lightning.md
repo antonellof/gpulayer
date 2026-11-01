@@ -103,7 +103,9 @@ Each of Lightning's performance mechanisms, found in its source, and GPUlayer's 
 | SLURM auto-requeue on SIGUSR1 | not needed: GPUlayer retries tasks itself; SIGTERM saves a checkpoint |
 
 Each row has a behaviour test in `tests/pytorch/test_speed_mechanisms.py` (for example, the
-number of host-device synchronisations does not grow with the number of steps); cuDNN
+number of host-device synchronisations does not grow with the number of steps). The
+device-dependent ones run on every accelerator present and passed on the CPU and an Apple M2 Pro
+GPU (MPS); on CUDA machines they run on the GPU too. cuDNN
 autotuning and `MpDeviceLoader` are covered by the T4 measurements and the simulated TPU tests.
 GPUlayer's own additions are in [Performance](../architecture/performance.md): one autocast
 object reused across steps, two-level gradient sync with gloo, the direct process launcher and

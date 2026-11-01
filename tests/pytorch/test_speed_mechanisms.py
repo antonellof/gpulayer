@@ -1,6 +1,7 @@
 """One test per speed mechanism in the table in docs/pytorch/from-lightning.md ("Speed
-features"): each checks the behaviour, not only that a name exists. CPU, one process, except
-where noted; the GPU-side effects were measured on hardware (benchmarks/results/)."""
+features"): each checks the behaviour, not only that a name exists. The device-dependent ones
+run on every accelerator present: the CPU always, the Apple GPU (MPS) or CUDA GPUs when the
+machine has them (hardware-gated; skipped elsewhere)."""
 
 import types
 
@@ -41,29 +42,43 @@ class Lin(glt.Module):
         return torch.optim.SGD(self.parameters(), lr=0.01)
 
 
-def trainer(tmp_path, **kw):
-    kw.setdefault("accelerator", "cpu")
+ACCELERATORS = [
+    "cpu",
+    pytest.param(
+        "mps", marks=pytest.mark.skipif(not torch.backends.mps.is_available(), reason="no MPS")
+    ),
+    pytest.param("cuda", marks=pytest.mark.skipif(not torch.cuda.is_available(), reason="no CUDA")),
+]
+
+
+@pytest.fixture(params=ACCELERATORS)
+def accel(request):
+    return request.param
+
+
+def trainer(tmp_path, accel="cpu", **kw):
+    kw.setdefault("accelerator", accel)
     kw.setdefault("log_every_n_steps", 0)
     kw.setdefault("num_sanity_val_steps", 0)
     kw.setdefault("enable_checkpointing", False)
     return glt.Trainer(default_root_dir=tmp_path, **kw)
 
 
-def test_only_overridden_hooks_are_called(tmp_path):
+def test_only_overridden_hooks_are_called(tmp_path, accel):
     """Hooks nobody overrides cost nothing per step: they are not in the call lists."""
 
     class OneHook(glt.Callback):
         def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
             pass
 
-    t = trainer(tmp_path, max_epochs=1, callbacks=[OneHook()])
+    t = trainer(tmp_path, accel, max_epochs=1, callbacks=[OneHook()])
     t.fit(Lin(), data())
     cache = t._hook_cache
     assert len(cache["on_train_batch_end"]) == 1
     assert cache["on_train_batch_start"] == [] and cache["on_before_backward"] == []
 
 
-def test_logged_values_are_not_read_from_the_device_every_step(tmp_path, monkeypatch):
+def test_logged_values_are_not_read_from_the_device_every_step(tmp_path, monkeypatch, accel):
     """Reading a logged tensor (.item(), float()) forces a host-device sync; the count must not
     grow with the number of steps."""
     reads = {"n": 0}
@@ -82,12 +97,12 @@ def test_logged_values_are_not_read_from_the_device_every_step(tmp_path, monkeyp
     counts = []
     for n in (32, 256):  # 4 and 32 steps per epoch
         reads["n"] = 0
-        trainer(tmp_path, max_epochs=1).fit(Lin(), data(n))
+        trainer(tmp_path, accel, max_epochs=1).fit(Lin(), data(n))
         counts.append(reads["n"])
     assert counts[0] == counts[1], counts
 
 
-def test_evaluation_runs_under_inference_mode(tmp_path):
+def test_evaluation_runs_under_inference_mode(tmp_path, accel):
     seen = []
 
     class Check(Lin):
@@ -95,11 +110,11 @@ def test_evaluation_runs_under_inference_mode(tmp_path):
             seen.append(torch.is_inference_mode_enabled())
             super().validation_step(batch, batch_idx)
 
-    trainer(tmp_path).validate(Check(), data(16))
+    trainer(tmp_path, accel).validate(Check(), data(16))
     assert seen and all(seen)
 
 
-def test_gradients_are_freed_not_zeroed(tmp_path):
+def test_gradients_are_freed_not_zeroed(tmp_path, accel):
     """zero_grad(set_to_none=True): no memset per parameter, and memory is released."""
     seen = []
 
@@ -109,11 +124,11 @@ def test_gradients_are_freed_not_zeroed(tmp_path):
                 seen.append(all(p.grad is None for p in self.parameters()))
             return super().training_step(batch, batch_idx)
 
-    trainer(tmp_path, max_epochs=1).fit(Check(), data())
+    trainer(tmp_path, accel, max_epochs=1).fit(Check(), data())
     assert seen and all(seen)
 
 
-def test_gradient_exchange_only_on_optimizer_steps(tmp_path, monkeypatch):
+def test_gradient_exchange_only_on_optimizer_steps(tmp_path, monkeypatch, accel):
     """With accumulation, DDP's all-reduce is skipped (no_sync) on the batches that do not step."""
     flags = []
     real = Runtime.no_sync
@@ -123,7 +138,7 @@ def test_gradient_exchange_only_on_optimizer_steps(tmp_path, monkeypatch):
         return real(self, model, enabled)
 
     monkeypatch.setattr(Runtime, "no_sync", record)
-    trainer(tmp_path, max_epochs=1, accumulate_grad_batches=2).fit(Lin(), data(32))
+    trainer(tmp_path, accel, max_epochs=1, accumulate_grad_batches=2).fit(Lin(), data(32))
     assert flags == [True, False, True, False]  # skip, exchange, skip, exchange
 
 
