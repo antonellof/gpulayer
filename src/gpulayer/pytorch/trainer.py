@@ -1055,7 +1055,8 @@ class Trainer:
         # DDP only syncs gradients for calls to its forward, so wrap training_step for DDP;
         # FSDP hooks into each sharded submodule instead, and a single process needs neither
         # (one module call fewer per step). With manual optimization the step runs outside
-        # DDP's forward and manual_backward prepares DDP's reducer itself (as Lightning does).
+        # DDP's forward: DDP only broadcasts the initial weights, and manual_backward averages
+        # the gradients across ranks itself (no reliance on DDP's reducer internals).
         step_fn: Any
         if self._ds_engine is not None:
             ddp, step_fn = self._ds_engine, self._ds_engine
@@ -1465,16 +1466,12 @@ class Trainer:
         rt = self.runtime
         assert rt is not None and self._model is not None
         self._call_hook("on_before_backward", loss)
-        ddp = self._ddp
-        if ddp is not None:
-            from torch.nn.parallel import DistributedDataParallel as DDP
-
-            if isinstance(ddp, DDP):
-                _prepare_for_backward(ddp, loss)
         self._unscaled.clear()
         if rt.scaler is not None:
             loss = rt.scaler.scale(loss)
         self._model.backward(loss, *args, **kwargs)
+        if self._ddp is not None and self._ds_engine is None and not _fsdp_wrapped(self._ddp):
+            _average_gradients(self._model)
         self._call_hook("on_after_backward")
 
     def _step_schedulers(self, interval: str, plateau: bool = False) -> None:
@@ -2105,16 +2102,41 @@ def _profiled(it: Iterator[Any], prof: Profiler, action: str) -> Iterator[Any]:
         yield batch
 
 
-def _prepare_for_backward(ddp: Any, output: Any) -> None:
-    """Arm DDP's gradient reduction for a backward that does not follow DDP's forward
-    (manual optimization), as Lightning does."""
-    if torch.is_grad_enabled() and ddp.require_backward_grad_sync:
-        ddp.require_forward_param_sync = True
-        args = [output] if ddp.find_unused_parameters and not ddp.static_graph else []
-        ddp.reducer._rebuild_buckets()
-        ddp.reducer.prepare_for_backward(args)
-    else:
-        ddp.require_forward_param_sync = False
+def _fsdp_wrapped(module: Any) -> bool:
+    from torch.nn.parallel import DistributedDataParallel as DDP
+
+    return not isinstance(module, DDP)
+
+
+def _average_gradients(model: torch.nn.Module) -> None:
+    """Average gradients across ranks after a manual backward: one small all-reduce to agree
+    on which parameters have gradients (so every rank sends the same buffer), then one
+    coalesced all-reduce per dtype. Averaging again after a second manual_backward is
+    harmless: the gradients are already equal on every rank."""
+    import torch.distributed as dist
+
+    params = [p for p in model.parameters() if p.requires_grad]
+    if not params:
+        return
+    world = dist.get_world_size()
+    dev = params[0].device
+    has = torch.tensor([p.grad is not None for p in params], dtype=torch.float32, device=dev)
+    dist.all_reduce(has, op=dist.ReduceOp.MAX)
+    groups: dict[torch.dtype, list[torch.nn.Parameter]] = {}
+    for p, flag in zip(params, has.tolist(), strict=True):
+        if flag:
+            if p.grad is None:
+                p.grad = torch.zeros_like(p)
+            groups.setdefault(p.grad.dtype, []).append(p)
+    for group in groups.values():
+        flat = torch.cat([p.grad.reshape(-1) for p in group])  # type: ignore[union-attr]
+        dist.all_reduce(flat)
+        flat /= world
+        offset = 0
+        for p in group:
+            n = p.numel()
+            p.grad.copy_(flat[offset : offset + n].view_as(p))  # type: ignore[union-attr]
+            offset += n
 
 
 def _convert_sync_batchnorm(model: Module) -> Module:

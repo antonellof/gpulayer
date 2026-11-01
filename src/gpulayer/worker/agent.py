@@ -35,7 +35,14 @@ from gpulayer.contracts import (
     TaskState,
     WorkerCapabilities,
 )
-from gpulayer.errors import Conflict, Forbidden, GpuLayerError, Unauthorized
+from gpulayer.errors import (
+    Conflict,
+    Forbidden,
+    GpuLayerError,
+    NotFound,
+    Unauthorized,
+    ValidationFailed,
+)
 from gpulayer.runtime import dist_function_runner, function_runner, rank_launcher
 from gpulayer.runtime.distributed import direct_argv, direct_env, free_port, torchrun_argv
 from gpulayer.runtime.process import ProcessOutcome, run_process
@@ -321,12 +328,35 @@ class WorkerAgent:
             outcome = outcome.model_copy(
                 update={"prepare_seconds": prepared.seconds, "prepare_cached": prepared.cached}
             )
-        try:
-            self.channel.finish(a.task_id, outcome)
-        except GpuLayerError as e:
-            log.error("could not report outcome of %s: %s", a.task_id, e)
+        self._report(a.task_id, outcome)
         if not self.keep_workspaces:
             shutil.rmtree(ws, ignore_errors=True)
+
+    # How long a finished task's outcome is retried while the control plane is unreachable
+    # (a server pod restarting takes tens of seconds).
+    REPORT_RETRY_SECONDS = 120.0
+
+    def _report(self, task_id: str, outcome: TaskOutcome) -> bool:
+        """Send a task's outcome. While the control plane is unreachable (refused or reset
+        connections, timeouts, 5xx), retry with backoff; a lost outcome would leave the task
+        running in the server's view and the worker shown busy. A rejection (the task is no
+        longer this worker's, or the request is invalid) is final."""
+        deadline = time.monotonic() + self.REPORT_RETRY_SECONDS
+        delay = 0.5
+        while True:
+            try:
+                self.channel.finish(task_id, outcome)
+                return True
+            except (Conflict, NotFound, Forbidden, Unauthorized, ValidationFailed) as e:
+                log.error("outcome of %s rejected: %s", task_id, e)
+                return False
+            except (GpuLayerError, OSError) as e:
+                if time.monotonic() + delay > deadline or self.stop.is_set():
+                    log.error("could not report outcome of %s: %s", task_id, e)
+                    return False
+                log.warning("reporting %s failed (%s); retrying in %.1fs", task_id, e, delay)
+                self.stop.wait(delay)
+                delay = min(delay * 2, 8.0)
 
     def _fetch(self, ref: ArtifactReference) -> bytes:
         cache = self.workdir / "cache" / ref.sha256

@@ -5,6 +5,14 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Fix: a worker that finished a task while the control plane was unreachable (a server pod
+  restarting) lost the outcome on the refused connection, so the server kept the task running
+  and the worker busy. Outcomes are now retried with backoff for up to 2 minutes; a rejection
+  is final. Found by the Kubernetes CI job; regression test added.
+- Fix: manual optimization with DDP could hang (seen on a 2-vCPU CI runner). The step no
+  longer relies on DDP's reducer internals: `manual_backward` averages the gradients across
+  ranks in one coalesced all-reduce per dtype. (The 8x T4 validation of 2026-11-01 ran the
+  previous code path.)
 - Trainer, the rest of Lightning's surface (ADR-0024 amendment): several dataloaders
   (`glt.CombinedLoader` for training; lists for validate/test/predict with `dataloader_idx`);
   `validate`, `test` and `predict` on several devices or machines (each rank on its shard,
