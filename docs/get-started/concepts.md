@@ -8,18 +8,7 @@ A job is one thing you asked GPUlayer to run. Two independent choices describe i
 - The **workload type** says what runs: an `independent` job (one process tree on one worker)
   or a `distributed` job (one coordinated workload spread over several workers).
 
-```mermaid
-flowchart TB
-    subgraph Targets["Target: where"]
-        L["local<br/>workers on this machine"]
-        R["remote<br/>machines that joined your control plane"]
-        C["cloud<br/>machines created by a provider adapter"]
-    end
-    subgraph Types["Workload type: what"]
-        I["independent<br/>CommandJob, FunctionJob"]
-        D["distributed<br/>DistributedJob (ranks)"]
-    end
-```
+![Targets (local, remote, cloud) by workload type (independent, distributed): every combination is valid](../assets/concepts-light.svg)
 
 Any combination is valid. A distributed job can run on local workers, and a cloud job can be a
 single process. A job runs on another target only when you list it in

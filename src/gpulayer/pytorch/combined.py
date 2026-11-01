@@ -18,7 +18,7 @@ loader is sharded across processes on its own.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from typing import Any
 
 from gpulayer.errors import ValidationFailed
@@ -117,12 +117,3 @@ def loaders_of(value: Any) -> list[Any]:
         return list(value)
     return [value]
 
-
-def is_many(value: Any) -> bool:
-    return isinstance(value, (CombinedLoader, dict)) or (
-        isinstance(value, (list, tuple)) and not _looks_like_batch(value)
-    )
-
-
-def _looks_like_batch(value: Iterable[Any]) -> bool:
-    return False
