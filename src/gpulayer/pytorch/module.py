@@ -96,6 +96,20 @@ class Module(HyperparametersMixin, nn.Module):
         self.trainer: Any = None
         self._gl_automatic_optimization = True
         self.example_input_array: Any = None
+        self._strict_loading: bool | None = None
+        # Set by ModelParallelStrategy before configure_model (tensor parallelism plans).
+        self.device_mesh: Any = None
+        self.fabric: Any = None  # Lightning Fabric is not used by GPUlayer
+
+    @property
+    def strict_loading(self) -> bool:
+        """Whether checkpoints load with ``load_state_dict(strict=True)`` (the default). Set it
+        to False when a model leaves frozen weights out of its checkpoints."""
+        return self._strict_loading in (None, True)
+
+    @strict_loading.setter
+    def strict_loading(self, value: bool) -> None:
+        self._strict_loading = value
 
     def __getstate__(self) -> dict[str, Any]:
         # Copies and pickles leave the Trainer behind (deepcopy for weight averaging, SWA).
@@ -139,6 +153,54 @@ class Module(HyperparametersMixin, nn.Module):
 
     def configure_model(self) -> None:
         """Create layers here to build them on the training device (called once per fit)."""
+
+    def configure_sharded_model(self) -> None:
+        """Lightning's older name for ``configure_model``; called the same way."""
+
+    # Loaders the model provides itself; the Trainer uses them when fit/validate/test/predict
+    # get no loaders and no DataModule. Not overriding one means the model has none.
+
+    def train_dataloader(self) -> Any:
+        """The training loader (or a list or dict of loaders)."""
+        raise ValidationFailed("train_dataloader is not implemented on this model")
+
+    def val_dataloader(self) -> Any:
+        """The validation loader(s)."""
+        raise ValidationFailed("val_dataloader is not implemented on this model")
+
+    def test_dataloader(self) -> Any:
+        """The test loader(s)."""
+        raise ValidationFailed("test_dataloader is not implemented on this model")
+
+    def predict_dataloader(self) -> Any:
+        """The prediction loader(s)."""
+        raise ValidationFailed("predict_dataloader is not implemented on this model")
+
+    # Mode switches around evaluation, as Lightning's: override to keep, say, dropout on.
+
+    def on_validation_model_zero_grad(self) -> None:
+        """Before validation inside ``fit``: free the gradients' memory."""
+        self.zero_grad(set_to_none=True)
+
+    def on_validation_model_eval(self) -> None:
+        """When validation starts: evaluation mode."""
+        self.eval()
+
+    def on_validation_model_train(self) -> None:
+        """When validation inside ``fit`` ends: training mode again."""
+        self.train()
+
+    def on_test_model_eval(self) -> None:
+        """When testing starts: evaluation mode."""
+        self.eval()
+
+    def on_test_model_train(self) -> None:
+        """When testing ends, if the model was training before."""
+        self.train()
+
+    def on_predict_model_eval(self) -> None:
+        """When prediction starts: evaluation mode."""
+        self.eval()
 
     def configure_gradient_clipping(
         self,
@@ -507,6 +569,46 @@ class Module(HyperparametersMixin, nn.Module):
         finally:
             self.train(mode)
 
+    def to_tensorrt(
+        self,
+        file_path: str | Path | None = None,
+        input_sample: Any = None,
+        ir: str = "default",
+        output_format: str = "exported_program",
+        retrace: bool = False,
+        default_device: str | torch.device = "cuda",
+        **compile_kwargs: Any,
+    ) -> Any:
+        """Compile with Torch-TensorRT for NVIDIA inference (needs ``torch_tensorrt``) and save
+        it when ``file_path`` is given; returns the compiled module. Implemented as in
+        Lightning; not run on hardware."""
+        try:
+            import torch_tensorrt
+        except ImportError as e:
+            raise ValidationFailed(
+                "to_tensorrt needs torch_tensorrt (pip install torch-tensorrt)"
+            ) from e
+        inputs = input_sample if input_sample is not None else self.example_input_array
+        if inputs is None:
+            raise ValidationFailed("to_tensorrt needs input_sample or self.example_input_array")
+        from gpulayer.pytorch.utilities import move_data_to_device
+
+        inputs = move_data_to_device(inputs, default_device)
+        inputs = inputs if isinstance(inputs, (list, tuple)) else [inputs]
+        mode = self.training
+        self.eval()
+        try:
+            trt = torch_tensorrt.compile(
+                self.to(default_device), ir=ir, inputs=inputs, **compile_kwargs
+            )
+        finally:
+            self.train(mode)
+        if file_path is not None:
+            torch_tensorrt.save(
+                trt, str(file_path), inputs=inputs, output_format=output_format, retrace=retrace
+            )
+        return trt
+
     # ------------------------------------------------------------- checkpoints
 
     @classmethod
@@ -515,22 +617,34 @@ class Module(HyperparametersMixin, nn.Module):
         checkpoint_path: str | Path,
         *args: Any,
         map_location: Any = "cpu",
-        strict: bool = True,
+        strict: bool | None = None,
         **kwargs: Any,
     ) -> Any:
         """Build the model and load the weights saved by the Trainer. Arguments recorded with
         ``save_hyperparameters`` are used unless given again here."""
-        ckpt = torch.load(checkpoint_path, map_location=map_location, weights_only=False)
+        from gpulayer.pytorch.plugins import TorchCheckpointIO
+
+        ckpt = TorchCheckpointIO().load_checkpoint(checkpoint_path, map_location=map_location)
         hparams = dict(ckpt.get("hyper_parameters") or {})
         if args:
             model = cls(*args, **kwargs)
+        elif "_instantiator" in hparams:
+            # Saved by the CLI (load_from_checkpoint_support): rebuild it the CLI's way.
+            import importlib
+
+            module_name, _, fn_name = str(hparams.pop("_instantiator")).rpartition(".")
+            fn = getattr(importlib.import_module(module_name), fn_name)
+            model = fn(cls, {**hparams, **kwargs})
         else:
+            hparams.pop("_class_path", None)
             accepted = inspect.signature(cls.__init__).parameters
             if not any(p.kind == p.VAR_KEYWORD for p in accepted.values()):
                 hparams = {k: v for k, v in hparams.items() if k in accepted}
             model = cls(**{**hparams, **kwargs})
         model.on_load_checkpoint(ckpt)
-        model.load_state_dict(ckpt["state_dict"], strict=strict)
+        model.load_state_dict(
+            ckpt["state_dict"], strict=model.strict_loading if strict is None else strict
+        )
         return model
 
 
@@ -572,6 +686,58 @@ class DataModule(HyperparametersMixin):
 
     def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         """Restore what ``state_dict`` returned, when resuming."""
+
+    def on_exception(self, exception: BaseException) -> None:
+        """Called when a Trainer run stops with an exception (after the callbacks' and the
+        model's ``on_exception``), as in Lightning."""
+
+    @classmethod
+    def load_from_checkpoint(
+        cls,
+        checkpoint_path: str | Path,
+        map_location: Any = None,
+        hparams_file: str | Path | None = None,
+        weights_only: bool | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Rebuild this DataModule from the arguments the Trainer saved in a checkpoint
+        (``datamodule_hyper_parameters``, recorded with ``save_hyperparameters``), then restore
+        its ``state_dict``. Values in ``hparams_file`` (YAML or JSON) and in ``kwargs``
+        override the saved ones. ``map_location`` defaults to the CPU; ``weights_only``
+        defaults to False because GPUlayer checkpoints hold more than tensors."""
+        location = map_location if map_location is not None else "cpu"
+        ckpt = torch.load(checkpoint_path, map_location=location, weights_only=bool(weights_only))
+        hparams = dict(ckpt.get("datamodule_hyper_parameters") or {})
+        if hparams_file is not None:
+            import json
+
+            path = Path(hparams_file)
+            if path.suffix not in (".yaml", ".yml", ".json"):
+                raise ValidationFailed(f"hparams_file must be .yaml, .yml or .json: {path.name}")
+            text = path.read_text()
+            try:
+                import yaml
+
+                hparams.update(yaml.safe_load(text) or {})
+            except ImportError:  # JSON is valid YAML
+                hparams.update(json.loads(text))
+        hparams.update(kwargs)
+        instantiator = hparams.pop("_instantiator", None)
+        if instantiator is not None:  # written by the CLI with load_from_checkpoint_support
+            import importlib
+
+            module_name, _, fn_name = str(instantiator).rpartition(".")
+            fn = getattr(importlib.import_module(module_name), fn_name)
+            dm = fn(cls, hparams)
+        else:
+            hparams.pop("_class_path", None)
+            accepted = inspect.signature(cls.__init__).parameters
+            if not any(p.kind == p.VAR_KEYWORD for p in accepted.values()):
+                hparams = {k: v for k, v in hparams.items() if k in accepted}
+            dm = cls(**hparams)
+        if "datamodule" in ckpt:
+            dm.load_state_dict(ckpt["datamodule"])
+        return dm
 
     def on_before_batch_transfer(self, batch: Any, dataloader_idx: int) -> Any:
         return batch

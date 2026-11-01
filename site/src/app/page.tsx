@@ -163,7 +163,7 @@ const STATUS: { label: string; dot: string; items: string }[] = [
   {
     label: "Implemented, not validated",
     dot: "bg-amber-500",
-    items: "AMD ROCm · DeepSpeed · TPU · NCCL across multi-GPU machines · NVIDIA GPU workers on Kubernetes",
+    items: "AMD ROCm · DeepSpeed · TPU · tensor parallelism · 4-bit and FP8 training · NCCL across multi-GPU machines · NVIDIA GPU workers on Kubernetes",
   },
   {
     label: "Planned",

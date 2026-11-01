@@ -141,3 +141,36 @@ is started on every host, as Lightning documents. Batches go through `MpDeviceLo
 batches copied to the device while the step runs), and evaluation uses `torch.no_grad`, as
 Lightning does on XLA. The simulated test covers one VM and a two-host pod.
 
+**Full public API (2026-11-01).** A comparison of Lightning's source (commit `84df182`) with
+`gpulayer.pytorch`, now `scripts/compare_lightning_api.py`, found the remaining gaps; all are
+closed, and the script reports none missing:
+
+- Trainer: `log_key_prefix`, `enable_autolog_hparams`, `suggest_integrations`, `init_module`
+  (with `empty_init`), `print`, `device_ids`, `distributed_sampler_kwargs`, the batch counts,
+  `received_sigterm`. `model_registry` (Lightning AI's cloud) is rejected with an error.
+- SIGTERM: `fit` saves a resumable checkpoint (mid-epoch if needed) and raises
+  `SIGTERMException`. Unlike Lightning, which broadcasts a flag every step, several processes
+  agree at log steps and epoch ends, so steps carry no extra synchronisation (ADR-0016).
+- Module: the eval/train mode hooks, `on_validation_model_zero_grad`, `strict_loading`,
+  `configure_sharded_model`, `to_tensorrt`. As in Lightning, the training loop no longer calls
+  `model.train()` every epoch: submodules keep their mode and evaluation restores each one.
+- Strategies: Lightning's `DDPStrategy` options (communication hooks, post-local SGD, backend,
+  timeout), `FSDPStrategy` options mapped onto FSDP2 (sharding strategies, wrap and activation
+  checkpointing policies, CPU offload, mixed-precision policy, sharded checkpoints),
+  `ModelParallelStrategy` (2D device mesh for tensor parallelism with FSDP2), DeepSpeed's
+  configuration arguments, and the base classes.
+- Plugins: `BitsandbytesPrecision`, `TransformerEnginePrecision`, `XLAPrecision`,
+  `FSDPPrecision`, `DeepSpeedPrecision`, `XLACheckpointIO`, `LayerSync`.
+- Callbacks, loggers, profilers: `Checkpoint`, `RichProgressBar`, `RichModelSummary`, the
+  missing arguments of `ModelCheckpoint`, `LearningRateMonitor`, `DeviceStatsMonitor` and
+  `ModelPruning`; `CometLogger`, `LitLogger`, the missing W&B, MLflow and TensorBoard options;
+  `XLAProfiler` and `PyTorchProfiler`'s options.
+- CLI: Lightning's constructor arguments and overridable methods, argument links, saved
+  configs, optimizers from the command line, subclass mode (standard library `argparse`).
+- Accelerator classes and `gpulayer.pytorch.utilities`.
+
+Habana HPUs stay out: Lightning removed them. Tests: the FSDP options, sharded checkpoints,
+tensor parallelism and DDP hooks run with two CPU processes; bitsandbytes, Transformer Engine,
+TensorRT, torch_xla and the hosted loggers run against fake packages. None of these new paths
+has run on GPUs yet.
+

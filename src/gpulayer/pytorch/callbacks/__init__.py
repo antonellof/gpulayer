@@ -6,7 +6,7 @@ trainer = Trainer(max_epochs=50, callbacks=[
 ])
 """
 
-from gpulayer.pytorch.callbacks.base import Callback, _call
+from gpulayer.pytorch.callbacks.base import Callback, Checkpoint, _call
 from gpulayer.pytorch.callbacks.monitor import EarlyStopping, ModelCheckpoint, OnExceptionCheckpoint
 from gpulayer.pytorch.callbacks.utility import (
     BasePredictionWriter,
@@ -16,6 +16,9 @@ from gpulayer.pytorch.callbacks.utility import (
     LearningRateMonitor,
     ModelSummary,
     ProgressBar,
+    RichModelSummary,
+    RichProgressBar,
+    RichProgressBarTheme,
     SpikeDetection,
     ThroughputMonitor,
     Timer,
@@ -36,6 +39,7 @@ __all__ = [
     "BaseFinetuning",
     "BasePredictionWriter",
     "Callback",
+    "Checkpoint",
     "DeviceStatsMonitor",
     "EMAWeightAveraging",
     "EarlyStopping",
@@ -47,6 +51,9 @@ __all__ = [
     "ModelSummary",
     "OnExceptionCheckpoint",
     "ProgressBar",
+    "RichModelSummary",
+    "RichProgressBar",
+    "RichProgressBarTheme",
     "SpikeDetection",
     "StochasticWeightAveraging",
     "TQDMProgressBar",

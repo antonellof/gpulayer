@@ -39,4 +39,14 @@ model:
 - `seed_everything` defaults to `true` (a recorded random seed); give a number or `false`.
 - `run=False` skips subcommands and builds `cli.model`, `cli.datamodule` and `cli.trainer`.
 
-Unlike Lightning's, it does not use `jsonargparse` and cannot link arguments between sections.
+- `--optimizer AdamW --optimizer.lr 1e-3` and `--lr_scheduler` define `configure_optimizers`
+  from the command line; `--model MyModel` picks a subclass (`subclass_mode_model=True`).
+- The resolved configuration is saved as `config.yaml` in the run's log folder
+  (`save_config_callback`).
+- Subclass the CLI and override Lightning's hooks (`add_arguments_to_parser`,
+  `before_instantiate_classes`, ...); `parser.link_arguments("data.num_classes",
+  "model.num_classes", apply_on="instantiate")` links sections.
+
+It uses the standard library's `argparse`, not `jsonargparse`: values are converted from the
+type annotations, and there are no environment-variable configs. `cli.config` is flat, not
+nested under the subcommand.

@@ -157,6 +157,12 @@ class Callback:
     ) -> None: ...
 
 
+class Checkpoint(Callback):
+    """Base class for checkpointing callbacks, as in Lightning. ``ModelCheckpoint`` and
+    ``OnExceptionCheckpoint`` subclass it; subclass it for your own checkpointing callback
+    so code that looks for checkpointing callbacks finds it."""
+
+
 def overrides(cb: Any, name: str) -> bool:
     if name in getattr(cb, "__dict__", {}):  # set on the instance (LambdaCallback)
         return True

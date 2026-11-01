@@ -5,6 +5,18 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Trainer: the rest of Lightning's public API (ADR-0024, "Full public API"), checked with the
+  new `scripts/compare_lightning_api.py`. Highlights: SIGTERM saves a resumable checkpoint
+  and raises `SIGTERMException`; `trainer.init_module()`; FSDP options (sharding strategies,
+  activation checkpointing, CPU offload, sharded checkpoints) and `ModelParallelStrategy`
+  (tensor parallelism); DDP communication hooks and post-local SGD; `BitsandbytesPrecision`
+  and `TransformerEnginePrecision`; `RichProgressBar`, `CometLogger`, `LitLogger`,
+  `XLAProfiler`; Lightning's CLI hooks, argument links and saved configs; accelerator classes
+  and `gpulayer.pytorch.utilities`. Tested on CPU (two processes for the distributed parts);
+  the GPU-only plugins and hosted loggers against fake packages.
+- Behaviour change, as in Lightning: the training loop no longer calls `model.train()` every
+  epoch, so frozen submodules stay in eval mode; evaluation restores each submodule's mode.
+  `fit` warns when the model is in eval mode at the start.
 - Trainer: `accelerator="tpu"` with `devices="auto"` trains on every TPU device of a TPU VM,
   as Lightning's `XLAStrategy` does (one process per device through `xmp.spawn`, gradients
   averaged by `xm.optimizer_step`, rank 0's checkpoint and metrics loaded in your process).

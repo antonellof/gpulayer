@@ -395,13 +395,25 @@ class BackboneFinetuning(BaseFinetuning):
 class ModelPruning(Callback):
     """Prune weights with ``torch.nn.utils.prune`` at the end of training epochs.
 
-    ``pruning_fn``: ``"l1_unstructured"``, ``"random_unstructured"`` or a ``prune`` function.
+    ``pruning_fn``: ``"l1_unstructured"``, ``"random_unstructured"``, ``"ln_structured"``,
+    ``"random_structured"``, a ``prune`` function, or a ``BasePruningMethod`` class (with
+    ``use_global_unstructured``). Structured functions remove whole slices along
+    ``pruning_dim`` (required) and ``ln_structured`` ranks them by the ``pruning_norm``
+    norm (required); they need ``use_global_unstructured=False``.
     ``parameters_to_prune``: ``[(module, "weight"), ...]``; by default every Linear and Conv
     weight. ``amount``: a fraction or count, or a function of the epoch. ``apply_pruning``: a
-    bool or a function of the epoch. With ``make_pruning_permanent`` the masks are folded
-    into the weights at the end of training, and checkpoints always hold plain weights."""
+    bool or a function of the epoch. ``prune_on_train_epoch_end=False`` prunes after
+    validation instead.
 
-    _FNS = ("l1_unstructured", "random_unstructured")
+    ``use_lottery_ticket_hypothesis`` (a bool or a function of the epoch) resets the weights
+    that remain after pruning to their values from before training (the "winning ticket" of
+    Frankle and Carbin), or, with ``resample_parameters``, to a fresh initialisation from
+    the layer's ``reset_parameters``. It is off by default (Lightning's default is on).
+
+    With ``make_pruning_permanent`` the masks are folded into the weights at the end of
+    training, and checkpoints always hold plain weights."""
+
+    _FNS = ("l1_unstructured", "random_unstructured", "ln_structured", "random_structured")
 
     def __init__(
         self,
@@ -412,30 +424,68 @@ class ModelPruning(Callback):
         amount: float | int | Callable[[int], float | int] = 0.5,
         apply_pruning: bool | Callable[[int], bool] = True,
         make_pruning_permanent: bool = True,
-        prune_on_train_epoch_end: bool = True,
+        use_lottery_ticket_hypothesis: bool | Callable[[int], bool] = False,
+        resample_parameters: bool = False,
+        pruning_dim: int | None = None,
+        pruning_norm: int | float | None = None,
         verbose: int = 0,
+        prune_on_train_epoch_end: bool = True,
     ) -> None:
+        import functools
+
         from torch.nn.utils import prune
 
+        self._global_kwargs: dict[str, Any] = {}
         if isinstance(pruning_fn, str):
+            pruning_fn = pruning_fn.lower()
             if pruning_fn not in self._FNS:
                 raise ValidationFailed(f"pruning_fn must be one of {self._FNS} or a function")
-            self._global_method = (
-                prune.L1Unstructured
-                if pruning_fn == "l1_unstructured"
-                else prune.RandomUnstructured
-            )
-            self._fn = getattr(prune, pruning_fn)
-        else:
-            self._global_method = None  # type: ignore[assignment]
+            kwargs: dict[str, Any] = {}
+            if pruning_fn.endswith("_structured"):
+                if use_global_unstructured:
+                    raise ValidationFailed(
+                        f"{pruning_fn} is structured: pass use_global_unstructured=False"
+                    )
+                if pruning_dim is None:
+                    raise ValidationFailed(f"{pruning_fn} needs pruning_dim")
+                if pruning_fn == "ln_structured":
+                    if pruning_norm is None:
+                        raise ValidationFailed("ln_structured needs pruning_norm")
+                    kwargs["n"] = pruning_norm
+                kwargs["dim"] = pruning_dim
+            methods = {
+                "l1_unstructured": prune.L1Unstructured,
+                "random_unstructured": prune.RandomUnstructured,
+            }
+            self._global_method: Any = methods.get(pruning_fn)
+            self._fn: Callable[..., Any] = functools.partial(getattr(prune, pruning_fn), **kwargs)
+            self._global = use_global_unstructured
+        elif isinstance(pruning_fn, type) and issubclass(pruning_fn, prune.BasePruningMethod):
+            if not use_global_unstructured:
+                raise ValidationFailed(
+                    "a BasePruningMethod class needs use_global_unstructured=True"
+                )
+            if getattr(pruning_fn, "PRUNING_TYPE", None) != "unstructured":
+                raise ValidationFailed(
+                    "use_global_unstructured needs an unstructured BasePruningMethod"
+                )
+            self._global_method = pruning_fn
             self._fn = pruning_fn
+            self._global = True
+        else:
+            self._global_method = None
+            self._fn = pruning_fn
+            self._global = False
         self._params = parameters_to_prune
         self._names = parameter_names or ["weight"]
-        self._global = use_global_unstructured and isinstance(pruning_fn, str)
         self.amount = amount
         self.apply_pruning = apply_pruning
         self.make_pruning_permanent = make_pruning_permanent
+        self.use_lottery_ticket_hypothesis = use_lottery_ticket_hypothesis
+        self.resample_parameters = resample_parameters
+        self.prune_on_train_epoch_end = prune_on_train_epoch_end
         self.verbose = verbose
+        self._original_layers: dict[int, nn.Module] | None = None
 
     def _targets(self, pl_module: Module) -> list[tuple[nn.Module, str]]:
         if self._params is not None:
@@ -449,6 +499,51 @@ class ModelPruning(Callback):
             if getattr(m, n, None) is not None
         ]
 
+    def setup(self, trainer: Trainer, pl_module: Module, stage: str) -> None:
+        if stage != "fit" or self.use_lottery_ticket_hypothesis is False:
+            return
+        # A copy of every pruned layer as it is before training, read only after pruning.
+        import copy
+
+        self._original_layers = {}
+        for m, _ in self._targets(pl_module):
+            self._original_layers.setdefault(id(m), copy.deepcopy(m))
+
+    def apply_lottery_ticket_hypothesis(self, pl_module: Module) -> None:
+        """Reset the weights that remain after pruning to their values from before training
+        (or, with ``resample_parameters``, to a new initialisation). The masks are kept, so
+        pruned weights stay zero."""
+        if self._original_layers is None:
+            raise ValidationFailed(
+                "apply_lottery_ticket_hypothesis needs use_lottery_ticket_hypothesis set "
+                "when training starts"
+            )
+        import copy
+
+        sources: dict[int, nn.Module] = {}
+        for m, n in self._targets(pl_module):
+            original = self._original_layers.get(id(m))
+            if original is None:
+                continue
+            src_layer = sources.get(id(m))
+            if src_layer is None:
+                src_layer = original
+                reset = getattr(original, "reset_parameters", None)
+                if self.resample_parameters and callable(reset):
+                    src_layer = copy.deepcopy(original)  # keep the original values
+                    src_layer.reset_parameters()  # type: ignore[operator]
+                sources[id(m)] = src_layer
+            dst = getattr(m, n + "_orig", None)
+            if dst is None:
+                dst = getattr(m, n, None)
+            src = getattr(src_layer, n, None)
+            if isinstance(dst, torch.Tensor) and isinstance(src, torch.Tensor):
+                with torch.no_grad():
+                    dst.copy_(src.to(device=dst.device, dtype=dst.dtype))
+                mask = getattr(m, n + "_mask", None)
+                if mask is not None:  # what the pruning hook computes before each forward
+                    setattr(m, n, dst * mask)
+
     def apply(self, pl_module: Module, amount: float | int) -> None:
         """Prune ``amount`` (a fraction or a count) of the target weights now."""
         from torch.nn.utils import prune
@@ -460,18 +555,34 @@ class ModelPruning(Callback):
             for m, n in targets:
                 self._fn(m, n, amount=amount)
 
-    def on_train_epoch_end(self, trainer: Trainer, pl_module: Module) -> None:
+    def _run_pruning(self, trainer: Trainer, pl_module: Module) -> None:
         epoch = trainer.current_epoch
         apply = self.apply_pruning(epoch) if callable(self.apply_pruning) else self.apply_pruning
         if not apply:
             return
         amount = self.amount(epoch) if callable(self.amount) else self.amount
-        if amount:
-            self.apply(pl_module, amount)
-            if self.verbose:
-                zeros = sum(int((getattr(m, n) == 0).sum()) for m, n in self._targets(pl_module))
-                total = sum(getattr(m, n).numel() for m, n in self._targets(pl_module))
-                trainer._say(f"[gpulayer] pruned to {zeros / max(total, 1):.1%} zeros")
+        if not amount:
+            return
+        self.apply(pl_module, amount)
+        lth = self.use_lottery_ticket_hypothesis
+        if lth(epoch) if callable(lth) else lth:
+            self.apply_lottery_ticket_hypothesis(pl_module)
+        if self.verbose:
+            zeros = sum(int((getattr(m, n) == 0).sum()) for m, n in self._targets(pl_module))
+            total = sum(getattr(m, n).numel() for m, n in self._targets(pl_module))
+            trainer._say(f"[gpulayer] pruned to {zeros / max(total, 1):.1%} zeros")
+
+    def on_train_epoch_end(self, trainer: Trainer, pl_module: Module) -> None:
+        if self.prune_on_train_epoch_end:
+            self._run_pruning(trainer, pl_module)
+
+    def on_validation_epoch_end(self, trainer: Trainer, pl_module: Module) -> None:
+        if (
+            not self.prune_on_train_epoch_end
+            and not trainer.sanity_checking
+            and trainer.state.fn == "fit"
+        ):
+            self._run_pruning(trainer, pl_module)
 
     def make_permanent(self, pl_module: Module) -> None:
         """Fold the pruning masks into the weights and remove the pruning hooks."""

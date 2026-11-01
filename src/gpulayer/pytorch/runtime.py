@@ -196,6 +196,15 @@ def _fsdp_modules(model: nn.Module) -> list[Any]:
     return [m for m in model.modules() if isinstance(m, FSDPModule)]
 
 
+def _has_dtensor(model: nn.Module) -> bool:
+    """True when some parameter is a DTensor (tensor parallelism)."""
+    try:
+        from torch.distributed.tensor import DTensor
+    except ImportError:
+        return False
+    return any(isinstance(p, DTensor) for p in model.parameters())
+
+
 @contextlib.contextmanager
 def _fsdp_no_sync(modules: list[Any]) -> Iterator[None]:
     for m in modules:
@@ -228,6 +237,11 @@ class Runtime:
             )
         self.gradient_sync = gradient_sync
         self._two_level: Any = None
+        # Set by the Trainer from its strategy: a DDPStrategy with a communication hook, and
+        # (size, rank) of this process's data-parallel group when it differs from the world
+        # (ModelParallelStrategy: tensor-parallel ranks read the same data).
+        self.comm_strategy: Any = None
+        self.data_parallel: tuple[int, int] | None = None
         self.accelerator = resolve_accelerator(accelerator)
         self.precision = precision
         self.world_size = int(os.environ.get("WORLD_SIZE", "1"))
@@ -268,6 +282,9 @@ class Runtime:
             self.device = torch.device(self.accelerator)
         self._owns_group = False
         self._autocast: _ReusedAutocast | None = None
+        # Set by a precision plugin that runs forwards in its own context (Transformer Engine's
+        # fp8_autocast); called once per forward.
+        self.forward_context: Any = None
         self.scaler = torch.amp.GradScaler("cuda") if precision == "16-mixed" else None
 
     # ---------------------------------------------------------------- topology
@@ -282,16 +299,21 @@ class Runtime:
         """True in the process with global rank 0."""
         return self.global_rank == 0
 
-    def setup(self) -> Runtime:
+    def setup(self, backend: str | None = None, timeout: Any = None) -> Runtime:
         """Select the GPU of this process and start the process group when distributed (NCCL on
-        GPUs, gloo otherwise). Returns self."""
+        GPUs, gloo otherwise, or ``backend``; ``timeout`` for its collectives). Returns self."""
         if self.gpu:
             torch.cuda.set_device(self.device)
         if self.distributed and not self.xla and not dist.is_initialized():
             # TPU processes need no process group: reductions use torch_xla's collectives
             # (xla_all_reduce), which also span the hosts of a TPU pod, as in Lightning.
-            backend = os.environ.get("GPULAYER_COMM_BACKEND") or ("nccl" if self.gpu else "gloo")
-            dist.init_process_group(backend)
+            backend = (
+                backend
+                or os.environ.get("GPULAYER_COMM_BACKEND")
+                or ("nccl" if self.gpu else "gloo")
+            )
+            kwargs = {"timeout": timeout} if timeout is not None else {}
+            dist.init_process_group(backend, **kwargs)
             self._owns_group = True
         return self
 
@@ -323,6 +345,9 @@ class Runtime:
         from torch.nn.parallel import DistributedDataParallel as DDP
 
         ddp = DDP(model, device_ids=[self.local_rank] if self.gpu else None, **self.ddp_kwargs)
+        strategy = self.comm_strategy
+        if strategy is not None and strategy.register_comm_hook(ddp):
+            return ddp  # the user's hook replaces two-level sync (DDP takes one hook)
         if self.uses_two_level_sync():
             from gpulayer.pytorch.hierarchical import HierarchicalAllReduce
 
@@ -364,8 +389,9 @@ class Runtime:
                 )
         if loader.batch_size is None:
             raise ValidationFailed("cannot shard a DataLoader that uses a batch_sampler")
+        replicas, rank = self.data_parallel or (self.world_size, self.global_rank)
         sampler: DistributedSampler[Any] = DistributedSampler(
-            loader.dataset, num_replicas=self.world_size, rank=self.global_rank, shuffle=shuffle
+            loader.dataset, num_replicas=replicas, rank=rank, shuffle=shuffle
         )
         return DataLoader(
             loader.dataset,
@@ -377,18 +403,20 @@ class Runtime:
             drop_last=loader.drop_last,
         )
 
-    def shard(self, model: nn.Module) -> nn.Module:
+    def shard(self, model: nn.Module, options: Any = None) -> nn.Module:
         """FSDP (experimental): shard the parameters of every submodule that owns them across
         all ranks, so each rank holds about 1/world_size of the model, and make ``model`` the
         FSDP root. Call ``model`` (its forward) every step, so the root's hooks run and the
         submodules release their gathered parameters after their forward. Call this before
-        creating the optimizer. A no-op in a single process."""
+        creating the optimizer. A no-op in a single process and on TPUs. ``options`` is an
+        ``FSDPStrategy`` (sharding strategy, wrap and activation checkpointing policies, CPU
+        offload, mixed precision)."""
         model.to(self.device)
         if not self.distributed or self.xla:
-            # On TPUs xm.optimizer_step all-reduces the gradients itself (as in Lightning's
-            # XLAStrategy), over the TPU interconnect; DDP is not used.
             return model
-        if next(model.parameters(recurse=False), None) is not None:
+        if (options is None or options.auto_wrap_policy is None) and next(
+            model.parameters(recurse=False), None
+        ) is not None:
             raise ValidationFailed(
                 "strategy='fsdp' shards submodules; move parameters the model owns directly "
                 "(nn.Parameter attributes) into a submodule such as nn.Linear"
@@ -396,14 +424,88 @@ class Runtime:
         from torch.distributed.device_mesh import init_device_mesh
         from torch.distributed.fsdp import fully_shard
 
-        # An explicit mesh: without one, FSDP picks the accelerator device itself.
-        mesh = init_device_mesh(self.device.type, (self.world_size,))
-        # Children before parents (reverse of pre-order), each module that owns parameters.
+        kwargs: dict[str, Any] = dict(getattr(options, "kwargs", {}) or {})
+        strategy = getattr(options, "sharding_strategy", "FULL_SHARD")
+        if strategy in ("HYBRID_SHARD", "NO_SHARD"):
+            # 2D mesh: replicate across the first dimension, shard across the second.
+            shape = getattr(options, "device_mesh", None)
+            if strategy == "NO_SHARD":
+                shape = (self.world_size, 1)
+            elif shape is None:
+                shape = (self.world_size // self.local_world_size, self.local_world_size)
+            if not isinstance(shape, tuple):
+                mesh = shape  # a DeviceMesh given by the user
+            else:
+                if shape[0] * shape[1] != self.world_size:
+                    raise ValidationFailed(
+                        f"device_mesh {shape} does not match {self.world_size} processes"
+                    )
+                mesh = init_device_mesh(
+                    self.device.type, shape, mesh_dim_names=("replicate", "shard")
+                )
+        else:
+            # An explicit mesh: without one, FSDP picks the accelerator device itself.
+            mesh = init_device_mesh(self.device.type, (self.world_size,))
+        if strategy == "SHARD_GRAD_OP":
+            kwargs.setdefault("reshard_after_forward", False)
+        if getattr(options, "cpu_offload", False):
+            from torch.distributed.fsdp import CPUOffloadPolicy
+
+            kwargs.setdefault("offload_policy", CPUOffloadPolicy())
+        if getattr(options, "mixed_precision", None) is not None:
+            kwargs.setdefault("mp_policy", options.mixed_precision)
+        ckpt_classes = getattr(options, "activation_checkpointing_policy", None)
+        if ckpt_classes:
+            from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
+                apply_activation_checkpointing,
+            )
+
+            check = (
+                (lambda m: isinstance(m, ckpt_classes))
+                if isinstance(ckpt_classes, tuple)
+                else ckpt_classes
+            )
+            apply_activation_checkpointing(model, check_fn=check)
+        should = (
+            options.should_shard
+            if options is not None
+            else (lambda m: next(m.parameters(recurse=False), None) is not None)
+        )
+        # Children before parents (reverse of pre-order).
         for m in reversed(list(model.modules())[1:]):
-            if next(m.parameters(recurse=False), None) is not None:
-                fully_shard(m, mesh=mesh)
-        fully_shard(model, mesh=mesh)  # the root: owns no parameters, runs every step
+            if should(m):
+                fully_shard(m, mesh=mesh, **kwargs)
+        fully_shard(model, mesh=mesh, **kwargs)  # the root: runs every step
         return model
+
+    def save_sharded(
+        self, model: nn.Module, optimizers: list[Any], path: Path, meta: dict[str, Any]
+    ) -> None:
+        """A sharded checkpoint: the folder ``path`` with each rank's part of the model and
+        optimizer state (``torch.distributed.checkpoint``) and ``meta.pt`` with everything else.
+        A collective: call it on every rank."""
+        import torch.distributed.checkpoint as dcp
+        from torch.distributed.checkpoint.state_dict import get_state_dict
+
+        msd, osd = get_state_dict(model, optimizers)
+        dcp.save({"model": msd, "optimizers": osd}, checkpoint_id=str(path))
+        if self.is_global_zero:
+            torch.save(meta, path / "meta.pt")
+        self.barrier()
+
+    def load_sharded(self, model: nn.Module, optimizers: list[Any], path: Path) -> dict[str, Any]:
+        """Load a sharded checkpoint into ``model`` and ``optimizers`` (each rank reads its own
+        part) and return ``meta.pt``. A collective."""
+        import torch.distributed.checkpoint as dcp
+        from torch.distributed.checkpoint.state_dict import get_state_dict, set_state_dict
+
+        msd, osd = get_state_dict(model, optimizers)
+        state: dict[str, Any] = {"model": msd, "optimizers": osd}
+        dcp.load(state, checkpoint_id=str(path))
+        set_state_dict(
+            model, optimizers, model_state_dict=state["model"], optim_state_dict=state["optimizers"]
+        )
+        return dict(torch.load(path / "meta.pt", map_location="cpu", weights_only=False))
 
     def no_sync(
         self, model: nn.Module, enabled: bool = True
@@ -424,7 +526,7 @@ class Runtime:
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Unsharded model and optimizer state on the CPU. With FSDP this is a collective:
         call it on every rank."""
-        if not _fsdp_modules(model):
+        if not _fsdp_modules(model) and not _has_dtensor(model):
             return model.state_dict(), optimizer.state_dict()
         from torch.distributed.checkpoint.state_dict import (
             StateDictOptions,
@@ -446,7 +548,7 @@ class Runtime:
         optim_state: dict[str, Any],
     ) -> None:
         """Load an unsharded checkpoint into a (possibly sharded) model and optimizer."""
-        if not _fsdp_modules(model):
+        if not _fsdp_modules(model) and not _has_dtensor(model):
             model.load_state_dict(model_state)
             optimizer.load_state_dict(optim_state)
             return
@@ -559,9 +661,18 @@ class Runtime:
 
     def autocast(self) -> contextlib.AbstractContextManager[Any]:
         """The mixed-precision context for the forward pass (a no-op for 32-true and "-true"
-        precisions)."""
+        precisions), inside a precision plugin's context when one is set."""
+        if self.forward_context is not None:
+            stack = contextlib.ExitStack()
+            stack.enter_context(self.forward_context())
+            if self.precision not in ("32-true",) and self.param_dtype is None:
+                stack.enter_context(self._mixed())
+            return stack
         if self.precision == "32-true" or self.param_dtype is not None:
             return _NOOP
+        return self._mixed()
+
+    def _mixed(self) -> contextlib.AbstractContextManager[Any]:
         if self._autocast is None:
             dtype = torch.bfloat16 if self.precision == "bf16-mixed" else torch.float16
             self._autocast = _ReusedAutocast(self.device.type, dtype)

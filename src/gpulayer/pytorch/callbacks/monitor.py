@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from gpulayer.errors import ValidationFailed
-from gpulayer.pytorch.callbacks.base import Callback
+from gpulayer.pytorch.callbacks.base import Callback, Checkpoint
 
 if TYPE_CHECKING:
     from gpulayer.pytorch.module import Module
@@ -146,7 +146,7 @@ class EarlyStopping(_Monitor):
 _FORMAT = re.compile(r"\{([^{}:]+)(:[^{}]*)?\}")
 
 
-class ModelCheckpoint(_Monitor):
+class ModelCheckpoint(_Monitor, Checkpoint):
     """Save checkpoints of the best results by ``monitor`` (written by rank 0).
 
     - ``save_top_k=1`` (default) keeps the best as ``checkpoints/<filename>``;
@@ -160,6 +160,12 @@ class ModelCheckpoint(_Monitor):
       ``every_n_train_steps`` optimizer steps, or every ``train_time_interval``.
     - ``save_last=True`` also writes ``last.ckpt`` each time it checks.
     - ``save_weights_only=True`` leaves the optimizer state out.
+    - ``save_on_exception=True`` also saves when training stops with an exception
+      (including Ctrl+C), under the name ``filename`` gives at that point, or
+      ``<stem>-on_exception.ckpt`` when that name is a plain file name or one of the kept
+      best files (so the best checkpoint is never overwritten); with ``save_last`` it also
+      writes ``last.ckpt``. Single-process runs only: with several processes the others
+      may be inside a collective, so nothing is saved.
 
     ``best_model_path`` points at the best file afterwards, also when training ran on
     GPUlayer workers; ``best_k_models`` maps each kept file to its score.
@@ -185,6 +191,7 @@ class ModelCheckpoint(_Monitor):
         save_on_train_epoch_end: bool | None = None,
         enable_version_counter: bool = True,
         min_delta: float = 0.0,
+        save_on_exception: bool = False,
     ) -> None:
         super().__init__(monitor, mode, min_delta)
         filename = filename or "best.ckpt"
@@ -205,6 +212,8 @@ class ModelCheckpoint(_Monitor):
         self.save_last = save_last
         self.save_top_k = save_top_k
         self.save_weights_only = save_weights_only
+        self.save_on_exception = save_on_exception
+        self._last_global_step_saved = 0
         self.auto_insert_metric_name = auto_insert_metric_name
         self.every_n_train_steps = every_n_train_steps
         self.train_time_interval = train_time_interval
@@ -305,6 +314,7 @@ class ModelCheckpoint(_Monitor):
                 weights_only=self.save_weights_only,
                 dirpath=self.dirpath,
             )
+            self._last_global_step_saved = trainer.global_step
             if path is not None:
                 self.last_model_path = path
 
@@ -344,6 +354,7 @@ class ModelCheckpoint(_Monitor):
         path = trainer.save_checkpoint(
             name, weights_only=self.save_weights_only, dirpath=self.dirpath
         )
+        self._last_global_step_saved = trainer.global_step
         if path is None:  # not rank 0
             return
         folder = path.parent
@@ -376,6 +387,46 @@ class ModelCheckpoint(_Monitor):
     def on_train_epoch_end(self, trainer: Trainer, pl_module: Module) -> None:
         if self.every_n_epochs and (trainer.current_epoch + 1) % self.every_n_epochs == 0:
             self._check(trainer, pl_module)
+
+    def on_exception(self, trainer: Trainer, pl_module: Module, exception: BaseException) -> None:
+        """With ``save_on_exception``, save a checkpoint when training stops with an
+        exception (not during the sanity check or ``fast_dev_run``, and not again for a step
+        already saved)."""
+        if (
+            not self.save_on_exception
+            or trainer.fast_dev_run
+            or trainer.sanity_checking
+            or self._last_global_step_saved == trainer.global_step
+            # Only safe in one process: other ranks may be inside a collective.
+            or trainer.world_size > 1
+        ):
+            return
+        metrics = {
+            **trainer.callback_metrics,
+            "epoch": trainer.current_epoch,
+            "step": trainer.global_step,
+        }
+        name = self.format_checkpoint_name(metrics)
+        if not self._templated() or name in self._scores:
+            stem = self.filename.split("{", 1)[0].removesuffix(self.FILE_EXTENSION).rstrip("-_")
+            name = f"{stem or 'checkpoint'}-on_exception{self.FILE_EXTENSION}"
+        path = trainer.save_checkpoint(
+            name, weights_only=self.save_weights_only, dirpath=self.dirpath
+        )
+        if self.save_last:
+            last = trainer.save_checkpoint(
+                self.CHECKPOINT_NAME_LAST + self.FILE_EXTENSION,
+                weights_only=self.save_weights_only,
+                dirpath=self.dirpath,
+            )
+            if last is not None:
+                self.last_model_path = last
+        self._last_global_step_saved = trainer.global_step
+        if path is not None:
+            trainer._say(
+                f"[gpulayer] {type(exception).__name__} raised ({exception}); "
+                f"saved checkpoint to {path}"
+            )
 
     def on_fit_end(self, trainer: Trainer, pl_module: Module) -> None:
         if self.best_model_path is not None or trainer.launch_result is None:
@@ -416,7 +467,7 @@ class ModelCheckpoint(_Monitor):
 RESUME_NAME = "gpulayer-resume.ckpt"
 
 
-class OnExceptionCheckpoint(Callback):
+class OnExceptionCheckpoint(Checkpoint):
     """Save a checkpoint when training stops with an exception (including Ctrl+C), so it can
     be resumed with ``fit(ckpt_path=...)``."""
 

@@ -86,7 +86,7 @@ The common ones; all of them, with Lightning's names, are in the [API reference]
 | `max_epochs`, `max_steps`, `max_time` | `1`, `None`, `None` | when to stop (Lightning's `max_epochs` default is 1000) |
 | `accelerator` | `"auto"` | `"cpu"`, `"cuda"`, `"mps"`, `"rocm"`, `"tpu"` or `"auto"` (the device granted to the job, else CUDA, then MPS, then CPU) |
 | `devices`, `num_nodes` | `1`, `1` | processes per machine (one GPU each) and machines; more than one launches a job |
-| `strategy` | `"ddp"` | `"ddp"`, `glt.DDPStrategy(...)`, `"fsdp"` ([experimental](#fsdp-experimental)), `"deepspeed_stage_2"` and the other DeepSpeed names ([not yet run](#deepspeed-and-tpu)) |
+| `strategy` | `"ddp"` | `"ddp"`, `glt.DDPStrategy(...)`, `"fsdp"` or `glt.FSDPStrategy(...)` ([experimental](#fsdp-experimental)), `glt.ModelParallelStrategy(...)` ([tensor parallelism](#tensor-parallelism-experimental)), `"deepspeed_stage_2"` and the other DeepSpeed names ([not yet run](#deepspeed-and-tpu)) |
 | `precision` | `"32-true"` | `"bf16-mixed"`, `"16-mixed"` (CUDA), or `"bf16-true"`, `"16-true"`, `"64-true"` |
 | `target` | `None` | `None` runs here when possible; `"local"`, `"remote"` or `"cloud"` always submits a job |
 | `callbacks`, `logger`, `profiler`, `plugins` | | see [Callbacks, loggers and profilers](callbacks.md) |
@@ -101,7 +101,9 @@ The common ones; all of them, with Lightning's names, are in the [API reference]
 | `default_root_dir` | `"gpulayer_runs"` | where checkpoints and downloaded outputs go |
 | `launch_options` | `{}` | extra [`launch()`](launch.md) arguments, e.g. `{"timeout_seconds": 3600}` |
 
-A `torch.compile`d model trains compiled, with its own compile options. Unsupported
+`log_key_prefix`, `enable_autolog_hparams` and Lightning's other arguments are accepted with
+the same meaning ([API reference](api.md#trainer)). A `torch.compile`d model trains compiled,
+with its own compile options. Unsupported
 combinations (for example `"16-mixed"` on MPS, or `accelerator="auto"` with `target="remote"`)
 fail with an error instead of doing something else.
 
@@ -170,12 +172,66 @@ Training takes a list or dict of loaders (or a `glt.CombinedLoader`; default mod
 `max_size_cycle`). Validation, test and predict take a list: the step receives
 `dataloader_idx`, and logged names get a `/dataloader_idx_N` suffix.
 
+## Preemption and cancellation
+
+On SIGTERM (a spot VM being reclaimed, a cancelled job) `fit` saves `checkpoints/last.ckpt`,
+mid-epoch if needed, and raises `glt.SIGTERMException`; `fit(..., ckpt_path=...)` continues
+from the next batch. One process checks after every batch; several agree at log steps and
+epoch ends, so no step pays for an extra synchronisation.
+
+## DDP options
+
+`glt.DDPStrategy` takes Lightning's options: `ddp_comm_hook` (for example
+`default_hooks.fp16_compress_hook`, half the bytes per gradient exchange; it replaces two-level
+sync), `model_averaging_period` with a `PostLocalSGDState` (post-local SGD),
+`process_group_backend` and `timeout`. Tested with two CPU processes.
+
 ## FSDP (experimental)
 
 `strategy="fsdp"` shards each submodule's parameters, gradients and optimizer state across
 processes with PyTorch's FSDP2, so each holds about 1/N of the model. The Module's parameters
-must live in submodules; precision `32-true` or `bf16-mixed`. Checkpoints hold full weights. It
-trained over NCCL on 2 and 8 T4 machines like DDP; its speed and large models are not measured.
+must live in submodules. It trained over NCCL on 2 and 8 T4 machines like DDP; its speed and
+large models are not measured.
+
+```python
+glt.FSDPStrategy(
+    sharding_strategy="HYBRID_SHARD",        # shard within a machine, replicate across them
+    auto_wrap_policy={Block},                 # shard each Block as one unit
+    activation_checkpointing_policy={Block},  # recompute Block activations in backward
+    cpu_offload=False,
+    state_dict_type="sharded",                # each rank writes its part: no gather on rank 0
+)
+```
+
+Sharded checkpoints are folders (`last.ckpt/`); `ckpt_path` and `load_from_checkpoint` read
+them, and a launched job ships them to its workers. Across machines they need a shared
+filesystem, as in Lightning. The options above are tested with two CPU processes, not GPUs.
+
+## Tensor parallelism (experimental)
+
+`glt.ModelParallelStrategy(tensor_parallel_size=...)` gives the Module a
+`(data_parallel, tensor_parallel)` device mesh, by default tensor parallel inside each machine.
+Apply the plan in `configure_model`, as in Lightning:
+
+```python
+def configure_model(self):
+    tp = self.device_mesh["tensor_parallel"]
+    parallelize_module(self.block, tp, {"a": ColwiseParallel(), "b": RowwiseParallel()})
+    fully_shard(self, mesh=self.device_mesh["data_parallel"])
+```
+
+Each data-parallel group reads its own shard of the data. Tested with two CPU processes.
+
+## Large models: init, quantization, FP8
+
+- `with trainer.init_module(): model = Model()` builds the weights on the training device in
+  the precision's dtype; `empty_init=True` skips their initialisation before a checkpoint loads.
+- `plugins=[glt.BitsandbytesPrecision("nf4-dq")]` quantizes `nn.Linear` layers to 4 or 8 bits
+  (needs `bitsandbytes` and CUDA).
+- `plugins=[glt.TransformerEnginePrecision()]` trains in FP8 on Hopper or Ada GPUs (needs
+  `transformer_engine`).
+
+The two plugins are tested with fake packages only.
 
 ## DeepSpeed and TPU
 

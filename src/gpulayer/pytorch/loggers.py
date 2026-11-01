@@ -6,18 +6,43 @@
 The Trainer calls ``log_metrics`` on rank 0 only, on logged steps (``log_every_n_steps``) and at
 the end of each epoch and validation, with values it already read for its own log line: a
 logger adds no device synchronisation. ``log_hyperparams`` receives ``model.hparams``.
-TensorBoard, Weights & Biases and MLflow need their packages installed.
+TensorBoard, Weights & Biases, MLflow and Comet need their packages installed. Methods a user
+may call from a step (``WandbLogger.log_image``, ``watch``, ...) do nothing outside rank 0.
 """
 
 from __future__ import annotations
 
+import contextlib
 import csv
+import functools
+import inspect
 import json
 import os
+import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from gpulayer.errors import ValidationFailed
+
+T = TypeVar("T")
+
+
+def _global_rank() -> int:
+    for key in ("RANK", "SLURM_PROCID", "LOCAL_RANK"):
+        if key in os.environ:
+            return int(os.environ[key])
+    return 0
+
+
+def _rank_zero(fn: Callable[..., T]) -> Callable[..., T | None]:
+    """Run ``fn`` in the process with global rank 0 only; elsewhere return None."""
+
+    @functools.wraps(fn)
+    def wrapped(*args: Any, **kwargs: Any) -> T | None:
+        return fn(*args, **kwargs) if _global_rank() == 0 else None
+
+    return wrapped
 
 
 class Logger:
@@ -122,9 +147,14 @@ class CSVLogger(Logger):
         return str(self._root)
 
     @property
+    def root_dir(self) -> str:
+        """``<save_dir>/<name>``: the parent of every ``version_<n>`` directory."""
+        return str(self._root / self._name)
+
+    @property
     def log_dir(self) -> str:
         v = self.version
-        return str(self._root / self._name / (v if isinstance(v, str) else f"version_{v}"))
+        return str(Path(self.root_dir) / (v if isinstance(v, str) else f"version_{v}"))
 
     def log_hyperparams(self, params: dict[str, Any]) -> None:
         d = Path(self.log_dir)
@@ -154,7 +184,8 @@ class CSVLogger(Logger):
 
 
 class TensorBoardLogger(Logger):
-    """TensorBoard event files in ``<save_dir>/<name>/version_<n>`` (needs ``tensorboard``)."""
+    """TensorBoard event files in ``<save_dir>/<name>/version_<n>[/<sub_dir>]`` (needs
+    ``tensorboard``). ``sub_dir`` may use ``~`` and environment variables."""
 
     def __init__(
         self,
@@ -164,6 +195,7 @@ class TensorBoardLogger(Logger):
         log_graph: bool = False,
         default_hp_metric: bool = True,
         prefix: str = "",
+        sub_dir: str | Path | None = None,
         **kwargs: Any,
     ) -> None:
         self._root = Path(save_dir)
@@ -171,6 +203,7 @@ class TensorBoardLogger(Logger):
         self._version = version
         self._log_graph = log_graph
         self._prefix = prefix
+        self._sub_dir = None if sub_dir is None else os.fspath(sub_dir)
         self._kwargs = kwargs
         self._writer: Any = None
 
@@ -189,9 +222,22 @@ class TensorBoardLogger(Logger):
         return str(self._root)
 
     @property
+    def root_dir(self) -> str:
+        """``<save_dir>/<name>``: the parent of every ``version_<n>`` directory."""
+        return str(self._root / self._name)
+
+    @property
+    def sub_dir(self) -> str | None:
+        """Subdirectory of the version directory the event files go to, or None."""
+        return self._sub_dir
+
+    @property
     def log_dir(self) -> str:
         v = self.version
-        return str(self._root / self._name / (v if isinstance(v, str) else f"version_{v}"))
+        d = os.path.join(self.root_dir, v if isinstance(v, str) else f"version_{v}")
+        if self._sub_dir is not None:
+            d = os.path.join(d, self._sub_dir)
+        return os.path.expanduser(os.path.expandvars(d))
 
     @property
     def experiment(self) -> Any:
@@ -227,31 +273,52 @@ class TensorBoardLogger(Logger):
 
 
 class WandbLogger(Logger):
-    """Weights & Biases (needs ``wandb`` and a login). Arguments go to ``wandb.init``."""
+    """Weights & Biases (needs ``wandb`` and a login). Extra arguments go to ``wandb.init``.
+
+    ``experiment`` reuses a run you already started. ``log_model=True`` uploads each saved
+    checkpoint as a ``model`` artifact named ``checkpoint_name`` (default ``model-<run id>``)
+    with the alias ``latest``; ``add_file_policy`` is passed to ``Artifact.add_file``."""
 
     def __init__(
         self,
         name: str | None = None,
-        save_dir: str | Path = ".",
+        save_dir: str | Path | None = ".",
         version: str | None = None,
         offline: bool = False,
+        dir: str | Path | None = None,
+        id: str | None = None,
+        anonymous: bool | None = None,
         project: str | None = None,
         log_model: bool = False,
+        experiment: Any = None,
         prefix: str = "",
+        checkpoint_name: str | None = None,
+        add_file_policy: str = "mutable",
         **kwargs: Any,
     ) -> None:
+        if offline and log_model:
+            raise ValidationFailed(
+                "WandbLogger: log_model=True cannot upload checkpoints with offline=True"
+            )
+        if add_file_policy not in ("mutable", "immutable"):
+            raise ValidationFailed("WandbLogger: add_file_policy must be 'mutable' or 'immutable'")
+        root = save_dir if save_dir is not None else dir
         self._init = {
             "name": name,
-            "dir": str(save_dir),
-            "id": version,
+            "dir": None if root is None else os.fspath(root),
+            "id": version or id,
             "project": project or os.environ.get("WANDB_PROJECT", "gpulayer"),
             "mode": "offline" if offline else None,
+            "resume": "allow",
+            "anonymous": "allow" if anonymous else None,
             **kwargs,
         }
         self._init = {k: v for k, v in self._init.items() if v is not None}
         self._prefix = prefix
         self._log_model = log_model
-        self._run: Any = None
+        self._checkpoint_name = checkpoint_name
+        self.add_file_policy = add_file_policy
+        self._run: Any = experiment
 
     @property
     def experiment(self) -> Any:
@@ -260,7 +327,13 @@ class WandbLogger(Logger):
                 import wandb
             except ImportError as e:
                 raise ValidationFailed("WandbLogger needs: pip install wandb") from e
-            self._run = wandb.run or wandb.init(**self._init)
+            if wandb.run is not None:
+                self._run = wandb.run
+            else:
+                self._run = wandb.init(**self._init)
+                if getattr(self._run, "define_metric", None) is not None:
+                    self._run.define_metric("trainer/global_step")
+                    self._run.define_metric("*", step_metric="trainer/global_step", step_sync=True)
         return self._run
 
     @property
@@ -272,8 +345,8 @@ class WandbLogger(Logger):
         return self._run.id if self._run is not None else self._init.get("id")
 
     @property
-    def save_dir(self) -> str:
-        return str(self._init.get("dir", "."))
+    def save_dir(self) -> str | None:
+        return self._init.get("dir")
 
     def log_metrics(self, metrics: dict[str, float], step: int | None = None) -> None:
         data = {f"{self._prefix}{k}": v for k, v in metrics.items()}
@@ -284,9 +357,119 @@ class WandbLogger(Logger):
     def log_hyperparams(self, params: dict[str, Any]) -> None:
         self.experiment.config.update(_plain(params), allow_val_change=True)
 
+    @_rank_zero
+    def watch(
+        self,
+        model: Any,
+        log: str | None = "gradients",
+        log_freq: int = 100,
+        log_graph: bool = True,
+    ) -> None:
+        """Have wandb log the model's gradients and/or parameters every ``log_freq`` steps."""
+        self.experiment.watch(model, log=log, log_freq=log_freq, log_graph=log_graph)
+
+    @_rank_zero
+    def log_table(
+        self,
+        key: str,
+        columns: list[str] | None = None,
+        data: list[list[Any]] | None = None,
+        dataframe: Any = None,
+        step: int | None = None,
+    ) -> None:
+        """Log a ``wandb.Table`` from ``columns`` and ``data`` or from a pandas ``dataframe``."""
+        import wandb
+
+        table = wandb.Table(columns=columns, data=data, dataframe=dataframe)
+        self.log_metrics({key: table}, step)
+
+    @_rank_zero
+    def log_text(
+        self,
+        key: str,
+        columns: list[str] | None = None,
+        data: list[list[str]] | None = None,
+        dataframe: Any = None,
+        step: int | None = None,
+    ) -> None:
+        """Log text as a table (same arguments as ``log_table``)."""
+        self.log_table(key, columns, data, dataframe, step)
+
+    def _log_media(
+        self, kind: str, key: str, items: list[Any], step: int | None, kwargs: dict[str, Any]
+    ) -> None:
+        if not isinstance(items, list):
+            raise TypeError(f'Expected a list as "{kind.lower()}s", found {type(items)}')
+        n = len(items)
+        for k, v in kwargs.items():
+            if len(v) != n:
+                raise ValueError(f"Expected {n} items but only found {len(v)} for {k}")
+        import wandb
+
+        cls = getattr(wandb, kind)
+        media = [cls(item, **{k: kwargs[k][i] for k in kwargs}) for i, item in enumerate(items)]
+        data: dict[str, Any] = {key: media}
+        self.log_metrics(data, step)
+
+    @_rank_zero
+    def log_image(
+        self, key: str, images: list[Any], step: int | None = None, **kwargs: Any
+    ) -> None:
+        """Log ``wandb.Image``s; each keyword (``caption=[...]``) gives one value per image."""
+        self._log_media("Image", key, images, step, kwargs)
+
+    @_rank_zero
+    def log_audio(
+        self, key: str, audios: list[Any], step: int | None = None, **kwargs: Any
+    ) -> None:
+        """Log ``wandb.Audio`` clips; each keyword (``sample_rate=[...]``) has one per clip."""
+        self._log_media("Audio", key, audios, step, kwargs)
+
+    @_rank_zero
+    def log_video(
+        self, key: str, videos: list[Any], step: int | None = None, **kwargs: Any
+    ) -> None:
+        """Log ``wandb.Video``s; each keyword (``fps=[...]``) gives one value per video."""
+        self._log_media("Video", key, videos, step, kwargs)
+
+    @staticmethod
+    @_rank_zero
+    def download_artifact(
+        artifact: str,
+        save_dir: str | Path | None = None,
+        artifact_type: str | None = None,
+        use_artifact: bool | None = True,
+    ) -> str:
+        """Download a wandb artifact to ``save_dir`` and return its local path. Inside a run
+        (with ``use_artifact``) the run records that it used it."""
+        try:
+            import wandb
+        except ImportError as e:
+            raise ValidationFailed("WandbLogger needs: pip install wandb") from e
+        if wandb.run is not None and use_artifact:
+            art = wandb.run.use_artifact(artifact)
+        else:
+            art = wandb.Api().artifact(artifact, type=artifact_type)
+        return str(art.download(root=None if save_dir is None else os.fspath(save_dir)))
+
+    @_rank_zero
+    def use_artifact(self, artifact: str, artifact_type: str | None = None) -> Any:
+        """Record that this run uses ``artifact`` and return the ``wandb.Artifact``."""
+        return self.experiment.use_artifact(artifact, type=artifact_type)
+
     def after_save_checkpoint(self, checkpoint_path: Path) -> None:
-        if self._log_model:
-            self.experiment.save(str(checkpoint_path))
+        if not self._log_model:
+            return
+        import wandb
+
+        run = self.experiment
+        art = wandb.Artifact(
+            name=self._checkpoint_name or f"model-{run.id}",
+            type="model",
+            metadata={"original_filename": Path(checkpoint_path).name},
+        )
+        art.add_file(str(checkpoint_path), name="model.ckpt", policy=self.add_file_policy)
+        run.log_artifact(art, aliases=["latest"])
 
     def finalize(self, status: str) -> None:
         if self._run is not None:
@@ -294,7 +477,9 @@ class WandbLogger(Logger):
 
 
 class MLFlowLogger(Logger):
-    """MLflow tracking (needs ``mlflow``)."""
+    """MLflow tracking (needs ``mlflow``). Metrics and parameters go in one ``log_batch`` call
+    each. ``artifact_location`` is used when the experiment is created; ``synchronous`` (mlflow
+    2.8 or later) is passed to ``log_batch``: False logs without waiting for the server."""
 
     def __init__(
         self,
@@ -305,7 +490,9 @@ class MLFlowLogger(Logger):
         save_dir: str | None = "./mlruns",
         log_model: bool = False,
         prefix: str = "",
+        artifact_location: str | None = None,
         run_id: str | None = None,
+        synchronous: bool | None = None,
     ) -> None:
         self._experiment_name = experiment_name
         self._run_name = run_name
@@ -313,7 +500,10 @@ class MLFlowLogger(Logger):
         self._tags = tags
         self._prefix = prefix
         self._log_model = log_model
+        self._artifact_location = artifact_location
         self._run_id = run_id
+        self._experiment_id: str | None = None
+        self._batch_kwargs = {} if synchronous is None else {"synchronous": synchronous}
         self._client: Any = None
         self._save_dir = save_dir
 
@@ -324,19 +514,39 @@ class MLFlowLogger(Logger):
                 from mlflow.tracking import MlflowClient
             except ImportError as e:
                 raise ValidationFailed("MLFlowLogger needs: pip install mlflow") from e
-            self._client = MlflowClient(self._tracking_uri)
-            if self._run_id is None:
-                exp = self._client.get_experiment_by_name(self._experiment_name)
-                exp_id = (
-                    exp.experiment_id
-                    if exp is not None
-                    else self._client.create_experiment(self._experiment_name)
-                )
+            client = MlflowClient(self._tracking_uri)
+            if self._batch_kwargs and (
+                "synchronous" not in inspect.signature(client.log_batch).parameters
+            ):
+                raise ValidationFailed("MLFlowLogger(synchronous=...) needs mlflow>=2.8")
+            if self._run_id is not None:
+                self._experiment_id = client.get_run(self._run_id).info.experiment_id
+            else:
+                exp = client.get_experiment_by_name(self._experiment_name)
+                if exp is not None and getattr(exp, "lifecycle_stage", "active") != "deleted":
+                    self._experiment_id = exp.experiment_id
+                else:
+                    self._experiment_id = client.create_experiment(
+                        self._experiment_name, artifact_location=self._artifact_location
+                    )
                 tags = dict(self._tags or {})
                 if self._run_name:
                     tags["mlflow.runName"] = self._run_name
-                self._run_id = self._client.create_run(exp_id, tags=tags).info.run_id
+                self._run_id = client.create_run(self._experiment_id, tags=tags).info.run_id
+            self._client = client
         return self._client
+
+    @property
+    def run_id(self) -> str | None:
+        """The MLflow run id (the run is created on first use)."""
+        _ = self.experiment
+        return self._run_id
+
+    @property
+    def experiment_id(self) -> str | None:
+        """The MLflow experiment id (created on first use when it does not exist)."""
+        _ = self.experiment
+        return self._experiment_id
 
     @property
     def name(self) -> str:
@@ -351,14 +561,26 @@ class MLFlowLogger(Logger):
         return self._save_dir
 
     def log_metrics(self, metrics: dict[str, float], step: int | None = None) -> None:
+        from mlflow.entities import Metric
+
         client = self.experiment
-        for k, v in metrics.items():
-            client.log_metric(self._run_id, f"{self._prefix}{k}".replace("/", "-"), v, step=step)
+        now = int(time.time() * 1000)
+        batch = [
+            Metric(
+                key=f"{self._prefix}{k}".replace("/", "-"), value=v, timestamp=now, step=step or 0
+            )
+            for k, v in metrics.items()
+            if not isinstance(v, str)
+        ]
+        client.log_batch(run_id=self._run_id, metrics=batch, **self._batch_kwargs)
 
     def log_hyperparams(self, params: dict[str, Any]) -> None:
+        from mlflow.entities import Param
+
         client = self.experiment
-        for k, v in _plain(params).items():
-            client.log_param(self._run_id, k, v)
+        batch = [Param(key=k, value=str(v)[:250]) for k, v in _plain(params).items()]
+        for i in range(0, len(batch), 100):  # MLflow accepts at most 100 params per batch
+            client.log_batch(run_id=self._run_id, params=batch[i : i + 100], **self._batch_kwargs)
 
     def after_save_checkpoint(self, checkpoint_path: Path) -> None:
         if self._log_model:
@@ -369,3 +591,241 @@ class MLFlowLogger(Logger):
             self._client.set_terminated(
                 self._run_id, "FINISHED" if status == "success" else "FAILED"
             )
+
+
+class CometLogger(Logger):
+    """Comet (needs ``comet_ml``). The experiment is started on first use, on rank 0, with
+    ``comet_ml.start``; extra arguments go to ``comet_ml.ExperimentConfig`` (for example
+    ``name``, ``tags``, ``offline_directory``). ``online=False`` logs offline. Comet's own
+    automatic logging is turned off (``COMET_DISABLE_AUTO_LOGGING=1``), as in Lightning.
+    ``finalize`` flushes without ending the experiment, so it can be used after fit."""
+
+    def __init__(
+        self,
+        *,
+        api_key: str | None = None,
+        workspace: str | None = None,
+        project: str | None = None,
+        experiment_key: str | None = None,
+        mode: str | None = None,
+        online: bool | None = None,
+        prefix: str | None = None,
+        **kwargs: Any,
+    ) -> None:
+        if mode not in (None, "get_or_create", "get", "create"):
+            raise ValidationFailed("CometLogger: mode must be 'get_or_create', 'get' or 'create'")
+        self._api_key = api_key
+        self._workspace = workspace
+        self._project = project
+        self._experiment_key = experiment_key
+        self._mode = mode
+        self._online = online
+        self._prefix = prefix
+        self._kwargs = kwargs
+        self._experiment: Any = None
+
+    @property
+    def experiment(self) -> Any:
+        if self._experiment is None:
+            os.environ["COMET_DISABLE_AUTO_LOGGING"] = "1"
+            try:
+                import comet_ml
+            except ImportError as e:
+                raise ValidationFailed("CometLogger needs: pip install comet-ml") from e
+            config = dict(self._kwargs)
+            if self._online is False:
+                config["disabled"] = True
+            exp = comet_ml.start(
+                api_key=self._api_key,
+                workspace=self._workspace,
+                project=self._project,
+                experiment_key=self._experiment_key,
+                mode=self._mode,
+                online=self._online,
+                experiment_config=comet_ml.ExperimentConfig(**config),
+            )
+            if exp is None:
+                raise ValidationFailed("CometLogger: comet_ml.start returned no experiment")
+            self._experiment = exp
+            self._experiment_key = exp.get_key()
+            self._project = exp.project_name
+            exp.log_other("Created from", "gpulayer")
+        return self._experiment
+
+    @property
+    def name(self) -> str | None:
+        return self._project
+
+    @property
+    def version(self) -> str | None:
+        return self._experiment.get_key() if self._experiment is not None else self._experiment_key
+
+    @property
+    def save_dir(self) -> str | None:
+        d = self._kwargs.get("offline_directory")
+        return None if d is None else os.fspath(d)
+
+    def log_metrics(self, metrics: dict[str, float], step: int | None = None) -> None:
+        data = dict(metrics)
+        epoch = data.pop("epoch", None)
+        self.experiment.log_metrics(data, step=step, epoch=epoch, prefix=self._prefix)
+
+    def log_hyperparams(self, params: dict[str, Any]) -> None:
+        self.experiment.log_parameters(dict(params))
+
+    def log_graph(self, model: Any, input_array: Any = None) -> None:
+        self.experiment.set_model_graph(model)
+
+    def finalize(self, status: str) -> None:
+        if self._experiment is not None:
+            self._experiment.flush()
+
+
+class LitLogger(Logger):
+    """Lightning AI's experiment tracker (needs ``pip install litlogger`` and a Lightning AI
+    account): metrics, hyperparameters and, with ``log_model=True``, checkpoints go to the
+    ``teamspace`` there. Data leaves this machine for Lightning AI's service. The experiment
+    starts on first use; the Trainer logs from global rank 0 only."""
+
+    def __init__(
+        self,
+        root_dir: str | Path | None = None,
+        name: str | None = None,
+        teamspace: str | None = None,
+        metadata: dict[str, str] | None = None,
+        store_step: bool = True,
+        log_model: bool = False,
+        save_logs: bool = True,
+        checkpoint_name: str | None = None,
+    ) -> None:
+        self._root_dir = os.fspath(root_dir or "./lightning_logs")
+        self._name = name
+        self._teamspace = teamspace
+        self._metadata = {k: str(v) for k, v in (metadata or {}).items()}
+        self._store_step = store_step
+        self._log_model = log_model
+        self._save_logs = save_logs
+        self._checkpoint_name = checkpoint_name
+        self._version: str | None = None
+        self._experiment: Any = None
+        self._step = -1
+
+    def _lib(self) -> Any:
+        try:
+            import litlogger
+        except ImportError as e:
+            raise ValidationFailed("LitLogger needs: pip install litlogger") from e
+        return litlogger
+
+    @property
+    def name(self) -> str:
+        """The experiment's name (generated by litlogger when not given)."""
+        if self._name is None:
+            try:
+                from litlogger.generator import _create_name
+
+                self._name = str(_create_name())
+            except ImportError:
+                self._name = "gpulayer"
+        return self._name
+
+    @property
+    def version(self) -> str | None:
+        """A UTC timestamp, set when the experiment starts."""
+        return self._version
+
+    @property
+    def root_dir(self) -> str:
+        """``root_dir/name``."""
+        return os.path.join(self._root_dir, self.name)
+
+    @property
+    def save_dir(self) -> str:
+        """``root_dir`` as given."""
+        return self._root_dir
+
+    @property
+    def log_dir(self) -> str:
+        """Where local copies of the logs go: ``root_dir/name/version``."""
+        return os.path.join(self.root_dir, self._version or "")
+
+    @property
+    def experiment(self) -> Any:
+        """The ``litlogger.Experiment``, started on first use."""
+        if self._experiment is None:
+            lib = self._lib()
+            from datetime import datetime, timezone
+
+            stamp = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+            self._version = stamp.replace(":", "-").replace("+00:00", "Z")
+            Path(self.log_dir).mkdir(parents=True, exist_ok=True)
+            self._experiment = lib.Experiment(
+                name=self.name, teamspace=self._teamspace, metadata=self._metadata,
+                store_step=self._store_step, store_created_at=True, log_dir=self.log_dir,
+                save_logs=self._save_logs,
+            )  # fmt: skip
+            with contextlib.suppress(AttributeError):
+                self._experiment.print_url()
+        return self._experiment
+
+    @property
+    def url(self) -> str:
+        """The experiment's page on Lightning AI."""
+        return str(self.experiment.url)
+
+    def log_metrics(self, metrics: dict[str, float], step: int | None = None) -> None:
+        """Append each value to its series at ``step``."""
+        exp = self.experiment
+        self._step = self._step + 1 if step is None else step
+        for key, value in metrics.items():
+            v = value.item() if hasattr(value, "item") else value
+            exp[key].append(v, step=self._step)
+
+    def log_hyperparams(self, params: dict[str, Any]) -> None:
+        """Store each hyperparameter as text."""
+        exp = self.experiment
+        for key, value in dict(params).items():
+            exp[key] = str(value)
+
+    def log_metadata(self, params: dict[str, Any]) -> None:
+        """Store extra values as text (as ``log_hyperparams``)."""
+        self.log_hyperparams(params)
+
+    def log_file(self, path: str) -> None:
+        """Upload a file to the teamspace drive, under the experiment's folder."""
+        self.experiment[f"{self.name}/{os.path.basename(path)}"] = self._lib().File(path)
+
+    def get_file(self, path: str, verbose: bool = True) -> str:
+        """Download a file logged with ``log_file`` to ``path``."""
+        return str(self.experiment[f"{self.name}/{os.path.basename(path)}"].save(path))
+
+    def log_model(
+        self,
+        model: Any,
+        staging_dir: str | None = None,
+        verbose: bool = False,
+        version: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Upload a model object to Lightning AI's model registry."""
+        key = self._checkpoint_name or f"{self.name}-model"
+        self.experiment[key] = self._lib().Model(
+            model, version=version or self._version, metadata=metadata, staging_dir=staging_dir
+        )
+
+    def log_model_artifact(
+        self, path: str, verbose: bool = False, version: str | None = None
+    ) -> None:
+        """Upload a model file or folder to the registry."""
+        key = self._checkpoint_name or f"{self.name}-model"
+        self.experiment[key] = self._lib().Model(path, version=version or self._version)
+
+    def after_save_checkpoint(self, checkpoint_path: Path) -> None:
+        """With ``log_model=True``, upload each saved checkpoint."""
+        if self._log_model:
+            self.log_model_artifact(str(checkpoint_path), version=f"step-{max(self._step, 0)}")
+
+    def finalize(self, status: str) -> None:
+        """End the experiment with ``status``."""
+        if self._experiment is not None:
+            self._experiment.finalize(status)

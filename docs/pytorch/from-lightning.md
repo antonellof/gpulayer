@@ -49,7 +49,7 @@ Lightning needs torchrun, SLURM or a cluster to start processes on each machine.
 
 | Lightning | GPUlayer |
 |---|---|
-| `accelerator="gpu"` | `accelerator="cuda"` (or `"rocm"`, `"mps"`) |
+| `accelerator="gpu"` | accepted; GPUlayer's name is `"cuda"` (or `"rocm"`, `"mps"`) |
 | `max_epochs=None` means 1000 | the default is `max_epochs=1`; pass a number |
 | progress bar and model summary on by default | off by default: `enable_progress_bar=True`, `enable_model_summary=True` |
 | `logger=True` means TensorBoard (or CSV) | `logger=None` writes `metrics.csv` in the run folder; pass `glt.TensorBoardLogger(...)` |
@@ -57,12 +57,25 @@ Lightning needs torchrun, SLURM or a cluster to start processes on each machine.
 | `trainer.validate/test` return a list of dicts | a dict that also answers `result[0]` |
 | `benchmark=None` leaves cuDNN autotuning off | `None` turns it on for CUDA runs of 1,000 steps or more |
 | `L.seed_everything` | `glt.seed_everything` |
+| `lightning.pytorch.utilities` (`grad_norm`, `rank_zero_only`, `measure_flops`, ...) | `gpulayer.pytorch.utilities` |
+| SIGTERM checked every step on every rank | one process: every step; several: at log steps and epoch ends (no extra sync per step) |
+| `model_registry=` (Lightning AI cloud) | rejected: checkpoints come back to `default_root_dir` |
 
 ## Not run on hardware yet, or not available
 
+Every public name in Lightning's `Trainer`, `LightningModule`, hooks, callbacks, loggers,
+profilers, plugins, strategies, accelerators and utilities has a GPUlayer counterpart (compared
+with `scripts/compare_lightning_api.py` against Lightning's source). How far each has run:
+
 - DeepSpeed and TPU (XLA) are implemented but not yet run on hardware; see
   [DeepSpeed and TPU](trainer.md#deepspeed-and-tpu).
-- `glt.LightningCLI` ([Command line](cli.md)) cannot link arguments between sections.
+- `ModelParallelStrategy` (tensor parallelism with FSDP2) and the FSDP options (sharding
+  strategies, activation checkpointing, CPU offload, sharded checkpoints) are tested with two
+  CPU processes, not on GPUs.
+- `BitsandbytesPrecision`, `TransformerEnginePrecision`, `to_tensorrt`, `XLAProfiler`, and the
+  Comet, W&B, MLflow, TensorBoard and `LitLogger` loggers are tested against fake packages: the
+  real ones need NVIDIA GPUs, TPUs or accounts.
+- `glt.LightningCLI` ([Command line](cli.md)) uses `argparse`, not `jsonargparse`.
 - Habana HPUs are not supported. Current Lightning removed them too (`lightning-habana` is
   archived).
 

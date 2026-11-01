@@ -8,11 +8,20 @@ Three layers, each usable alone:
   loggers, profilers, tuner) that also picks where training runs
 """
 
+from gpulayer.pytorch.accelerators import (
+    Accelerator,
+    CPUAccelerator,
+    CUDAAccelerator,
+    MPSAccelerator,
+    XLAAccelerator,
+    find_usable_cuda_devices,
+)
 from gpulayer.pytorch.callbacks import (
     BackboneFinetuning,
     BaseFinetuning,
     BasePredictionWriter,
     Callback,
+    Checkpoint,
     DeviceStatsMonitor,
     EarlyStopping,
     EMAWeightAveraging,
@@ -24,6 +33,9 @@ from gpulayer.pytorch.callbacks import (
     ModelSummary,
     OnExceptionCheckpoint,
     ProgressBar,
+    RichModelSummary,
+    RichProgressBar,
+    RichProgressBarTheme,
     SpikeDetection,
     StochasticWeightAveraging,
     ThroughputMonitor,
@@ -32,20 +44,41 @@ from gpulayer.pytorch.callbacks import (
     TrainingSpikeException,
     WeightAveraging,
 )
-from gpulayer.pytorch.cli import GPULayerCLI, LightningCLI
+from gpulayer.pytorch.cli import (
+    GPULayerArgumentParser,
+    GPULayerCLI,
+    LightningArgumentParser,
+    LightningCLI,
+    SaveConfigCallback,
+)
 from gpulayer.pytorch.combined import CombinedLoader
 from gpulayer.pytorch.launch import LaunchResult, in_gpulayer_job, is_launcher_process, launch
-from gpulayer.pytorch.loggers import CSVLogger, Logger, MLFlowLogger, TensorBoardLogger, WandbLogger
+from gpulayer.pytorch.loggers import (
+    CometLogger,
+    CSVLogger,
+    LitLogger,
+    Logger,
+    MLFlowLogger,
+    TensorBoardLogger,
+    WandbLogger,
+)
 from gpulayer.pytorch.module import AttributeDict, DataModule, Module
 from gpulayer.pytorch.plugins import (
     AsyncCheckpointIO,
+    BitsandbytesPrecision,
     CheckpointIO,
+    DeepSpeedPrecision,
     DoublePrecision,
+    FSDPPrecision,
     HalfPrecision,
+    LayerSync,
     MixedPrecision,
     Precision,
     TorchCheckpointIO,
     TorchSyncBatchNorm,
+    TransformerEnginePrecision,
+    XLACheckpointIO,
+    XLAPrecision,
 )
 from gpulayer.pytorch.profilers import (
     AdvancedProfiler,
@@ -53,10 +86,19 @@ from gpulayer.pytorch.profilers import (
     Profiler,
     PyTorchProfiler,
     SimpleProfiler,
+    XLAProfiler,
 )
 from gpulayer.pytorch.runtime import Runtime, resolve_accelerator, seed_everything
-from gpulayer.pytorch.strategies import DDPStrategy, DeepSpeedStrategy, FSDPStrategy
-from gpulayer.pytorch.trainer import LRSchedulerConfig, Trainer
+from gpulayer.pytorch.strategies import (
+    DDPStrategy,
+    DeepSpeedStrategy,
+    FSDPStrategy,
+    ModelParallelStrategy,
+    ParallelStrategy,
+    SingleDeviceStrategy,
+    Strategy,
+)
+from gpulayer.pytorch.trainer import LRSchedulerConfig, SIGTERMException, Trainer
 from gpulayer.pytorch.tuner import BatchSizeFinder, LearningRateFinder, Tuner
 
 # Lightning's names, for code moving over.
@@ -64,6 +106,34 @@ LightningModule = Module
 LightningDataModule = DataModule
 
 __all__ = [
+    "GPULayerArgumentParser",
+    "LightningArgumentParser",
+    "SaveConfigCallback",
+    "LitLogger",
+    "Accelerator",
+    "CPUAccelerator",
+    "CUDAAccelerator",
+    "MPSAccelerator",
+    "XLAAccelerator",
+    "find_usable_cuda_devices",
+    "Checkpoint",
+    "RichModelSummary",
+    "RichProgressBar",
+    "RichProgressBarTheme",
+    "CometLogger",
+    "BitsandbytesPrecision",
+    "DeepSpeedPrecision",
+    "FSDPPrecision",
+    "LayerSync",
+    "TransformerEnginePrecision",
+    "XLACheckpointIO",
+    "XLAPrecision",
+    "XLAProfiler",
+    "ModelParallelStrategy",
+    "ParallelStrategy",
+    "SingleDeviceStrategy",
+    "Strategy",
+    "SIGTERMException",
     "AsyncCheckpointIO",
     "CheckpointIO",
     "CombinedLoader",

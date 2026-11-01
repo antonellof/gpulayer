@@ -19,20 +19,20 @@ trainer.test(model, test_loader, ckpt_path="best")
 |---|---|
 | `ModelCheckpoint(monitor, filename, save_top_k, save_last, every_n_epochs, ...)` | keeps the best checkpoints by `monitor` (`None`: the latest). Default file `best.ckpt`; `save_top_k=-1` keeps all. Sets `best_model_path`, `best_model_score`, `last_model_path`, also when training ran on workers |
 | `EarlyStopping(monitor, min_delta, patience, mode, ...)` | stops on no improvement, a threshold or NaN |
-| `LearningRateMonitor(logging_interval)` | records `lr` (`lr-<i>` per group) |
+| `LearningRateMonitor(logging_interval, log_key_prefix)` | records `lr` (`lr-<i>` per group) |
 | `Timer(duration)` | stops after a duration |
 | `GradientAccumulationScheduler({0: 8, 4: 4})` | changes `accumulate_grad_batches` by epoch |
 | `StochasticWeightAveraging(swa_lrs, swa_epoch_start)` | SWA with `SWALR` |
 | `EMAWeightAveraging(decay)`, `WeightAveraging(...)` | averaged weights, kept in the model and checkpoints |
 | `BackboneFinetuning(unfreeze_backbone_at_epoch)`, `BaseFinetuning` | freezes `model.backbone`, then unfreezes it |
-| `ModelPruning(pruning_fn, amount)` | `torch.nn.utils.prune` at epoch ends |
+| `ModelPruning(pruning_fn, amount, use_lottery_ticket_hypothesis, ...)` | `torch.nn.utils.prune` at epoch ends, structured or not |
 | `ThroughputMonitor(batch_size_fn, length_fn)` | samples, batches or tokens per second |
-| `DeviceStatsMonitor()` | CUDA or MPS memory (CPU with `psutil`) |
+| `DeviceStatsMonitor(filter_keys)` | CUDA or MPS memory (CPU with `psutil`) |
 | `SpikeDetection(window, rtol)` | raises `TrainingSpikeException` when the loss jumps |
-| `ModelSummary(max_depth)` | layers and parameter counts |
-| `ProgressBar()` (`TQDMProgressBar`) | a progress line per epoch |
+| `ModelSummary(max_depth)`, `RichModelSummary` | layers and parameter counts |
+| `ProgressBar()` (`TQDMProgressBar`), `RichProgressBar` | a progress line per epoch (`rich` for the Rich ones) |
 | `BasePredictionWriter(write_interval)` | writes predictions per batch or epoch |
-| `OnExceptionCheckpoint(dirpath)` | checkpoints on an error or Ctrl+C (one process) |
+| `OnExceptionCheckpoint(dirpath)`, `ModelCheckpoint(save_on_exception=True)` | checkpoints on an error or Ctrl+C (one process); both are `Checkpoint` subclasses |
 | `LambdaCallback(on_train_epoch_end=...)` | a callback from functions |
 | `LearningRateFinder()`, `BatchSizeFinder()` | run the [Tuner](#tuner) when `fit` starts (one process) |
 
@@ -63,14 +63,18 @@ trainer = glt.Trainer(logger=[glt.CSVLogger("logs"), glt.TensorBoardLogger("tb")
                       profiler="simple")
 ```
 
-`CSVLogger`, `TensorBoardLogger`, `WandbLogger` and `MLFlowLogger` log from rank 0 and add no
-device synchronisation. All but `CSVLogger` need their package installed and are not tested
-in CI.
+`CSVLogger`, `TensorBoardLogger`, `WandbLogger`, `MLFlowLogger`, `CometLogger` and `LitLogger`
+(Lightning AI's service) log from rank 0 and add no device synchronisation. All but
+`CSVLogger` need their package installed and are tested in CI against fake packages only.
 
 ## Profilers
 
-`profiler="simple"` times each loop action, `"advanced"` adds `cProfile`, and `"pytorch"`
-(`glt.PyTorchProfiler(export_to_chrome=True)`) uses `torch.profiler`.
+`profiler="simple"` times each loop action, `"advanced"` adds `cProfile`, `"pytorch"`
+(`glt.PyTorchProfiler(export_to_chrome=True)`) uses `torch.profiler`, and `"xla"`
+(`glt.XLAProfiler`) starts torch_xla's profiler server on TPUs.
+
+Lightning's helpers (`grad_norm`, `rank_zero_only`, `measure_flops`, `move_data_to_device`,
+...) are in `gpulayer.pytorch.utilities`.
 
 ## Tuner
 

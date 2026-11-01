@@ -12,6 +12,7 @@ import sys
 import time
 from collections import deque
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -30,19 +31,22 @@ class LearningRateMonitor(Callback):
     epoch as ``lr`` (one group) or ``lr-<i>``, in ``trainer.history`` and
     ``trainer.callback_metrics``; it is read when the epoch starts, before an epoch-interval
     scheduler steps. ``"step"`` also records it on every logged step (``metrics.csv`` and
-    loggers). ``log_momentum`` and ``log_weight_decay`` add those values."""
+    loggers). ``log_momentum`` and ``log_weight_decay`` add those values.
+    ``log_key_prefix`` is put before every name (``"optim/"`` gives ``optim/lr``)."""
 
     def __init__(
         self,
         logging_interval: Literal["step", "epoch"] | None = None,
         log_momentum: bool = False,
         log_weight_decay: bool = False,
+        log_key_prefix: str | None = None,
     ) -> None:
         if logging_interval not in (None, "step", "epoch"):
             raise ValidationFailed("logging_interval must be None, 'step' or 'epoch'")
         self.logging_interval = logging_interval
         self.log_momentum = log_momentum
         self.log_weight_decay = log_weight_decay
+        self.log_key_prefix = log_key_prefix or ""
         self._lrs: dict[str, float] = {}
 
     def _read(self, trainer: Trainer) -> dict[str, float]:
@@ -63,6 +67,8 @@ class LearningRateMonitor(Callback):
                         out[key.replace("lr", "momentum", 1)] = float(m)
                 if self.log_weight_decay and "weight_decay" in g:
                     out[key.replace("lr", "weight_decay", 1)] = float(g["weight_decay"])
+        if self.log_key_prefix:
+            return {f"{self.log_key_prefix}{k}": v for k, v in out.items()}
         return out
 
     def on_train_epoch_start(self, trainer: Trainer, pl_module: Module) -> None:
@@ -267,10 +273,31 @@ class ThroughputMonitor(Callback):
 class DeviceStatsMonitor(Callback):
     """Record device memory on every logged step: on CUDA the allocated, reserved and peak
     memory in MB; on MPS the allocated and driver memory. ``cpu_stats=True`` adds CPU
-    utilisation and RAM (needs ``psutil``)."""
+    utilisation and RAM (needs ``psutil``). ``filter_keys`` keeps only the stats whose
+    names contain one of the given strings (``{"memory_allocated"}`` keeps
+    ``device/memory_allocated_mb``); a key that matches no stat gives one warning."""
 
-    def __init__(self, cpu_stats: bool | None = None) -> None:
+    def __init__(self, cpu_stats: bool | None = None, filter_keys: set[str] | None = None) -> None:
         self.cpu_stats = cpu_stats
+        self._filter_keys = set(filter_keys) if filter_keys is not None else None
+        self._warned = False
+
+    def _filter(self, stats: dict[str, float]) -> dict[str, float]:
+        keys = self._filter_keys
+        if keys is None:
+            return stats
+        if not self._warned:
+            self._warned = True
+            unmatched = sorted(k for k in keys if not any(k in name for name in stats))
+            if unmatched:
+                import warnings
+
+                warnings.warn(
+                    f"DeviceStatsMonitor: filter_keys {unmatched} match no device stat "
+                    f"(available: {sorted(stats)}) and are ignored",
+                    stacklevel=2,
+                )
+        return {name: v for name, v in stats.items() if any(k in name for k in keys)}
 
     def _stats(self, trainer: Trainer) -> dict[str, float]:
         import torch
@@ -305,7 +332,9 @@ class DeviceStatsMonitor(Callback):
         self, trainer: Trainer, pl_module: Module, outputs: Any, batch: Any, batch_idx: int
     ) -> None:
         if trainer._is_log_step:
-            trainer.log_metrics(self._stats(trainer))
+            stats = self._filter(self._stats(trainer))
+            if stats:
+                trainer.log_metrics(stats)
 
 
 class TrainingSpikeException(RuntimeError):
@@ -383,10 +412,12 @@ def _human(n: float) -> str:
 
 class ModelSummary(Callback):
     """Print the layers and parameter counts when training starts (rank 0). ``max_depth=-1``
-    lists every submodule."""
+    lists every submodule. Extra keyword arguments go to ``summarize`` (``RichModelSummary``
+    takes ``header_style``)."""
 
-    def __init__(self, max_depth: int = 1) -> None:
+    def __init__(self, max_depth: int = 1, **summarize_kwargs: Any) -> None:
         self.max_depth = max_depth
+        self._summarize_kwargs = summarize_kwargs
 
     def on_fit_start(self, trainer: Trainer, pl_module: Module) -> None:
         if not trainer.is_global_zero:
@@ -395,17 +426,103 @@ class ModelSummary(Callback):
         total = sum(p.numel() for p in pl_module.parameters())
         trainable = sum(p.numel() for p in pl_module.parameters() if p.requires_grad)
         size_mb = sum(p.numel() * p.element_size() for p in pl_module.parameters()) / 1024**2
-        if rows:
-            w = max(len(r[0]) for r in rows)
-            t = max(len(r[1]) for r in rows)
+        modes = {"train": 0, "eval": 0}
+        for m in pl_module.modules():
+            modes["train" if m.training else "eval"] += 1
+        summary_data: list[tuple[str, list[str]]] = [
+            (" ", [str(i) for i in range(len(rows))]),
+            ("Name", [r[0] for r in rows]),
+            ("Type", [r[1] for r in rows]),
+            ("Params", [_human(r[2]) for r in rows]),
+            ("Mode", [r[3] for r in rows]),
+        ]
+        self.summarize(summary_data, total, trainable, size_mb, modes, **self._summarize_kwargs)
+
+    @staticmethod
+    def summarize(
+        summary_data: list[tuple[str, list[str]]],
+        total_parameters: int,
+        trainable_parameters: int,
+        model_size: float,
+        total_training_modes: dict[str, int],
+        **summarize_kwargs: Any,
+    ) -> None:
+        """Print the summary. ``summary_data`` holds the table as ``(column name, values)``
+        pairs; ``model_size`` is in MB; ``total_training_modes`` counts the modules in
+        ``"train"`` and ``"eval"`` mode. Override it to change the output."""
+        columns = dict(summary_data)
+        names, kinds = columns["Name"], columns["Type"]
+        if names:
+            w = max(len(n) for n in names)
+            t = max(len(k) for k in kinds)
             print(f"  | {'Name':<{w}} | {'Type':<{t}} | Params | Mode", flush=False)
-            for i, (name, kind, n, mode) in enumerate(rows):
-                print(f"{i:<2}| {name:<{w}} | {kind:<{t}} | {_human(n):>6} | {mode}")
+            for i, name, kind, n, mode in zip(
+                columns[" "], names, kinds, columns["Params"], columns["Mode"], strict=True
+            ):
+                print(f"{i:<2}| {name:<{w}} | {kind:<{t}} | {n:>6} | {mode}")
         print(
-            f"{_human(trainable)} trainable params, {_human(total - trainable)} non-trainable, "
-            f"{size_mb:.3f} MB",
+            f"{_human(trainable_parameters)} trainable params, "
+            f"{_human(total_parameters - trainable_parameters)} non-trainable, "
+            f"{model_size:.3f} MB",
             flush=True,
         )
+
+
+def _require_rich(what: str) -> None:
+    try:
+        import rich  # noqa: F401
+    except ImportError:
+        raise ValidationFailed(
+            f"{what} needs the rich package: pip install rich (or use the plain one)"
+        ) from None
+
+
+class RichModelSummary(ModelSummary):
+    """``ModelSummary`` printed as a ``rich`` table (needs ``pip install rich``).
+    ``header_style`` sets the style of the table header (default ``"bold magenta"``)."""
+
+    def __init__(self, max_depth: int = 1, **summarize_kwargs: Any) -> None:
+        _require_rich("RichModelSummary")
+        super().__init__(max_depth, **summarize_kwargs)
+
+    @staticmethod
+    def summarize(
+        summary_data: list[tuple[str, list[str]]],
+        total_parameters: int,
+        trainable_parameters: int,
+        model_size: float,
+        total_training_modes: dict[str, int],
+        **summarize_kwargs: Any,
+    ) -> None:
+        """Print the layers as a ``rich`` table, then the parameter counts and model size."""
+        from rich import get_console
+        from rich.table import Table
+
+        console = get_console()
+        table = Table(header_style=summarize_kwargs.get("header_style", "bold magenta"))
+        for name, _ in summary_data:
+            if name == " ":
+                table.add_column(" ", style="dim")
+            elif name == "Name":
+                table.add_column("Name", justify="left", no_wrap=True)
+            elif name == "Params":
+                table.add_column("Params", justify="right")
+            else:
+                table.add_column(name)
+        for row in zip(*(values for _, values in summary_data), strict=True):
+            table.add_row(*row)
+        console.print(table)
+        grid = Table.grid(expand=True)
+        grid.add_column()
+        grid.add_row(f"[bold]Trainable params[/]: {_human(trainable_parameters)}")
+        grid.add_row(
+            f"[bold]Non-trainable params[/]: {_human(total_parameters - trainable_parameters)}"
+        )
+        grid.add_row(f"[bold]Total params[/]: {_human(total_parameters)}")
+        grid.add_row(f"[bold]Total estimated model params size (MB)[/]: {model_size:.3f}")
+        grid.add_row(f"[bold]Modules in train mode[/]: {total_training_modes.get('train', 0)}")
+        grid.add_row(f"[bold]Modules in eval mode[/]: {total_training_modes.get('eval', 0)}")
+        console.print(grid)
 
 
 class ProgressBar(Callback):
@@ -475,6 +592,148 @@ class ProgressBar(Callback):
 
 
 TQDMProgressBar = ProgressBar
+
+
+@dataclass
+class RichProgressBarTheme:
+    """Styles of the parts of ``RichProgressBar`` (``rich`` style strings or ``Style``s), as
+    in Lightning: ``description`` (``Epoch N``), ``progress_bar``, ``progress_bar_finished``,
+    ``progress_bar_pulse`` (unknown length), ``batch_progress`` (``10/50``), ``time``,
+    ``processing_speed`` and ``metrics``; ``metrics_text_delimiter`` goes between metrics
+    and ``metrics_format`` formats their values."""
+
+    description: Any = ""
+    progress_bar: Any = "#6206E0"
+    progress_bar_finished: Any = "#6206E0"
+    progress_bar_pulse: Any = "#6206E0"
+    batch_progress: Any = ""
+    time: Any = "dim"
+    processing_speed: Any = "dim underline"
+    metrics: Any = "italic"
+    metrics_text_delimiter: str = " "
+    metrics_format: str = ".3f"
+
+
+class RichProgressBar(ProgressBar):
+    """``ProgressBar`` drawn with ``rich`` (needs ``pip install rich``): a bar per epoch with
+    the batch count, elapsed time, speed and the values of the last logged step. As
+    ``ProgressBar``, it draws only on a terminal (rank 0) and at most ``refresh_rate`` times
+    per second (``0`` turns it off), with no extra device reads. ``leave=True`` keeps each
+    finished epoch's bar on screen; ``theme`` is a ``RichProgressBarTheme`` and
+    ``console_kwargs`` go to ``rich.console.Console``."""
+
+    def __init__(
+        self,
+        refresh_rate: float = 4.0,
+        leave: bool = False,
+        theme: RichProgressBarTheme | None = None,
+        console_kwargs: dict[str, Any] | None = None,
+    ) -> None:
+        _require_rich("RichProgressBar")
+        super().__init__(refresh_rate=refresh_rate, leave=leave)
+        self.theme = theme or RichProgressBarTheme()
+        self._console_kwargs = console_kwargs or {}
+        self.progress: Any = None
+        self._task: Any = None
+        self._total: int | None = None
+        self._done = 0
+
+    def _metrics_text(self, trainer: Trainer) -> str:
+        fmt = self.theme.metrics_format
+        parts = []
+        for k, v in trainer.progress_bar_metrics.items():
+            try:
+                parts.append(f"{k}: {v:{fmt}}")
+            except (TypeError, ValueError):
+                parts.append(f"{k}: {v}")
+        return self.theme.metrics_text_delimiter.join(parts)
+
+    def _draw(self, trainer: Trainer, now: float) -> None:
+        rate = self._done / max(now - self._t0, 1e-9)
+        total = "?" if self._total is None else str(self._total)
+        self.progress.update(
+            self._task,
+            completed=self._done,
+            batches=f"{self._done}/{total}",
+            speed=f"{rate:.2f}it/s",
+            metrics=self._metrics_text(trainer),
+        )
+        self.progress.refresh()
+
+    def on_train_epoch_start(self, trainer: Trainer, pl_module: Module) -> None:
+        self._stop()
+        self._active = (
+            self._enabled
+            and self.refresh_rate > 0
+            and trainer.is_global_zero
+            and sys.stdout.isatty()
+        )
+        if not self._active:
+            return
+        from rich.console import Console
+        from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn
+
+        th = self.theme
+        n = trainer.num_training_batches
+        self._total = None if n == math.inf else int(n)
+        self.progress = Progress(
+            TextColumn("{task.description}", style=th.description),
+            BarColumn(
+                complete_style=th.progress_bar,
+                finished_style=th.progress_bar_finished,
+                pulse_style=th.progress_bar_pulse,
+            ),
+            TextColumn("{task.fields[batches]}", style=th.batch_progress),
+            TimeElapsedColumn(),
+            TextColumn("{task.fields[speed]}", style=th.processing_speed),
+            TextColumn("{task.fields[metrics]}", style=th.metrics, markup=False),
+            console=Console(**self._console_kwargs),
+            auto_refresh=False,  # redrawn from on_train_batch_end, rate-limited
+            transient=not self.leave,
+        )
+        self.progress.start()
+        self._task = self.progress.add_task(
+            f"Epoch {trainer.current_epoch}",
+            total=self._total,
+            batches=f"0/{'?' if self._total is None else self._total}",
+            speed="",
+            metrics="",
+        )
+        self._done = 0
+        self._t0 = self._last = time.monotonic()
+
+    def on_train_batch_end(
+        self, trainer: Trainer, pl_module: Module, outputs: Any, batch: Any, batch_idx: int
+    ) -> None:
+        if not getattr(self, "_active", False) or self.progress is None:
+            return
+        self._done += 1
+        if self._total is None and trainer.num_training_batches != math.inf:
+            # Known only once the epoch's loop starts (the first epoch).
+            self._total = int(trainer.num_training_batches)
+            self.progress.update(self._task, total=self._total)
+        now = time.monotonic()
+        if now - self._last < 1.0 / self.refresh_rate:
+            return
+        self._last = now
+        self._draw(trainer, now)
+
+    def on_train_epoch_end(self, trainer: Trainer, pl_module: Module) -> None:
+        if self.progress is not None:
+            self._draw(trainer, time.monotonic())
+        self._stop()
+
+    def on_train_end(self, trainer: Trainer, pl_module: Module) -> None:
+        self._stop()
+
+    def on_exception(self, trainer: Trainer, pl_module: Module, exception: BaseException) -> None:
+        self._stop()
+
+    def _stop(self) -> None:
+        if self.progress is not None:
+            self.progress.stop()
+            self.progress = None
+            self._task = None
 
 
 class BasePredictionWriter(Callback):

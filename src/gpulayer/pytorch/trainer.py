@@ -13,6 +13,8 @@ import csv
 import json
 import math
 import os
+import signal
+import threading
 import time
 from collections import defaultdict
 from collections.abc import Callable, Iterator
@@ -25,10 +27,17 @@ import torch
 from torch.utils.data import DataLoader, DistributedSampler, SequentialSampler
 
 from gpulayer.errors import ValidationFailed
-from gpulayer.pytorch.callbacks import Callback
+from gpulayer.pytorch.accelerators import Accelerator, accelerator_name
+from gpulayer.pytorch.callbacks import Callback, Checkpoint
 from gpulayer.pytorch.callbacks.base import legacy_batch_end, overrides
 from gpulayer.pytorch.callbacks.monitor import EarlyStopping, ModelCheckpoint
-from gpulayer.pytorch.callbacks.utility import ModelSummary, ProgressBar, _parse_duration
+from gpulayer.pytorch.callbacks.utility import (
+    ModelSummary,
+    ProgressBar,
+    RichModelSummary,
+    RichProgressBar,
+    _parse_duration,
+)
 from gpulayer.pytorch.combined import CombinedLoader, loaders_of
 from gpulayer.pytorch.launch import LaunchResult, in_gpulayer_job, is_launcher_process, launch
 from gpulayer.pytorch.loggers import Logger
@@ -46,6 +55,8 @@ from gpulayer.pytorch.strategies import (
     DDPStrategy,
     DeepSpeedStrategy,
     FSDPStrategy,
+    ModelParallelStrategy,
+    Strategy,
     resolve_strategy,
 )
 from gpulayer.sdk.remote import RemoteError, default_client, default_target, explain_failure
@@ -172,8 +183,8 @@ class Trainer:
     def __init__(
         self,
         *,
-        accelerator: str = "auto",
-        strategy: str | DDPStrategy | FSDPStrategy = "ddp",
+        accelerator: str | Accelerator = "auto",
+        strategy: str | Strategy = "ddp",
         devices: int | str = 1,
         num_nodes: int = 1,
         precision: str | int = "32-true",
@@ -211,17 +222,30 @@ class Trainer:
         sync_batchnorm: bool = False,
         reload_dataloaders_every_n_epochs: int = 0,
         default_root_dir: str | Path = "gpulayer_runs",
+        log_key_prefix: str | None = None,
+        enable_autolog_hparams: bool = True,
+        model_registry: str | None = None,
+        suggest_integrations: bool = True,
         # GPUlayer's own arguments
         target: str | None = None,
         gradient_sync: str = "auto",
         prefetch: bool = False,
         launch_options: dict[str, Any] | None = None,
     ) -> None:
+        if model_registry is not None:
+            raise ValidationFailed(
+                "model_registry uploads checkpoints to Lightning AI's cloud registry, which "
+                "GPUlayer does not use; checkpoints come back to default_root_dir"
+            )
+        accelerator = accelerator_name(accelerator)
+        if accelerator == "gpu":  # Lightning's alias
+            accelerator = "cuda"
         plugged = apply_plugins(plugins) if plugins is not None else {}
         precision = plugged.get("precision", precision)
         sync_batchnorm = plugged.get("sync_batchnorm", sync_batchnorm)
         self.checkpoint_io: CheckpointIO = plugged.get("checkpoint_io") or TorchCheckpointIO()
         self._custom_scaler = plugged.get("scaler")
+        self._precision_plugin = plugged.get("precision_plugin")
         if max_epochs is None or max_epochs == -1:
             max_epochs = 1000 if max_steps in (None, -1) else 10**9
         if max_steps == -1:
@@ -288,6 +312,14 @@ class Trainer:
             )
         self.benchmark = benchmark
         self.prefetch = prefetch
+        # Lightning's names: a prefix for the keys the Trainer itself logs ("epoch", ...);
+        # whether the hyperparameters go to the loggers when fit starts. suggest_integrations
+        # only prints tips in Lightning and is accepted for compatibility.
+        self.log_key_prefix = log_key_prefix or ""
+        self.enable_autolog_hparams = enable_autolog_hparams
+        self.suggest_integrations = suggest_integrations
+        self.received_sigterm = False
+        self._sigterm_stop = False
         if gradient_sync not in GRADIENT_SYNC:
             raise ValidationFailed(
                 f"gradient_sync must be one of {GRADIENT_SYNC}, got {gradient_sync!r}"
@@ -353,7 +385,10 @@ class Trainer:
         if enable_progress_bar and not any(isinstance(c, ProgressBar) for c in self.callbacks):
             self.callbacks.append(ProgressBar())
         if enable_model_summary and not any(isinstance(c, ModelSummary) for c in self.callbacks):
-            self.callbacks.insert(0, ModelSummary())
+            # With a RichProgressBar the summary is a rich table too, as in Lightning.
+            rich = any(isinstance(c, RichProgressBar) for c in self.callbacks)
+            self.callbacks.insert(0, RichModelSummary() if rich else ModelSummary())
+        self.callbacks = _checkpoints_last(self.callbacks)
         self.enable_progress_bar = enable_progress_bar
         self.enable_model_summary = enable_model_summary
 
@@ -405,12 +440,14 @@ class Trainer:
         self._eval_calls: dict[str, int] = defaultdict(int)
         self._ds_engine: Any = None
         self._reloaded_train: Any = None
+        self._num_test_batches: int | float | list[int | float] = 0
+        self._num_predict_batches: list[int | float] = []
 
     # ---------------------------------------------------------------- properties
 
     @property
-    def strategy(self) -> DDPStrategy | FSDPStrategy:
-        """The strategy object (``DDPStrategy`` or ``FSDPStrategy``) from ``strategy=``."""
+    def strategy(self) -> Strategy:
+        """The strategy object (``DDPStrategy``, ``FSDPStrategy``, ...) from ``strategy=``."""
         return self._strategy
 
     @property
@@ -491,14 +528,14 @@ class Trainer:
         return self.state.stage == "sanity_check"
 
     @property
-    def checkpoint_callbacks(self) -> list[ModelCheckpoint]:
-        """Every ``ModelCheckpoint`` among the callbacks."""
-        return [c for c in self.callbacks if isinstance(c, ModelCheckpoint)]
+    def checkpoint_callbacks(self) -> list[Checkpoint]:
+        """Every checkpointing callback (``ModelCheckpoint``, ``OnExceptionCheckpoint``, ...)."""
+        return [c for c in self.callbacks if isinstance(c, Checkpoint)]
 
     @property
     def checkpoint_callback(self) -> ModelCheckpoint | None:
         """The first ``ModelCheckpoint``, or None."""
-        found = self.checkpoint_callbacks
+        found = [c for c in self.callbacks if isinstance(c, ModelCheckpoint)]
         return found[0] if found else None
 
     @property
@@ -511,6 +548,116 @@ class Trainer:
         """The first ``EarlyStopping``, or None."""
         found = self.early_stopping_callbacks
         return found[0] if found else None
+
+    # ------------------------------------------------ Lightning's other members
+
+    @property
+    def device_ids(self) -> list[int]:
+        """Index of this process's device (one per process, as GPUlayer starts one process
+        per GPU)."""
+        rt = self.runtime
+        if rt is not None and rt.device.index is not None:
+            return [rt.device.index]
+        return [0] if rt is None or rt.device.type != "cpu" else []
+
+    @property
+    def distributed_sampler_kwargs(self) -> dict[str, int] | None:
+        """What the Trainer gives ``DistributedSampler`` (``None`` in one process)."""
+        rt = self.runtime
+        if rt is None or not rt.distributed:
+            return None
+        return {"num_replicas": rt.world_size, "rank": rt.global_rank}
+
+    @property
+    def enable_validation(self) -> bool:
+        """True when ``fit`` will validate (validation data and batches to run)."""
+        return (
+            self.val_dataloaders is not None
+            and self.limit_val_batches != 0
+            and self.check_val_every_n_epoch is not None
+        )
+
+    @property
+    def evaluating(self) -> bool:
+        """True while validating or testing."""
+        return self.validating or self.testing
+
+    @property
+    def num_sanity_val_batches(self) -> list[int | float]:
+        """Validation batches the sanity check runs, per loader."""
+        loaders = self.val_dataloaders
+        if loaders is None or not self.num_sanity_val_steps:
+            return []
+        out: list[int | float] = []
+        for loader in loaders if isinstance(loaders, list) else [loaders]:
+            n = _len(loader) or math.inf
+            out.append(n if self.num_sanity_val_steps == -1 else min(self.num_sanity_val_steps, n))
+        return out
+
+    @property
+    def num_test_batches(self) -> int | float | list[int | float]:
+        """Test batches per loader of the last ``test``."""
+        return self._num_test_batches
+
+    @property
+    def num_predict_batches(self) -> list[int | float]:
+        """Prediction batches per loader of the last ``predict``."""
+        return list(self._num_predict_batches)
+
+    @property
+    def precision_plugin(self) -> Any:
+        """The precision plugin in use (a ``Precision`` for plain precision strings)."""
+        from gpulayer.pytorch.plugins import Precision
+
+        return self._precision_plugin or Precision(self.precision)
+
+    @property
+    def scaler(self) -> Any:
+        """The gradient scaler with ``16-mixed`` (else None)."""
+        return self.runtime.scaler if self.runtime is not None else self._custom_scaler
+
+    @property
+    def progress_bar_callback(self) -> ProgressBar | None:
+        """The progress bar callback, if any."""
+        return next((cb for cb in self.callbacks if isinstance(cb, ProgressBar)), None)
+
+    def print(self, *args: Any, **kwargs: Any) -> None:
+        """``print`` from the first process of each machine only."""
+        rt = self.runtime
+        if rt is None or rt.local_rank == 0:
+            print(*args, **kwargs)
+
+    @contextlib.contextmanager
+    def init_module(self, empty_init: bool | None = None) -> Iterator[None]:
+        """Create the model inside this block to build its tensors on the training device and
+        in the precision's dtype (``"bf16-true"`` and the other "-true" precisions) directly,
+        without a copy in CPU memory first. With ``empty_init=True`` the weights are left
+        uninitialised (faster for a model whose checkpoint is loaded next).
+
+        In the launching process of a job (several devices, machines or a target), and on
+        TPUs, tensors stay on the CPU: the model is built again where training runs."""
+        device = torch.device("cpu")
+        if not self.will_launch and not self._uses_tpu() and not self._xla_spawn_wanted():
+            accel = resolve_accelerator(self.accelerator)
+            if accel in ("cuda", "rocm"):
+                device = torch.device("cuda", int(os.environ.get("LOCAL_RANK", "0")))
+            elif accel == "mps":
+                device = torch.device("mps")
+        from gpulayer.pytorch.runtime import _TRUE_DTYPES
+
+        dtype_name = _TRUE_DTYPES.get(self.precision)
+        previous = torch.get_default_dtype()
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(device)
+            if dtype_name is not None:
+                torch.set_default_dtype(getattr(torch, dtype_name))
+                stack.callback(torch.set_default_dtype, previous)
+            if empty_init:
+                stack.enter_context(_EmptyInit())
+            yield
+
+    def _xla_spawn_wanted(self) -> bool:
+        return self._uses_tpu() and (self._all_devices or self.devices > 1)
 
     @property
     def estimated_stepping_batches(self) -> int | float:
@@ -576,10 +723,19 @@ class Trainer:
     def _load_outputs(self, output_dir: Path, model: Module) -> None:
         """Load the final weights and metrics that the training processes wrote."""
         ckpts = sorted(output_dir.rglob("last.ckpt"))
+        state: dict[str, Any] | None = None
         if ckpts:
             self.checkpoint_path = ckpts[0]  # node0/... sorts first
-            state = self.checkpoint_io.load_checkpoint(self.checkpoint_path)
-            model.load_state_dict(state["state_dict"])
+            try:
+                state = self.checkpoint_io.load_checkpoint(self.checkpoint_path)
+            except Exception as e:  # noqa: BLE001
+                if not self.checkpoint_path.is_dir():
+                    raise
+                # A sharded checkpoint written on several machines comes back split across
+                # node<r>/ folders; it loads only where every shard is (a shared filesystem).
+                self._say(f"[gpulayer] sharded checkpoint not loaded here ({e}); metrics only")
+        if state is not None:
+            model.load_state_dict(state["state_dict"], strict=model.strict_loading)
             self.history = state.get("history", [])
             self.callback_metrics = dict(self.history[-1]) if self.history else {}
             self.global_step = state.get("global_step", 0)
@@ -600,9 +756,18 @@ class Trainer:
             # The checkpoint is on this machine: ship it with the job as an input; the copy of
             # this script on the workers finds it there (see _resume_path).
             local = Path(ckpt_path)
-            if not local.is_file():
+            if local.is_dir():
+                # A sharded checkpoint folder: ship each file; every node gets them all.
+                shipped = {
+                    f"{RESUME_INPUT}.d/{f.relative_to(local).as_posix()}": f
+                    for f in local.rglob("*")
+                    if f.is_file()
+                }
+                options["inputs"] = {**options.get("inputs", {}), **shipped}
+            elif local.is_file():
+                options["inputs"] = {**options.get("inputs", {}), RESUME_INPUT: local}
+            else:
                 raise ValidationFailed(f"checkpoint not found: {local}")
-            options["inputs"] = {**options.get("inputs", {}), RESUME_INPUT: local}
         client = options.pop("client", None) or default_client()
         target = self.target or default_target(client)
         accel = self.accelerator
@@ -696,11 +861,7 @@ class Trainer:
             return
         kinds = {type(c) for c in extra}
         kept = [c for c in self.callbacks if type(c) not in kinds]
-        # Checkpoint callbacks go last, as in Lightning, so they save the final state.
-        merged = kept + extra
-        self.callbacks = [c for c in merged if not isinstance(c, ModelCheckpoint)] + [
-            c for c in merged if isinstance(c, ModelCheckpoint)
-        ]
+        self.callbacks = _checkpoints_last(kept + extra)
 
     # ---------------------------------------------------------------- loaders
 
@@ -712,14 +873,8 @@ class Trainer:
         hook = f"{name}_dataloader"
         if dm is not None and overridden(dm, hook, DataModule):
             return getattr(dm, hook)
-        if (
-            model is not None
-            and hook in type(model).__dict__
-            or (model is not None and any(hook in c.__dict__ for c in type(model).__mro__[:-3]))
-        ):
-            fn = getattr(model, hook, None)
-            if callable(fn):
-                return fn
+        if model is not None and overridden(model, hook, Module):
+            return getattr(model, hook)
         return None
 
     def _prepare_loader(self, rt: Runtime, loader: Any, shuffle: bool | None = None) -> Any:
@@ -842,13 +997,19 @@ class Trainer:
             rt_precision = {"16-mixed": "16-true", "bf16-mixed": "bf16-true"}.get(
                 self.precision, self.precision
             )
-        rt = Runtime(
-            self.accelerator, rt_precision, self.gradient_sync, self._strategy.ddp_kwargs()
-        ).setup()
+        strat = self._strategy
+        rt = Runtime(self.accelerator, rt_precision, self.gradient_sync, strat.ddp_kwargs())
+        if isinstance(strat, DDPStrategy):
+            rt.comm_strategy = strat
+        rt.setup(backend=strat.process_group_backend, timeout=strat.timeout)
         if self._custom_scaler is not None:
             rt.scaler = self._custom_scaler
         self.runtime = rt
         anomaly = torch.autograd.set_detect_anomaly(True) if self.detect_anomaly else _NOOP
+        self.received_sigterm = self._sigterm_stop = False
+        previous_sigterm = None
+        if threading.current_thread() is threading.main_thread():
+            previous_sigterm = signal.signal(signal.SIGTERM, self._sigterm_handler)
         try:
             with anomaly:
                 self._run_fit(rt, model, train_dataloaders, val_dataloaders, ckpt_path)
@@ -864,6 +1025,8 @@ class Trainer:
             self._on_exception(model, e)
             raise
         finally:
+            if previous_sigterm is not None:
+                signal.signal(signal.SIGTERM, previous_sigterm)
             self.checkpoint_io.teardown()
             self._finalize_loggers("success" if self.state.status == "finished" else "failed")
             rt.teardown()
@@ -879,6 +1042,9 @@ class Trainer:
         if overridden(model, "on_exception", Module):
             with contextlib.suppress(Exception):
                 model.on_exception(e)
+        if self.datamodule is not None:
+            with contextlib.suppress(Exception):
+                self.datamodule.on_exception(e)
 
     def _finalize_loggers(self, status: str) -> None:
         if self.runtime is not None and not self.runtime.is_global_zero:
@@ -1031,9 +1197,12 @@ class Trainer:
         ckpt_path: str | Path | None,
     ) -> None:
         self._setup_model(rt, model, "fit")
-        if overridden(model, "configure_model", Module):
-            with rt.device:
-                model.configure_model()
+        if isinstance(self._strategy, ModelParallelStrategy):
+            self._setup_model_parallel(rt, model)
+        for hook in ("configure_sharded_model", "configure_model"):
+            if overridden(model, hook, Module):
+                with rt.device:
+                    getattr(model, hook)()
         train_src = self._source(train_src, "train", model)
         if train_src is None:
             raise ValidationFailed(
@@ -1065,6 +1234,7 @@ class Trainer:
         ckpt_path: str | Path | None,
     ) -> None:
         model.trainer = self
+        self._apply_precision_plugin(rt, model)
         model.to(rt.device)
         rt.convert_module(model)
         fsdp = isinstance(self._strategy, FSDPStrategy) and rt.distributed
@@ -1084,7 +1254,7 @@ class Trainer:
                     "strategy='fsdp' shards submodules; move parameters the Module owns "
                     "directly (nn.Parameter attributes) into a submodule such as nn.Linear"
                 )
-            sharded = rt.shard(_TrainingStep(model))
+            sharded = rt.shard(_TrainingStep(model), self._strategy)
         optimizers, sched_configs = self._optimizers(model)
         if isinstance(self._strategy, DeepSpeedStrategy):
             if ckpt_path:
@@ -1110,6 +1280,9 @@ class Trainer:
             optimizers = [ds_opt]
         if fsdp and len(optimizers) > 1:
             raise ValidationFailed("strategy='fsdp' supports one optimizer")
+        averaging = getattr(self._strategy, "model_averaging_period", None)
+        if averaging and rt.distributed:
+            optimizers = _post_local_sgd(optimizers, self._strategy)
         self.optimizers, self.lr_scheduler_configs = optimizers, sched_configs
         self._model, self.should_stop = model, False
         automatic = model.automatic_optimization
@@ -1125,6 +1298,9 @@ class Trainer:
             ddp, step_fn = self._ds_engine, self._ds_engine
         elif sharded is not None:
             ddp, step_fn = sharded, sharded
+        elif rt.distributed and isinstance(self._strategy, ModelParallelStrategy):
+            # configure_model applied tensor parallelism and FSDP: the Module syncs itself.
+            ddp, step_fn = model, model.training_step
         elif rt.distributed:
             ddp = rt.module(_TrainingStep(model))
             step_fn = ddp if automatic else model.training_step
@@ -1152,7 +1328,7 @@ class Trainer:
         self._say(
             f"[gpulayer] training on {where}, precision {rt.precision}, {self.max_epochs} epoch(s)"
         )
-        if rt.is_global_zero and self.loggers:
+        if rt.is_global_zero and self.loggers and self.enable_autolog_hparams:
             hp = {
                 **dict(model.hparams),
                 **(dict(self.datamodule.hparams) if self.datamodule else {}),
@@ -1174,6 +1350,12 @@ class Trainer:
             self._call_hook("on_sanity_check_end")
             self.callback_metrics = {}
         self.state.stage = "train"
+        if not model.training:
+            self._say(
+                "[gpulayer] warning: the model is in eval mode at the start of training "
+                "(dropout and BatchNorm updates are off); call model.train() before fit if "
+                "that is not intended"
+            )
         self._call_hook("on_train_start")
         for epoch in range(start_epoch, self.max_epochs):
             self.current_epoch = epoch
@@ -1186,13 +1368,24 @@ class Trainer:
             for part in loaders_of(train):
                 if isinstance(getattr(part, "sampler", None), DistributedSampler):
                     part.sampler.set_epoch(epoch)
-            model.train()
+            # No model.train() here, as in Lightning: submodules keep the mode they were given
+            # (a frozen backbone stays in eval); evaluation restores each one's mode after.
+            n_all = _len(train)
+            n_lim = _limit(self.limit_train_batches, n_all, "limit_train_batches")
+            n_run = n_all if n_lim is None else (min(n_all, n_lim) if n_all else n_lim)
+            self.num_training_batches = n_run if n_run is not None else math.inf  # for hooks
             self._call_hook("on_train_epoch_start")
             self.state.stage = "train"
             t0 = time.perf_counter()
             metrics = self._train_epoch(
                 rt, model, train, val, step_fn, ddp, automatic, fit_t0, skip_batches
             )
+            if not self._sigterm_stop:  # every rank decides together at the epoch's end
+                self._sigterm_stop = (
+                    rt.any(self.received_sigterm) if rt.distributed else self.received_sigterm
+                )
+            if self._sigterm_stop:
+                self._stop_on_sigterm(rt, out_dir)
             skip_batches = 0
             metrics["epoch"] = epoch
             metrics["epoch_seconds"] = round(time.perf_counter() - t0, 3)
@@ -1241,6 +1434,55 @@ class Trainer:
                 report = self.profiler.describe()
                 if report:
                     print(report, flush=True)
+
+    def _setup_model_parallel(self, rt: Runtime, model: Module) -> None:
+        """ModelParallelStrategy: build the (data_parallel, tensor_parallel) mesh for
+        ``configure_model`` and read data per data-parallel group."""
+        if not overridden(model, "configure_model", Module):
+            raise ValidationFailed(
+                "ModelParallelStrategy needs configure_model() on the Module, applying tensor "
+                "parallelism and fully_shard with self.device_mesh"
+            )
+        if not rt.distributed:
+            return
+        from torch.distributed.device_mesh import init_device_mesh
+
+        dp, tp = self._strategy.mesh_shape(rt.world_size, rt.local_world_size)
+        mesh = init_device_mesh(
+            rt.device.type, (dp, tp), mesh_dim_names=("data_parallel", "tensor_parallel")
+        )
+        model.device_mesh = mesh
+        rt.data_parallel = (dp, mesh["data_parallel"].get_local_rank())
+
+    def _apply_precision_plugin(self, rt: Runtime, model: Module) -> None:
+        """Layer-replacing precision plugins (bitsandbytes, Transformer Engine): convert the
+        model once, before it moves to the device, and run forwards in their context."""
+        plugin = self._precision_plugin
+        if plugin is None:
+            return
+        if hasattr(plugin, "convert_module") and not model.__dict__.get("_gl_converted"):
+            plugin.convert_module(model)
+            model.__dict__["_gl_converted"] = True
+        if hasattr(plugin, "forward_context"):
+            rt.forward_context = plugin.forward_context
+
+    def _stop_on_sigterm(self, rt: Runtime, out_dir: Path) -> None:
+        """Save a checkpoint a resumed run continues from (mid-epoch when stopped mid-epoch),
+        then end ``fit`` with ``SIGTERMException``, as Lightning does."""
+        self._say(
+            f"[gpulayer] SIGTERM: stopping at step {self.global_step}"
+            + (", saving checkpoints/last.ckpt" if self.enable_checkpointing else "")
+        )
+        if self.enable_checkpointing:
+            saved = self.save_checkpoint(Path(CHECKPOINT).name)
+            if saved is not None:
+                self.checkpoint_path = saved
+        if rt.is_global_zero:
+            self._write_metrics(out_dir)
+        raise SIGTERMException(f"SIGTERM received; stopped at step {self.global_step}")
+
+    def _sigterm_handler(self, signum: int, frame: Any) -> None:
+        self.received_sigterm = True
 
     def _reconfigure_optimizers(self, model: Module) -> None:
         """Build the optimizers again (after a callback changed the learning rate)."""
@@ -1413,12 +1655,20 @@ class Trainer:
                 and (n_batches is None or batch_idx + 1 < n_batches)
             ):
                 # Same batch index on every rank, so the collectives inside line up.
-                mid = self._run_validation(rt, model, val)
+                mid = self._run_validation(
+                    rt, model, val, zero_grad=(batch_idx + 1) % accumulate == 0
+                )
                 self.val_history.append({"epoch": epoch, "step": self.global_step, **mid})
                 self.callback_metrics.update(mid)
                 self._log_to_loggers(mid, self.global_step)
                 self.state.stage = "train"
-                model.train()
+            # SIGTERM (preemption, cancel): one process stops at once; several agree at a log
+            # step, where values are read anyway, so no step pays for an extra synchronisation.
+            if (single and self.received_sigterm) or (
+                not single and self._is_log_step and rt.any(self.received_sigterm)
+            ):
+                self._sigterm_stop = True
+                return {}  # keeps _batch_counter: the checkpoint resumes after this batch
             if self.max_steps is not None and self.global_step >= self.max_steps:
                 break  # same step count on every rank, so no extra synchronisation
             if single and (
@@ -1537,6 +1787,7 @@ class Trainer:
             self._ddp is not None
             and self._ds_engine is None
             and not rt.xla  # xm.optimizer_step all-reduces TPU gradients in step()
+            and not isinstance(self._strategy, ModelParallelStrategy)
             and not _fsdp_wrapped(self._ddp)
         ):
             _average_gradients(self._model)
@@ -1603,12 +1854,23 @@ class Trainer:
     def _log_to_loggers(self, metrics: dict[str, float], step: int) -> None:
         if not self.loggers or not self.is_global_zero:
             return
+        out = dict(metrics)
+        if self.log_key_prefix:
+            for key in ("epoch", "epoch_seconds"):
+                if key in out:
+                    out[f"{self.log_key_prefix}{key}"] = out.pop(key)
         for lg in self.loggers:
-            lg.log_metrics(dict(metrics), step)
+            lg.log_metrics(out, step)
 
     # ------------------------------------------------------------- evaluation
 
-    def _run_validation(self, rt: Runtime, model: Module, val: Any) -> dict[str, float]:
+    def _run_validation(
+        self, rt: Runtime, model: Module, val: Any, zero_grad: bool = True
+    ) -> dict[str, float]:
+        if zero_grad:
+            # Free the gradients' memory during validation (Lightning's hook), except in the
+            # middle of an accumulation.
+            model.on_validation_model_zero_grad()
         self.state.stage = "validate"
         out = self._evaluate(rt, model, val, "validation_step")
         self.state.stage = "train"
@@ -1633,8 +1895,8 @@ class Trainer:
         batch_start = hooks.get(f"on_{stage}_batch_start", [])
         batch_end = hooks.get(f"on_{stage}_batch_end", [])
         self._call_hook(f"on_{stage}_start")
-        was_training = model.training
-        model.eval()
+        modes = {m: m.training for m in model.modules()}
+        getattr(model, f"on_{stage}_model_eval")()
         self._call_hook(f"on_{stage}_epoch_start")
         step_fn = getattr(model, step)
         logged: dict[str, list[Any]] = defaultdict(list)
@@ -1679,7 +1941,10 @@ class Trainer:
                     count += 1
                     for fn in batch_end:
                         fn(out, batch, batch_idx, *extra)
-        self.num_val_batches = sizes if many else sizes[0]
+        if stage == "test":
+            self._num_test_batches = sizes if many else sizes[0]
+        else:
+            self.num_val_batches = sizes if many else sizes[0]
         if prof is not None:
             prof.stop(f"run_{stage}")
         metrics = self._aggregate(rt, logged, weights, options, count)
@@ -1688,8 +1953,11 @@ class Trainer:
         metrics.update(extra_logs)
         self._call_monitors(f"on_{stage}_epoch_end", model)
         self._call_hook(f"on_{stage}_end")
-        if was_training:
-            model.train()
+        if overridden(model, f"on_{stage}_model_train", Module):
+            getattr(model, f"on_{stage}_model_train")()
+        else:  # each submodule back to its mode before (frozen parts stay in eval), as Lightning
+            for m, training in modes.items():
+                m.training = training
         return metrics
 
     def _eval_context(self, rt: Runtime) -> Any:
@@ -1737,7 +2005,10 @@ class Trainer:
         model = self._unwrap(model)
         if datamodule is not None:
             self.datamodule = datamodule
-        rt = Runtime(self.accelerator, self.precision, self.gradient_sync).setup()
+        strat = self._strategy
+        rt = Runtime(self.accelerator, self.precision, self.gradient_sync).setup(
+            backend=strat.process_group_backend, timeout=strat.timeout
+        )
         self.runtime = rt
         self._model = model
         self.state = TrainerState(stage, stage, "running")
@@ -1746,7 +2017,8 @@ class Trainer:
         if path is not None:
             ckpt = self.checkpoint_io.load_checkpoint(path)
             model.on_load_checkpoint(ckpt)
-            model.load_state_dict(ckpt["state_dict"])
+            model.load_state_dict(ckpt["state_dict"], strict=model.strict_loading)
+        self._apply_precision_plugin(rt, model)
         model.to(rt.device)
         rt.convert_module(model)
         self._build_hooks(model)
@@ -1860,7 +2132,7 @@ class Trainer:
         all_indices: list[list[Any] | None] = []
         try:
             self._call_hook("on_predict_start")
-            model.eval()
+            model.on_predict_model_eval()
             self._call_hook("on_predict_epoch_start")
             with self._eval_context(rt), rt.autocast():
                 for dl_idx, loader in enumerate(loaders):
@@ -1872,6 +2144,11 @@ class Trainer:
                             self._predict_indices = [list(b) for b in sampler]
                     limit = _limit(
                         self.limit_predict_batches, _len(loader), "limit_predict_batches"
+                    )
+                    if dl_idx == 0:
+                        self._num_predict_batches = []
+                    self._num_predict_batches.append(
+                        limit if limit is not None else (_len(loader) or math.inf)
                     )
                     extra = (dl_idx,) if many else ()
                     for batch_idx, batch in enumerate(
@@ -1972,6 +2249,10 @@ class Trainer:
     # ------------------------------------------------------------- checkpoints
 
     def _restore(self, rt: Runtime, model: Module, ckpt_path: str | Path) -> tuple[int, int]:
+        if Path(ckpt_path).is_dir() and rt.distributed:
+            # A sharded checkpoint: each rank loads its own part in place.
+            state = rt.load_sharded(model, self.optimizers, Path(ckpt_path))
+            return self._restore_rest(rt, model, state)
         state = self.checkpoint_io.load_checkpoint(ckpt_path)
         model.on_load_checkpoint(state)
         for cb in self.callbacks:
@@ -1985,7 +2266,16 @@ class Trainer:
             for opt, s in zip(self.optimizers[1:], optim_states[1:], strict=False):
                 opt.load_state_dict(s)
         else:
-            model.load_state_dict(state["state_dict"])
+            model.load_state_dict(state["state_dict"], strict=model.strict_loading)
+        return self._restore_rest(rt, model, state)
+
+    def _restore_rest(self, rt: Runtime, model: Module, state: dict[str, Any]) -> tuple[int, int]:
+        """Everything in a checkpoint besides the weights and optimizer states."""
+        if state.get("sharded"):
+            model.on_load_checkpoint(state)
+            for cb in self.callbacks:
+                if overrides(cb, "on_load_checkpoint"):
+                    cb.on_load_checkpoint(self, model, state)
         for c, s in zip(self.lr_scheduler_configs, state.get("lr_schedulers") or [], strict=False):
             c.scheduler.load_state_dict(s)
         if rt.scaler is not None and state.get("scaler"):
@@ -2029,7 +2319,13 @@ class Trainer:
             weights_only = True  # DeepSpeed's own optimizer state is not in Trainer checkpoints
             if rt is not None and not rt.is_global_zero:
                 return None
-        elif rt is not None and isinstance(self._strategy, FSDPStrategy) and rt.distributed:
+        elif self._sharded_checkpoints():
+            model_state, optim_states = {}, list[Any]()  # each rank writes its part below
+        elif (
+            rt is not None
+            and isinstance(self._strategy, (FSDPStrategy, ModelParallelStrategy))
+            and rt.distributed
+        ):
             model_state, optim_state = rt.full_state(model, self.optimizers[0])
             optim_states = [optim_state]
         elif rt is not None and not rt.is_global_zero:
@@ -2037,7 +2333,8 @@ class Trainer:
         else:
             model_state = model.state_dict()
             optim_states = [] if weights_only else [o.state_dict() for o in self.optimizers]
-        if rt is not None and not rt.is_global_zero:
+        sharded = self._sharded_checkpoints()
+        if rt is not None and not rt.is_global_zero and not sharded:
             return None
         if rt is not None and rt.xla:
             # XLA tensors would load only on a TPU: save them as CPU tensors, as xm.save does
@@ -2087,10 +2384,32 @@ class Trainer:
         for cb in self.callbacks:
             if overrides(cb, "on_save_checkpoint"):
                 cb.on_save_checkpoint(self, model, checkpoint)
-        self.checkpoint_io.save_checkpoint(checkpoint, path)
+        if sharded:
+            assert rt is not None
+            del checkpoint["state_dict"]
+            checkpoint.pop("optimizer_states", None)
+            checkpoint.pop("optimizer", None)
+            checkpoint["sharded"] = True
+            path.mkdir(parents=True, exist_ok=True)
+            rt.save_sharded(model, self.optimizers, path, checkpoint)
+            if not rt.is_global_zero:
+                return None
+        else:
+            self.checkpoint_io.save_checkpoint(checkpoint, path)
         for lg in self.loggers:
             lg.after_save_checkpoint(path)
         return path
+
+    def _sharded_checkpoints(self) -> bool:
+        """True when each rank writes its own part of the checkpoint (FSDP with
+        ``state_dict_type="sharded"``, ModelParallelStrategy with
+        ``save_distributed_checkpoint=True``)."""
+        rt = self.runtime
+        return bool(
+            rt is not None
+            and rt.distributed
+            and getattr(self._strategy, "state_dict_type", "full") == "sharded"
+        )
 
     def _write_metrics(self, out_dir: Path) -> None:
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -2276,6 +2595,9 @@ def _resume_path(ckpt_path: str | Path | None) -> str | Path | None:
         shipped = Path(os.environ["GPULAYER_INPUT_DIR"]) / RESUME_INPUT
         if shipped.is_file():
             return shipped
+        folder = shipped.with_name(RESUME_INPUT + ".d")
+        if folder.is_dir():
+            return folder
     return ckpt_path
 
 
@@ -2304,6 +2626,59 @@ def _extreme(values: list[Any], fx: str) -> float:
     dev = tensors[0].device
     stacked = torch.stack([t.to(dev).float() for t in tensors])
     return float(stacked.max() if fx == "max" else stacked.min())
+
+
+def _checkpoints_last(callbacks: list[Callback]) -> list[Callback]:
+    """Checkpoint callbacks after the others, as in Lightning, so they save the final state."""
+    return [c for c in callbacks if not isinstance(c, Checkpoint)] + [
+        c for c in callbacks if isinstance(c, Checkpoint)
+    ]
+
+
+def _post_local_sgd(optimizers: list[Any], strategy: Any) -> list[Any]:
+    """Post-local SGD (``DDPStrategy(model_averaging_period=N)``): wrap each optimizer so the
+    models are averaged every N steps after the warm-up, as Lightning does."""
+    from torch.distributed.algorithms.ddp_comm_hooks.post_localSGD_hook import PostLocalSGDState
+    from torch.distributed.algorithms.model_averaging.averagers import PeriodicModelAverager
+    from torch.distributed.optim import PostLocalSGDOptimizer
+
+    state = strategy.ddp_comm_state
+    if not isinstance(state, PostLocalSGDState):
+        raise ValidationFailed(
+            "model_averaging_period needs ddp_comm_state=PostLocalSGDState(...) and "
+            "ddp_comm_hook=post_localSGD_hook"
+        )
+    period = strategy.model_averaging_period
+    return [
+        PostLocalSGDOptimizer(
+            optim=o,
+            averager=PeriodicModelAverager(period=period, warmup_steps=state.start_localSGD_iter),
+        )
+        for o in optimizers
+    ]
+
+
+class _EmptyInit(torch.overrides.TorchFunctionMode):
+    """Skip ``torch.nn.init`` calls while a model is built (``init_module(empty_init=True)``),
+    as Lightning does: the weights are about to be replaced by a checkpoint."""
+
+    def __torch_function__(self, func: Any, types: Any, args: Any = (), kwargs: Any = None) -> Any:
+        kwargs = kwargs or {}
+        if getattr(func, "__module__", None) == "torch.nn.init":
+            return kwargs["tensor"] if "tensor" in kwargs else args[0]
+        return func(*args, **kwargs)
+
+
+class SIGTERMException(SystemExit):
+    """Raised by ``fit`` after a SIGTERM (cloud preemption, a cancelled job) once the
+    checkpoint is saved; a ``SystemExit``, so the process ends with an error status."""
+
+    def __init__(self, message: str = "SIGTERM received") -> None:
+        super().__init__(143)
+        self.message = message
+
+    def __str__(self) -> str:
+        return self.message
 
 
 def _to_cpu(value: Any) -> Any:

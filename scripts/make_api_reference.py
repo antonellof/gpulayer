@@ -23,7 +23,7 @@ SECTIONS: list[tuple[str, str, list[str]]] = [
     (
         "Trainer",
         "Runs the loop here or launches it on workers. Guide: [Trainer and Module](trainer.md).",
-        ["Trainer", "LRSchedulerConfig"],
+        ["Trainer", "LRSchedulerConfig", "SIGTERMException"],
     ),
     (
         "Module and DataModule",
@@ -33,13 +33,35 @@ SECTIONS: list[tuple[str, str, list[str]]] = [
     (
         "Strategies",
         "How the model is replicated or sharded across processes.",
-        ["DDPStrategy", "FSDPStrategy", "DeepSpeedStrategy"],
+        [
+            "DDPStrategy",
+            "FSDPStrategy",
+            "ModelParallelStrategy",
+            "DeepSpeedStrategy",
+            "SingleDeviceStrategy",
+            "ParallelStrategy",
+            "Strategy",
+        ],
+    ),
+    (
+        "Accelerators",
+        "Lightning's classes: `Trainer(accelerator=CUDAAccelerator())` is "
+        '`accelerator="cuda"`.',
+        [
+            "Accelerator",
+            "CPUAccelerator",
+            "CUDAAccelerator",
+            "MPSAccelerator",
+            "XLAAccelerator",
+            "find_usable_cuda_devices",
+        ],
     ),
     (
         "Callbacks",
         "Guide: [Callbacks, loggers and profilers](callbacks.md).",
         [
             "Callback",
+            "Checkpoint",
             "ModelCheckpoint",
             "EarlyStopping",
             "LearningRateMonitor",
@@ -55,7 +77,10 @@ SECTIONS: list[tuple[str, str, list[str]]] = [
             "DeviceStatsMonitor",
             "SpikeDetection",
             "ModelSummary",
+            "RichModelSummary",
             "ProgressBar",
+            "RichProgressBar",
+            "RichProgressBarTheme",
             "BasePredictionWriter",
             "OnExceptionCheckpoint",
             "LambdaCallback",
@@ -67,7 +92,15 @@ SECTIONS: list[tuple[str, str, list[str]]] = [
     (
         "Loggers",
         "Called from rank 0 with values the Trainer already read.",
-        ["Logger", "CSVLogger", "TensorBoardLogger", "WandbLogger", "MLFlowLogger"],
+        [
+            "Logger",
+            "CSVLogger",
+            "TensorBoardLogger",
+            "WandbLogger",
+            "MLFlowLogger",
+            "CometLogger",
+            "LitLogger",
+        ],
     ),
     (
         "Profilers",
@@ -78,6 +111,7 @@ SECTIONS: list[tuple[str, str, list[str]]] = [
             "AdvancedProfiler",
             "PyTorchProfiler",
             "PassThroughProfiler",
+            "XLAProfiler",
         ],
     ),
     ("Tuner", "Learning-rate and batch-size search.", ["Tuner"]),
@@ -89,16 +123,23 @@ SECTIONS: list[tuple[str, str, list[str]]] = [
             "MixedPrecision",
             "HalfPrecision",
             "DoublePrecision",
+            "FSDPPrecision",
+            "DeepSpeedPrecision",
+            "XLAPrecision",
+            "BitsandbytesPrecision",
+            "TransformerEnginePrecision",
             "CheckpointIO",
             "TorchCheckpointIO",
             "AsyncCheckpointIO",
+            "XLACheckpointIO",
+            "LayerSync",
             "TorchSyncBatchNorm",
         ],
     ),
     (
         "Command line",
         "Guide: [Command line](cli.md). `glt.LightningCLI` is the same class.",
-        ["GPULayerCLI"],
+        ["GPULayerCLI", "GPULayerArgumentParser", "SaveConfigCallback"],
     ),
     (
         "Launch and runtime",
@@ -239,7 +280,14 @@ def render() -> str:
         n
         for n in glt.__all__
         if n not in listed
-        and n not in ("LightningModule", "LightningDataModule", "TQDMProgressBar", "LightningCLI")
+        and n
+        not in (
+            "LightningModule",
+            "LightningDataModule",
+            "TQDMProgressBar",
+            "LightningCLI",
+            "LightningArgumentParser",
+        )
     )
     if missing:
         raise SystemExit(f"exported but not placed in a section: {missing}")

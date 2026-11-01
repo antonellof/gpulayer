@@ -16,8 +16,8 @@ Runs the loop here or launches it on workers. Guide: [Trainer and Module](traine
 ```python
 glt.Trainer(
     *,
-    accelerator: str = 'auto',
-    strategy: str | DDPStrategy | FSDPStrategy = 'ddp',
+    accelerator: str | Accelerator = 'auto',
+    strategy: str | Strategy = 'ddp',
     devices: int | str = 1,
     num_nodes: int = 1,
     precision: str | int = '32-true',
@@ -55,6 +55,10 @@ glt.Trainer(
     sync_batchnorm: bool = False,
     reload_dataloaders_every_n_epochs: int = 0,
     default_root_dir: str | Path = 'gpulayer_runs',
+    log_key_prefix: str | None = None,
+    enable_autolog_hparams: bool = True,
+    model_registry: str | None = None,
+    suggest_integrations: bool = True,
     target: str | None = None,
     gradient_sync: str = 'auto',
     prefetch: bool = False,
@@ -76,8 +80,10 @@ Lightning; the GPUlayer-only ones are `target`, `gradient_sync`, `prefetch` and
 | Method | |
 |---|---|
 | `fit(model, train_dataloaders=None, val_dataloaders=None, datamodule=None, ckpt_path=None)` | Train `model`. The loaders may be given as functions that return them, or come from a `DataModule` or the model's `train_dataloader`/`val_dataloader`: then they are built only in the processes that train. When the Trainer launches a job, the launching process only waits, so data it built would be thrown away (measured: a 6 s dataset built for nothing made a 2-GPU run look 25% slower per step). |
+| `init_module(empty_init=None)` | Create the model inside this block to build its tensors on the training device and in the precision's dtype (`"bf16-true"` and the other "-true" precisions) directly, without a copy in CPU memory first. With `empty_init=True` the weights are left uninitialised (faster for a model whose checkpoint is loaded next). |
 | `log_metrics(metrics, step=None)` | Record extra values for the current step (used by monitoring callbacks): they go to metrics.csv and the loggers, from rank 0. |
 | `predict(model=None, dataloaders=None, datamodule=None, return_predictions=None, ckpt_path=None)` | Run `predict_step` over `dataloaders` (no gradients) and return one output per batch, moved to the CPU; with several loaders, one list per loader. With `return_predictions=False` (for example with a `BasePredictionWriter`) nothing is kept in memory. |
+| `print(*args, **kwargs)` | `print` from the first process of each machine only. |
 | `save_checkpoint(filepath, weights_only=False, storage_options=None, dirpath=None)` | Write a checkpoint from rank 0 (other ranks return None) and return its path. A plain file name goes to `checkpoints/` of the run (or `dirpath`); a path is used as it is. Call it on every rank: with `strategy="fsdp"` the full state is gathered from all of them. |
 | `test(model=None, dataloaders=None, ckpt_path=None, verbose=True, datamodule=None)` | Run `test_step` over `dataloaders` in this process and return the averaged logs, e.g. `{"test_acc": 0.93}`. |
 | `validate(model=None, dataloaders=None, ckpt_path=None, verbose=True, datamodule=None)` | Run `validation_step` over `dataloaders` in this process and return the averaged logs, e.g. `{"val_loss": 0.21}` (`result[0]` also works, as in Lightning). |
@@ -85,10 +91,14 @@ Lightning; the GPUlayer-only ones are `target`, `gradient_sync`, `prefetch` and
 | Property | |
 |---|---|
 | `checkpoint_callback` | The first `ModelCheckpoint`, or None. |
-| `checkpoint_callbacks` | Every `ModelCheckpoint` among the callbacks. |
+| `checkpoint_callbacks` | Every checkpointing callback (`ModelCheckpoint`, `OnExceptionCheckpoint`, ...). |
+| `device_ids` | Index of this process's device (one per process, as GPUlayer starts one process per GPU). |
+| `distributed_sampler_kwargs` | What the Trainer gives `DistributedSampler` (`None` in one process). |
 | `early_stopping_callback` | The first `EarlyStopping`, or None. |
 | `early_stopping_callbacks` | Every `EarlyStopping` among the callbacks. |
+| `enable_validation` | True when `fit` will validate (validation data and batches to run). |
 | `estimated_stepping_batches` | Optimizer steps this fit plans (`inf` when the loader's length is unknown). |
+| `evaluating` | True while validating or testing. |
 | `global_rank` | This process's rank among all processes (0 in a single process). |
 | `is_global_zero` | True in the process with global rank 0 (and in a single process). |
 | `lightning_module` | The Module being trained or evaluated (Lightning's name). |
@@ -98,9 +108,15 @@ Lightning; the GPUlayer-only ones are `target`, `gradient_sync`, `prefetch` and
 | `model` | The Module as the loop calls it: wrapped in DDP when distributed, else the Module. |
 | `node_rank` | This machine's rank among the machines of the job. |
 | `num_devices` | Processes (devices) per node, from `devices=`. |
+| `num_predict_batches` | Prediction batches per loader of the last `predict`. |
+| `num_sanity_val_batches` | Validation batches the sanity check runs, per loader. |
+| `num_test_batches` | Test batches per loader of the last `test`. |
+| `precision_plugin` | The precision plugin in use (a `Precision` for plain precision strings). |
 | `predicting` | True while `predict` runs. |
+| `progress_bar_callback` | The progress bar callback, if any. |
 | `sanity_checking` | True during the validation check before training. |
-| `strategy` | The strategy object (`DDPStrategy` or `FSDPStrategy`) from `strategy=`. |
+| `scaler` | The gradient scaler with `16-mixed` (else None). |
+| `strategy` | The strategy object (`DDPStrategy`, `FSDPStrategy`, ...) from `strategy=`. |
 | `testing` | True while `test` runs. |
 | `training` | True while training batches run. |
 | `validating` | True while validation runs (inside fit or `validate`). |
@@ -122,6 +138,15 @@ glt.LRSchedulerConfig(
 ```
 
 A learning-rate scheduler and when to step it, as in Lightning.
+
+### `SIGTERMException`
+
+```python
+glt.SIGTERMException(message: str = 'SIGTERM received')
+```
+
+Raised by `fit` after a SIGTERM (cloud preemption, a cancelled job) once the
+checkpoint is saved; a `SystemExit`, so the process ends with an error status.
 
 ## Module and DataModule
 
@@ -148,8 +173,9 @@ steps and ranks. Override any of the `on_*` hooks to run code at that point of t
 | `configure_gradient_clipping(optimizer, gradient_clip_val=None, gradient_clip_algorithm=None)` | Clip gradients before each optimizer step; by default with the Trainer's values. |
 | `configure_model()` | Create layers here to build them on the training device (called once per fit). |
 | `configure_optimizers()` | Return an optimizer; a list of optimizers; `([optimizers], [schedulers])`; `(optimizer, scheduler)`; or `{"optimizer": ..., "lr_scheduler": ...}`, where the scheduler may be a dict `{"scheduler": ..., "interval": "epoch" \| "step", "frequency": 1, "monitor": "val_loss"}`. Several optimizers need manual optimization (`self.automatic_optimization = False`), as in Lightning. |
+| `configure_sharded_model()` | Lightning's older name for `configure_model`; called the same way. |
 | `freeze()` | No gradients for any parameter, and evaluation mode. |
-| `load_from_checkpoint(checkpoint_path, *args, map_location='cpu', strict=True, **kwargs)` | Build the model and load the weights saved by the Trainer. Arguments recorded with `save_hyperparameters` are used unless given again here. |
+| `load_from_checkpoint(checkpoint_path, *args, map_location='cpu', strict=None, **kwargs)` | Build the model and load the weights saved by the Trainer. Arguments recorded with `save_hyperparameters` are used unless given again here. |
 | `log(name, value, prog_bar=False, logger=None, on_step=None, on_epoch=None, reduce_fx='mean', enable_graph=False, sync_dist=False, sync_dist_group=None, add_dataloader_idx=True, batch_size=None, metric_attribute=None, rank_zero_only=False)` | Record a scalar for this step. The Trainer aggregates it over the epoch with `reduce_fx` ("mean", "sum", "max" or "min"; a mean is weighted by `batch_size` when given) and averages it across processes. `prog_bar` shows it in the progress bar. `sync_dist` is accepted for compatibility: epoch values are always combined across processes. |
 | `log_dict(dictionary, **kwargs)` | `self.log` for each item of `dictionary`, with the same options. |
 | `lr_scheduler_step(scheduler, metric)` | Step a scheduler; `metric` is the monitored value for ReduceLROnPlateau. |
@@ -158,18 +184,23 @@ steps and ranks. Override any of the `on_*` hooks to run code at that point of t
 | `optimizer_step(epoch, batch_idx, optimizer, closure=None)` | Run the optimizer step (override to change it, e.g. learning-rate warm-up). |
 | `optimizer_zero_grad(epoch, batch_idx, optimizer)` | Reset gradients after an optimizer step (`set_to_none=True`); override to change it. |
 | `optimizers(use_pl_optimizer=True)` | The optimizer(s) from `configure_optimizers`: one, or a list. |
+| `predict_dataloader()` | The prediction loader(s). |
 | `predict_step(batch, batch_idx, dataloader_idx=0)` | Default: `self(batch)`, or `self(batch[0])` for an `(inputs, ...)` batch. |
 | `print(*args, **kwargs)` | `print` on rank 0 only. |
 | `save_hyperparameters(*args, ignore=None, frame=None)` | Record the `__init__` arguments (all of them, or the names in `args`) as `self.hparams`. They are saved in checkpoints, and `load_from_checkpoint` uses them to rebuild the model without passing the arguments again. |
+| `test_dataloader()` | The test loader(s). |
 | `test_step(batch, batch_idx)` | One test batch, run by `Trainer.test`: compute metrics and `self.log` them. |
 | `to_onnx(file_path, input_sample=None, **kwargs)` | Export to ONNX (needs the `onnx` package). |
+| `to_tensorrt(file_path=None, input_sample=None, ir='default', output_format='exported_program', retrace=False, default_device='cuda', **compile_kwargs)` | Compile with Torch-TensorRT for NVIDIA inference (needs `torch_tensorrt`) and save it when `file_path` is given; returns the compiled module. Implemented as in Lightning; not run on hardware. |
 | `to_torchscript(file_path=None, method='script', example_inputs=None)` | TorchScript of this model (`method="script"` or `"trace"`), saved when `file_path` is given. |
 | `toggle_optimizer(optimizer)` | Only `optimizer`'s parameters require gradients until `untoggle_optimizer`. |
 | `toggled_optimizer(optimizer)` | Context manager: `toggle_optimizer` on entry, `untoggle_optimizer` on exit. |
+| `train_dataloader()` | The training loader (or a list or dict of loaders). |
 | `training_step(batch, batch_idx)` | Return the loss tensor, or a dict with `"loss"`. With manual optimization, return nothing. |
 | `transfer_batch_to_device(batch, device, dataloader_idx)` | Move a batch to `device`. Override for custom batch types. |
 | `unfreeze()` | Gradients for every parameter again, and training mode. |
 | `untoggle_optimizer(optimizer)` | Restore `requires_grad` changed by `toggle_optimizer`. |
+| `val_dataloader()` | The validation loader(s). |
 | `validation_step(batch, batch_idx, dataloader_idx=0)` | One validation batch: compute metrics and `self.log` them (optional). |
 
 | Property | |
@@ -185,6 +216,7 @@ steps and ranks. Override any of the `on_*` hooks to run code at that point of t
 | `logger` | The Trainer's first logger, or None. |
 | `loggers` | The Trainer's loggers. |
 | `on_gpu` | True when the parameters are on a CUDA (or ROCm) device. |
+| `strict_loading` | Whether checkpoints load with `load_state_dict(strict=True)` (the default). Set it to False when a model leaves frozen weights out of its checkpoints. |
 
 | Hook | |
 |---|---|
@@ -203,6 +235,7 @@ steps and ranks. Override any of the `on_*` hooks to run code at that point of t
 | `on_predict_end()` | After `Trainer.predict`. |
 | `on_predict_epoch_end()` | After the last prediction batch. |
 | `on_predict_epoch_start()` | Before the first prediction batch. |
+| `on_predict_model_eval()` | When prediction starts: evaluation mode. |
 | `on_predict_start()` | Before `Trainer.predict` runs its batches. |
 | `on_save_checkpoint(checkpoint)` | When a checkpoint is written, with the dict about to be saved; add or change entries in place. |
 | `on_test_batch_end(outputs, batch, batch_idx, dataloader_idx=0)` | After `test_step`, with what it returned. |
@@ -210,6 +243,8 @@ steps and ranks. Override any of the `on_*` hooks to run code at that point of t
 | `on_test_end()` | After `Trainer.test`. |
 | `on_test_epoch_end()` | After the last test batch; `self.log` here adds to the results. |
 | `on_test_epoch_start()` | Before the first test batch. |
+| `on_test_model_eval()` | When testing starts: evaluation mode. |
+| `on_test_model_train()` | When testing ends, if the model was training before. |
 | `on_test_start()` | Before `Trainer.test` runs its batches. |
 | `on_train_batch_end(outputs, batch, batch_idx)` | After the optimizer step of a batch (or after the batch, when accumulating); `outputs` is `{'loss': loss}` or the dict `training_step` returned. |
 | `on_train_batch_start(batch, batch_idx)` | Before `training_step`. On the model, returning `-1` ends the epoch. |
@@ -222,6 +257,9 @@ steps and ranks. Override any of the `on_*` hooks to run code at that point of t
 | `on_validation_end()` | After a validation run. |
 | `on_validation_epoch_end()` | After the last validation batch; `self.log` here adds to the validation results. |
 | `on_validation_epoch_start()` | Before the first validation batch, with the model in eval mode. |
+| `on_validation_model_eval()` | When validation starts: evaluation mode. |
+| `on_validation_model_train()` | When validation inside `fit` ends: training mode again. |
+| `on_validation_model_zero_grad()` | Before validation inside `fit`: free the gradients' memory. |
 | `on_validation_start()` | Before a validation run (also inside fit). |
 | `prepare_data()` | Once per machine (local rank 0) before `setup`; download data here. Do not set state here: other processes do not run it. |
 | `setup(stage)` | At the start of fit, validate, test or predict, in every process (`stage` is "fit", "validate", "test" or "predict"); build layers or datasets here. |
@@ -243,6 +281,7 @@ not build its data in the launching process.
 | Method | |
 |---|---|
 | `from_datasets(train_dataset=None, val_dataset=None, test_dataset=None, predict_dataset=None, batch_size=1, num_workers=0, **loader_kwargs)` | A DataModule from datasets, with a shuffled training loader. |
+| `load_from_checkpoint(checkpoint_path, map_location=None, hparams_file=None, weights_only=None, **kwargs)` | Rebuild this DataModule from the arguments the Trainer saved in a checkpoint (`datamodule_hyper_parameters`, recorded with `save_hyperparameters`), then restore its `state_dict`. Values in `hparams_file` (YAML or JSON) and in `kwargs` override the saved ones. `map_location` defaults to the CPU; `weights_only` defaults to False because GPUlayer checkpoints hold more than tensors. |
 | `load_state_dict(state_dict)` | Restore what `state_dict` returned, when resuming. |
 | `predict_dataloader()` | The prediction loader (needed for `predict`). |
 | `save_hyperparameters(*args, ignore=None, frame=None)` | Record the `__init__` arguments (all of them, or the names in `args`) as `self.hparams`. They are saved in checkpoints, and `load_from_checkpoint` uses them to rebuild the model without passing the arguments again. |
@@ -259,6 +298,7 @@ not build its data in the launching process.
 |---|---|
 | `on_after_batch_transfer(batch, dataloader_idx)` | Change a batch after it was moved to the device (returns the batch); for example GPU augmentation. |
 | `on_before_batch_transfer(batch, dataloader_idx)` | Change a batch before it is moved to the device (returns the batch). |
+| `on_exception(exception)` | Called when a Trainer run stops with an exception (after the callbacks' and the model's `on_exception`), as in Lightning. |
 | `prepare_data()` | Once per machine (local rank 0) before `setup`; download data here. Do not set state here: other processes do not run it. |
 | `setup(stage)` | At the start of fit, validate, test or predict, in every process (`stage` is "fit", "validate", "test" or "predict"); build layers or datasets here. |
 | `teardown(stage)` | At the end of fit, validate, test or predict, in every process. |
@@ -271,9 +311,16 @@ glt.CombinedLoader(iterables: Any, mode: str = 'max_size_cycle')
 
 Iterate a list or dict of loaders together (see the module docstring for the modes).
 
+| Method | |
+|---|---|
+| `reset()` | Shut down the worker processes of loaders that keep them between epochs (the next iteration starts from the beginning). |
+
 | Property | |
 |---|---|
+| `batch_sampler` | The loaders' `batch_sampler` attributes (None for a loader without one), in the same structure as `iterables`. |
 | `flattened` | The loaders, in order. |
+| `limits` | The maximum number of batches taken from each loader, or None for no limit. |
+| `sampler` | The loaders' `sampler` attributes (None for a loader without one), in the same structure as `iterables`: a dict, list or tuple, or a single value. |
 
 ### `AttributeDict`
 
@@ -291,6 +338,18 @@ How the model is replicated or sharded across processes.
 
 ```python
 glt.DDPStrategy(
+    accelerator: Any = None,
+    parallel_devices: Any = None,
+    cluster_environment: Any = None,
+    checkpoint_io: Any = None,
+    precision_plugin: Any = None,
+    ddp_comm_state: Any = None,
+    ddp_comm_hook: Callable[..., Any] | None = None,
+    ddp_comm_wrapper: Callable[..., Any] | None = None,
+    model_averaging_period: int | None = None,
+    process_group_backend: str | None = None,
+    timeout: timedelta | None = datetime.timedelta(seconds=1800),
+    start_method: str = 'popen',
     find_unused_parameters: bool = False,
     static_graph: bool = False,
     gradient_as_bucket_view: bool = False,
@@ -306,45 +365,289 @@ DistributedDataParallel with its options.
   and overlap more communication.
 - `gradient_as_bucket_view`: gradients are views into DDP's communication buckets,
   which saves one copy of the gradients in memory and a copy per step.
+- `ddp_comm_hook` (with `ddp_comm_state`, optionally wrapped by `ddp_comm_wrapper`):
+  a gradient communication hook, for example
+  `torch.distributed.algorithms.ddp_comm_hooks.default_hooks.fp16_compress_hook` to send
+  gradients in half precision (half the bytes on slow networks). It replaces GPUlayer's
+  two-level gradient sync.
+- `model_averaging_period`: post-local SGD (with `ddp_comm_hook=post_localSGD_hook` and
+  a `PostLocalSGDState`): after the warm-up, each process steps on its own and the models
+  are averaged every N steps, trading exactness for far less communication.
+- `process_group_backend` (`"nccl"`, `"gloo"`) and `timeout` of the process group.
+
+Inherits from `ParallelStrategy`, `Strategy`.
 
 | Method | |
 |---|---|
-| `ddp_kwargs()` | Keyword arguments passed to `DistributedDataParallel`. |
+| `register_comm_hook(ddp)` | Register `ddp_comm_hook` on `ddp` (returns False when there is none). |
 
 ### `FSDPStrategy`
 
 ```python
-glt.FSDPStrategy()
+glt.FSDPStrategy(
+    accelerator: Any = None,
+    parallel_devices: Any = None,
+    cluster_environment: Any = None,
+    checkpoint_io: Any = None,
+    precision_plugin: Any = None,
+    process_group_backend: str | None = None,
+    timeout: timedelta | None = datetime.timedelta(seconds=1800),
+    cpu_offload: bool | Any = None,
+    mixed_precision: Any = None,
+    auto_wrap_policy: Any = None,
+    activation_checkpointing: Any = None,
+    activation_checkpointing_policy: Any = None,
+    sharding_strategy: str = 'FULL_SHARD',
+    state_dict_type: str = 'full',
+    device_mesh: tuple[int, int] | Any = None,
+    **kwargs: Any,
+)
 ```
 
-Fully sharded data parallel (FSDP2), experimental: see the Trainer docs.
+Fully sharded data parallel with PyTorch's FSDP2 (`fully_shard`), experimental.
+
+- `sharding_strategy`: `"FULL_SHARD"` (the default: parameters, gradients and optimizer
+  state sharded; parameters gathered for each layer's forward and backward),
+  `"SHARD_GRAD_OP"` (parameters kept after the forward: less communication, more
+  memory), `"HYBRID_SHARD"` (sharded inside each machine, replicated across machines:
+  only gradients cross the network) or `"NO_SHARD"` (replicated, as DDP).
+- `auto_wrap_policy`: a set of module classes (for example a transformer block) to shard
+  as units; by default every module that owns parameters is one.
+- `activation_checkpointing_policy`: a set of module classes whose activations are
+  recomputed in the backward pass instead of kept (less memory, about one more forward).
+- `cpu_offload`: keep sharded parameters, gradients and optimizer state in CPU memory.
+- `mixed_precision`: a `torch.distributed.fsdp.MixedPrecisionPolicy`; by default it
+  follows `precision` (`bf16-mixed`: bf16 compute, fp32 gradient reduction).
+- `state_dict_type`: `"full"` (one file gathered on rank 0) or `"sharded"` (a
+  folder where each rank writes its shard, for models too large to gather).
+- `device_mesh`: `(replicas, shards)` for `HYBRID_SHARD`; by default
+  `(machines, processes per machine)`.
+
+Inherits from `ParallelStrategy`, `Strategy`.
 
 | Method | |
 |---|---|
-| `ddp_kwargs()` | Always empty: FSDP does not use DistributedDataParallel. |
+| `should_shard(module)` | Whether `module` becomes its own FSDP unit. |
+
+### `ModelParallelStrategy`
+
+```python
+glt.ModelParallelStrategy(
+    data_parallel_size: int | str = 'auto',
+    tensor_parallel_size: int | str = 'auto',
+    save_distributed_checkpoint: bool = True,
+    process_group_backend: str | None = None,
+    timeout: timedelta | None = datetime.timedelta(seconds=1800),
+)
+```
+
+Tensor parallelism with FSDP2 (2D parallelism), experimental, as Lightning's.
+
+The processes form a `(data_parallel, tensor_parallel)` device mesh, by default
+`(machines, processes per machine)` so tensor-parallel traffic stays inside a machine.
+The Module gets it as `self.device_mesh` and must apply the parallelism itself in
+`configure_model`, for example with
+`torch.distributed.tensor.parallel.parallelize_module(self.model,
+self.device_mesh["tensor_parallel"], plan)` and then `fully_shard(self.model,
+mesh=self.device_mesh["data_parallel"])`. Each data-parallel group reads its own shard of
+the data. `save_distributed_checkpoint=True` writes a folder with each rank's shard;
+`False` gathers full weights on rank 0.
+
+Inherits from `ParallelStrategy`, `Strategy`.
+
+| Method | |
+|---|---|
+| `mesh_shape(world_size, local_world_size)` | `(data_parallel, tensor_parallel)` sizes for this run. |
 
 ### `DeepSpeedStrategy`
 
 ```python
 glt.DeepSpeedStrategy(
+    accelerator: Any = None,
+    zero_optimization: bool = True,
     stage: int = 2,
+    remote_device: str | None = None,
     offload_optimizer: bool = False,
     offload_parameters: bool = False,
-    config: Any = None,
+    offload_params_device: str = 'cpu',
+    nvme_path: str = '/local_nvme',
+    params_buffer_count: int = 5,
+    params_buffer_size: int = 100000000,
+    max_in_cpu: int = 1000000000,
+    offload_optimizer_device: str = 'cpu',
+    optimizer_buffer_count: int = 4,
+    block_size: int = 1048576,
+    queue_depth: int = 8,
+    single_submit: bool = False,
+    overlap_events: bool = True,
+    thread_count: int = 1,
+    pin_memory: bool = False,
+    sub_group_size: int = 1000000000000,
+    contiguous_gradients: bool = True,
+    overlap_comm: bool = True,
+    allgather_partitions: bool = True,
+    reduce_scatter: bool = True,
+    allgather_bucket_size: int = 200000000,
+    reduce_bucket_size: int = 200000000,
+    zero_allow_untested_optimizer: bool = True,
+    logging_batch_size_per_gpu: str | int = 'auto',
+    config: str | Path | dict[str, Any] | None = None,
+    logging_level: int = 30,
+    parallel_devices: Any = None,
+    cluster_environment: Any = None,
+    loss_scale: float = 0,
+    initial_scale_power: int = 16,
+    loss_scale_window: int = 1000,
+    hysteresis: int = 2,
+    min_loss_scale: int = 1,
+    partition_activations: bool = False,
+    cpu_checkpointing: bool = False,
+    contiguous_memory_optimization: bool = False,
+    synchronize_checkpoint_boundary: bool = False,
+    load_full_weights: bool = False,
+    precision_plugin: Any = None,
+    process_group_backend: str | None = None,
+    timeout: timedelta | None = datetime.timedelta(seconds=1800),
+    exclude_frozen_parameters: bool = False,
 )
 ```
 
-DeepSpeed ZeRO (needs the `deepspeed` package and CUDA GPUs; implemented, not yet
-validated on hardware). `stage` 1 shards optimizer state, 2 also gradients, 3 also
-parameters; `offload_optimizer`/`offload_parameters` move them to CPU memory.
-`config` (a dict or a JSON file) replaces the generated configuration. Checkpoints hold
-full weights (gathered from all ranks with stage 3); resuming a DeepSpeed run from a
-checkpoint is not supported yet.
+DeepSpeed ZeRO (needs the `deepspeed` package and CUDA GPUs; implemented, not run on
+hardware). `stage` 1 shards optimizer state, 2 also gradients, 3 also parameters;
+`offload_optimizer`/`offload_parameters` move them to CPU memory (or NVMe with
+`offload_*_device="nvme"` and `nvme_path`). The other arguments are Lightning's and go
+into the generated DeepSpeed configuration; `config` (a dict or a JSON file) replaces it.
+Checkpoints hold full weights (gathered from all ranks with stage 3); resuming a DeepSpeed
+run from a checkpoint is not supported yet.
+
+Inherits from `ParallelStrategy`, `Strategy`.
 
 | Method | |
 |---|---|
-| `ddp_kwargs()` | Always empty: DeepSpeed wraps the model itself. |
-| `deepspeed_config(precision, accumulate, clip, micro_batch)` | The DeepSpeed configuration for this Trainer's settings. |
+| `deepspeed_config(precision, accumulate, clip, micro_batch)` | The DeepSpeed configuration for this Trainer's settings (Lightning's layout). |
+
+### `SingleDeviceStrategy`
+
+```python
+glt.SingleDeviceStrategy(
+    device: Any = 'cpu',
+    accelerator: Any = None,
+    checkpoint_io: Any = None,
+    precision_plugin: Any = None,
+)
+```
+
+One process on one device (what `devices=1` does). `device` names it, for example
+`"cuda:1"`, as in Lightning.
+
+Inherits from `Strategy`.
+
+### `ParallelStrategy`
+
+```python
+glt.ParallelStrategy(
+    accelerator: Any = None,
+    parallel_devices: Any = None,
+    cluster_environment: Any = None,
+    checkpoint_io: Any = None,
+    precision_plugin: Any = None,
+    process_group_backend: str | None = None,
+    timeout: timedelta | None = datetime.timedelta(seconds=1800),
+)
+```
+
+Base class of the strategies that train in several processes.
+
+Inherits from `Strategy`.
+
+### `Strategy`
+
+```python
+glt.Strategy()
+```
+
+Base class of the strategies.
+
+| Method | |
+|---|---|
+| `ddp_kwargs()` | Keyword arguments for `DistributedDataParallel` (empty unless DDP is used). |
+
+## Accelerators
+
+Lightning's classes: `Trainer(accelerator=CUDAAccelerator())` is `accelerator="cuda"`.
+
+### `Accelerator`
+
+```python
+glt.Accelerator()
+```
+
+Base class: one device type (`name()`).
+
+| Method | |
+|---|---|
+| `auto_device_count()` | Devices `devices="auto"` uses on this machine. |
+| `get_device_stats(device)` | Memory figures for `device`, in MB. |
+| `get_parallel_devices(devices)` | The devices of the processes on this machine. |
+| `is_available()` | True when this machine can use the device type. |
+| `name()` | The Trainer's accelerator string (`"cuda"`, `"mps"`, ...). |
+| `parse_devices(devices)` | `devices=` as given (GPUlayer gives each process one device). |
+| `setup_device(device)` | Prepare `device` before training (the Trainer's Runtime does this). |
+
+| Hook | |
+|---|---|
+| `setup(trainer)` | Called when training starts. |
+| `teardown()` | Release what `setup` took. |
+
+### `CPUAccelerator`
+
+```python
+glt.CPUAccelerator()
+```
+
+Base class: one device type (`name()`).
+
+Inherits from `Accelerator`.
+
+### `CUDAAccelerator`
+
+```python
+glt.CUDAAccelerator()
+```
+
+NVIDIA GPUs (and AMD GPUs through a ROCm build of torch).
+
+Inherits from `Accelerator`.
+
+### `MPSAccelerator`
+
+```python
+glt.MPSAccelerator()
+```
+
+Apple GPUs (single process).
+
+Inherits from `Accelerator`.
+
+### `XLAAccelerator`
+
+```python
+glt.XLAAccelerator()
+```
+
+Google TPUs through torch_xla (implemented, not run on a TPU).
+
+Inherits from `Accelerator`.
+
+### `find_usable_cuda_devices`
+
+```python
+glt.find_usable_cuda_devices(num_devices: int = -1)
+```
+
+Indices of visible CUDA GPUs that accept an allocation (not held exclusively by
+another process), up to `num_devices` (-1: all). As in Lightning; on GPUlayer workers the
+scheduler already grants free GPUs.
 
 ## Callbacks
 
@@ -407,6 +710,18 @@ Subclass and override the hooks you need. All hooks are optional.
 | `setup(trainer, pl_module, stage)` | Callback form, with `trainer, pl_module` first. At the start of fit, validate, test or predict, in every process (`stage` is "fit", "validate", "test" or "predict"); build layers or datasets here. |
 | `teardown(trainer, pl_module, stage)` | Callback form, with `trainer, pl_module` first. At the end of fit, validate, test or predict, in every process. |
 
+### `Checkpoint`
+
+```python
+glt.Checkpoint()
+```
+
+Base class for checkpointing callbacks, as in Lightning. `ModelCheckpoint` and
+`OnExceptionCheckpoint` subclass it; subclass it for your own checkpointing callback
+so code that looks for checkpointing callbacks finds it.
+
+Inherits from `Callback`.
+
 ### `ModelCheckpoint`
 
 ```python
@@ -426,6 +741,7 @@ glt.ModelCheckpoint(
     save_on_train_epoch_end: bool | None = None,
     enable_version_counter: bool = True,
     min_delta: float = 0.0,
+    save_on_exception: bool = False,
 )
 ```
 
@@ -442,11 +758,17 @@ Save checkpoints of the best results by `monitor` (written by rank 0).
   `every_n_train_steps` optimizer steps, or every `train_time_interval`.
 - `save_last=True` also writes `last.ckpt` each time it checks.
 - `save_weights_only=True` leaves the optimizer state out.
+- `save_on_exception=True` also saves when training stops with an exception
+  (including Ctrl+C), under the name `filename` gives at that point, or
+  `<stem>-on_exception.ckpt` when that name is a plain file name or one of the kept
+  best files (so the best checkpoint is never overwritten); with `save_last` it also
+  writes `last.ckpt`. Single-process runs only: with several processes the others
+  may be inside a collective, so nothing is saved.
 
 `best_model_path` points at the best file afterwards, also when training ran on
 GPUlayer workers; `best_k_models` maps each kept file to its score.
 
-Inherits from `Callback`.
+Inherits from `Checkpoint`, `Callback`.
 
 | Method | |
 |---|---|
@@ -493,6 +815,7 @@ glt.LearningRateMonitor(
     logging_interval: Literal['step', 'epoch'] | None = None,
     log_momentum: bool = False,
     log_weight_decay: bool = False,
+    log_key_prefix: str | None = None,
 )
 ```
 
@@ -503,6 +826,7 @@ epoch as `lr` (one group) or `lr-<i>`, in `trainer.history` and
 `trainer.callback_metrics`; it is read when the epoch starts, before an epoch-interval
 scheduler steps. `"step"` also records it on every logged step (`metrics.csv` and
 loggers). `log_momentum` and `log_weight_decay` add those values.
+`log_key_prefix` is put before every name (`"optim/"` gives `optim/lr`).
 
 Inherits from `Callback`.
 
@@ -669,24 +993,41 @@ glt.ModelPruning(
     amount: float | int | Callable[[int], float | int] = 0.5,
     apply_pruning: bool | Callable[[int], bool] = True,
     make_pruning_permanent: bool = True,
-    prune_on_train_epoch_end: bool = True,
+    use_lottery_ticket_hypothesis: bool | Callable[[int], bool] = False,
+    resample_parameters: bool = False,
+    pruning_dim: int | None = None,
+    pruning_norm: int | float | None = None,
     verbose: int = 0,
+    prune_on_train_epoch_end: bool = True,
 )
 ```
 
 Prune weights with `torch.nn.utils.prune` at the end of training epochs.
 
-`pruning_fn`: `"l1_unstructured"`, `"random_unstructured"` or a `prune` function.
+`pruning_fn`: `"l1_unstructured"`, `"random_unstructured"`, `"ln_structured"`,
+`"random_structured"`, a `prune` function, or a `BasePruningMethod` class (with
+`use_global_unstructured`). Structured functions remove whole slices along
+`pruning_dim` (required) and `ln_structured` ranks them by the `pruning_norm`
+norm (required); they need `use_global_unstructured=False`.
 `parameters_to_prune`: `[(module, "weight"), ...]`; by default every Linear and Conv
 weight. `amount`: a fraction or count, or a function of the epoch. `apply_pruning`: a
-bool or a function of the epoch. With `make_pruning_permanent` the masks are folded
-into the weights at the end of training, and checkpoints always hold plain weights.
+bool or a function of the epoch. `prune_on_train_epoch_end=False` prunes after
+validation instead.
+
+`use_lottery_ticket_hypothesis` (a bool or a function of the epoch) resets the weights
+that remain after pruning to their values from before training (the "winning ticket" of
+Frankle and Carbin), or, with `resample_parameters`, to a fresh initialisation from
+the layer's `reset_parameters`. It is off by default (Lightning's default is on).
+
+With `make_pruning_permanent` the masks are folded into the weights at the end of
+training, and checkpoints always hold plain weights.
 
 Inherits from `Callback`.
 
 | Method | |
 |---|---|
 | `apply(pl_module, amount)` | Prune `amount` (a fraction or a count) of the target weights now. |
+| `apply_lottery_ticket_hypothesis(pl_module)` | Reset the weights that remain after pruning to their values from before training (or, with `resample_parameters`, to a new initialisation). The masks are kept, so pruned weights stay zero. |
 | `make_permanent(pl_module)` | Fold the pruning masks into the weights and remove the pruning hooks. |
 
 ### `ThroughputMonitor`
@@ -709,12 +1050,14 @@ Inherits from `Callback`.
 ### `DeviceStatsMonitor`
 
 ```python
-glt.DeviceStatsMonitor(cpu_stats: bool | None = None)
+glt.DeviceStatsMonitor(cpu_stats: bool | None = None, filter_keys: set[str] | None = None)
 ```
 
 Record device memory on every logged step: on CUDA the allocated, reserved and peak
 memory in MB; on MPS the allocated and driver memory. `cpu_stats=True` adds CPU
-utilisation and RAM (needs `psutil`).
+utilisation and RAM (needs `psutil`). `filter_keys` keeps only the stats whose
+names contain one of the given strings (`{"memory_allocated"}` keeps
+`device/memory_allocated_mb`); a key that matches no stat gives one warning.
 
 Inherits from `Callback`.
 
@@ -742,13 +1085,29 @@ Inherits from `Callback`.
 ### `ModelSummary`
 
 ```python
-glt.ModelSummary(max_depth: int = 1)
+glt.ModelSummary(max_depth: int = 1, **summarize_kwargs: Any)
 ```
 
 Print the layers and parameter counts when training starts (rank 0). `max_depth=-1`
-lists every submodule.
+lists every submodule. Extra keyword arguments go to `summarize` (`RichModelSummary`
+takes `header_style`).
 
 Inherits from `Callback`.
+
+| Method | |
+|---|---|
+| `summarize(summary_data, total_parameters, trainable_parameters, model_size, total_training_modes, **summarize_kwargs)` | Print the summary. `summary_data` holds the table as `(column name, values)` pairs; `model_size` is in MB; `total_training_modes` counts the modules in `"train"` and `"eval"` mode. Override it to change the output. |
+
+### `RichModelSummary`
+
+```python
+glt.RichModelSummary(max_depth: int = 1, **summarize_kwargs: Any)
+```
+
+`ModelSummary` printed as a `rich` table (needs `pip install rich`).
+`header_style` sets the style of the table header (default `"bold magenta"`).
+
+Inherits from `ModelSummary`, `Callback`.
 
 ### `ProgressBar`
 
@@ -767,6 +1126,49 @@ Inherits from `Callback`.
 |---|---|
 | `disable()` | Stop drawing the bar. |
 | `enable()` | Draw the bar again. |
+
+### `RichProgressBar`
+
+```python
+glt.RichProgressBar(
+    refresh_rate: float = 4.0,
+    leave: bool = False,
+    theme: RichProgressBarTheme | None = None,
+    console_kwargs: dict[str, Any] | None = None,
+)
+```
+
+`ProgressBar` drawn with `rich` (needs `pip install rich`): a bar per epoch with
+the batch count, elapsed time, speed and the values of the last logged step. As
+`ProgressBar`, it draws only on a terminal (rank 0) and at most `refresh_rate` times
+per second (`0` turns it off), with no extra device reads. `leave=True` keeps each
+finished epoch's bar on screen; `theme` is a `RichProgressBarTheme` and
+`console_kwargs` go to `rich.console.Console`.
+
+Inherits from `ProgressBar`, `Callback`.
+
+### `RichProgressBarTheme`
+
+```python
+glt.RichProgressBarTheme(
+    description: Any = '',
+    progress_bar: Any = '#6206E0',
+    progress_bar_finished: Any = '#6206E0',
+    progress_bar_pulse: Any = '#6206E0',
+    batch_progress: Any = '',
+    time: Any = 'dim',
+    processing_speed: Any = 'dim underline',
+    metrics: Any = 'italic',
+    metrics_text_delimiter: str = ' ',
+    metrics_format: str = '.3f',
+)
+```
+
+Styles of the parts of `RichProgressBar` (`rich` style strings or `Style`s), as
+in Lightning: `description` (`Epoch N`), `progress_bar`, `progress_bar_finished`,
+`progress_bar_pulse` (unknown length), `batch_progress` (`10/50`), `time`,
+`processing_speed` and `metrics`; `metrics_text_delimiter` goes between metrics
+and `metrics_format` formats their values.
 
 ### `BasePredictionWriter`
 
@@ -794,7 +1196,7 @@ glt.OnExceptionCheckpoint(dirpath: str | Path | None = None, filename: str = 'on
 Save a checkpoint when training stops with an exception (including Ctrl+C), so it can
 be resumed with `fit(ckpt_path=...)`.
 
-Inherits from `Callback`.
+Inherits from `Checkpoint`, `Callback`.
 
 ### `LambdaCallback`
 
@@ -896,6 +1298,10 @@ and `hparams.yaml`.
 
 Inherits from `Logger`.
 
+| Property | |
+|---|---|
+| `root_dir` | `<save_dir>/<name>`: the parent of every `version_<n>` directory. |
+
 ### `TensorBoardLogger`
 
 ```python
@@ -906,32 +1312,60 @@ glt.TensorBoardLogger(
     log_graph: bool = False,
     default_hp_metric: bool = True,
     prefix: str = '',
+    sub_dir: str | Path | None = None,
     **kwargs: Any,
 )
 ```
 
-TensorBoard event files in `<save_dir>/<name>/version_<n>` (needs `tensorboard`).
+TensorBoard event files in `<save_dir>/<name>/version_<n>[/<sub_dir>]` (needs
+`tensorboard`). `sub_dir` may use `~` and environment variables.
 
 Inherits from `Logger`.
+
+| Property | |
+|---|---|
+| `root_dir` | `<save_dir>/<name>`: the parent of every `version_<n>` directory. |
+| `sub_dir` | Subdirectory of the version directory the event files go to, or None. |
 
 ### `WandbLogger`
 
 ```python
 glt.WandbLogger(
     name: str | None = None,
-    save_dir: str | Path = '.',
+    save_dir: str | Path | None = '.',
     version: str | None = None,
     offline: bool = False,
+    dir: str | Path | None = None,
+    id: str | None = None,
+    anonymous: bool | None = None,
     project: str | None = None,
     log_model: bool = False,
+    experiment: Any = None,
     prefix: str = '',
+    checkpoint_name: str | None = None,
+    add_file_policy: str = 'mutable',
     **kwargs: Any,
 )
 ```
 
-Weights & Biases (needs `wandb` and a login). Arguments go to `wandb.init`.
+Weights & Biases (needs `wandb` and a login). Extra arguments go to `wandb.init`.
+
+`experiment` reuses a run you already started. `log_model=True` uploads each saved
+checkpoint as a `model` artifact named `checkpoint_name` (default `model-<run id>`)
+with the alias `latest`; `add_file_policy` is passed to `Artifact.add_file`.
 
 Inherits from `Logger`.
+
+| Method | |
+|---|---|
+| `download_artifact(artifact, save_dir=None, artifact_type=None, use_artifact=True)` | Download a wandb artifact to `save_dir` and return its local path. Inside a run (with `use_artifact`) the run records that it used it. |
+| `log_audio(key, audios, step=None, **kwargs)` | Log `wandb.Audio` clips; each keyword (`sample_rate=[...]`) has one per clip. |
+| `log_image(key, images, step=None, **kwargs)` | Log `wandb.Image`s; each keyword (`caption=[...]`) gives one value per image. |
+| `log_table(key, columns=None, data=None, dataframe=None, step=None)` | Log a `wandb.Table` from `columns` and `data` or from a pandas `dataframe`. |
+| `log_text(key, columns=None, data=None, dataframe=None, step=None)` | Log text as a table (same arguments as `log_table`). |
+| `log_video(key, videos, step=None, **kwargs)` | Log `wandb.Video`s; each keyword (`fps=[...]`) gives one value per video. |
+| `use_artifact(artifact, artifact_type=None)` | Record that this run uses `artifact` and return the `wandb.Artifact`. |
+| `watch(model, log='gradients', log_freq=100, log_graph=True)` | Have wandb log the model's gradients and/or parameters every `log_freq` steps. |
 
 ### `MLFlowLogger`
 
@@ -944,13 +1378,81 @@ glt.MLFlowLogger(
     save_dir: str | None = './mlruns',
     log_model: bool = False,
     prefix: str = '',
+    artifact_location: str | None = None,
     run_id: str | None = None,
+    synchronous: bool | None = None,
 )
 ```
 
-MLflow tracking (needs `mlflow`).
+MLflow tracking (needs `mlflow`). Metrics and parameters go in one `log_batch` call
+each. `artifact_location` is used when the experiment is created; `synchronous` (mlflow
+2.8 or later) is passed to `log_batch`: False logs without waiting for the server.
 
 Inherits from `Logger`.
+
+| Property | |
+|---|---|
+| `experiment_id` | The MLflow experiment id (created on first use when it does not exist). |
+| `run_id` | The MLflow run id (the run is created on first use). |
+
+### `CometLogger`
+
+```python
+glt.CometLogger(
+    *,
+    api_key: str | None = None,
+    workspace: str | None = None,
+    project: str | None = None,
+    experiment_key: str | None = None,
+    mode: str | None = None,
+    online: bool | None = None,
+    prefix: str | None = None,
+    **kwargs: Any,
+)
+```
+
+Comet (needs `comet_ml`). The experiment is started on first use, on rank 0, with
+`comet_ml.start`; extra arguments go to `comet_ml.ExperimentConfig` (for example
+`name`, `tags`, `offline_directory`). `online=False` logs offline. Comet's own
+automatic logging is turned off (`COMET_DISABLE_AUTO_LOGGING=1`), as in Lightning.
+`finalize` flushes without ending the experiment, so it can be used after fit.
+
+Inherits from `Logger`.
+
+### `LitLogger`
+
+```python
+glt.LitLogger(
+    root_dir: str | Path | None = None,
+    name: str | None = None,
+    teamspace: str | None = None,
+    metadata: dict[str, str] | None = None,
+    store_step: bool = True,
+    log_model: bool = False,
+    save_logs: bool = True,
+    checkpoint_name: str | None = None,
+)
+```
+
+Lightning AI's experiment tracker (needs `pip install litlogger` and a Lightning AI
+account): metrics, hyperparameters and, with `log_model=True`, checkpoints go to the
+`teamspace` there. Data leaves this machine for Lightning AI's service. The experiment
+starts on first use; the Trainer logs from global rank 0 only.
+
+Inherits from `Logger`.
+
+| Method | |
+|---|---|
+| `get_file(path, verbose=True)` | Download a file logged with `log_file` to `path`. |
+| `log_file(path)` | Upload a file to the teamspace drive, under the experiment's folder. |
+| `log_metadata(params)` | Store extra values as text (as `log_hyperparams`). |
+| `log_model(model, staging_dir=None, verbose=False, version=None, metadata=None)` | Upload a model object to Lightning AI's model registry. |
+| `log_model_artifact(path, verbose=False, version=None)` | Upload a model file or folder to the registry. |
+
+| Property | |
+|---|---|
+| `root_dir` | `root_dir/name`. |
+| `url` | The experiment's page on Lightning AI. |
 
 ## Profilers
 
@@ -971,6 +1473,10 @@ Base class: implement `start(action)`, `stop(action)` and `summary()`.
 | `start(action_name)` | Start timing `action_name`. |
 | `stop(action_name)` | Stop timing `action_name`. |
 | `summary()` | The report as text. |
+
+| Property | |
+|---|---|
+| `local_rank` | This process's rank on its machine: the one given to `setup`, else `LOCAL_RANK` (0 when unset). |
 
 | Hook | |
 |---|---|
@@ -1012,9 +1518,13 @@ Inherits from `Profiler`.
 glt.PyTorchProfiler(
     dirpath: str | Path | None = None,
     filename: str | None = None,
+    group_by_input_shapes: bool = False,
+    emit_nvtx: bool = False,
     export_to_chrome: bool = False,
     row_limit: int = 20,
     sort_by_key: str | None = None,
+    record_module_names: bool = True,
+    table_kwargs: dict[str, Any] | None = None,
     record_shapes: bool = False,
     profile_memory: bool = False,
     with_stack: bool = False,
@@ -1026,6 +1536,11 @@ glt.PyTorchProfiler(
 `export_to_chrome=True` writes a trace for chrome://tracing or Perfetto (rank 0).
 `sort_by_key` picks the table's order, e.g. `"cuda_time_total"`.
 
+`record_module_names` labels each submodule's forward with its class (a range per call,
+added only while profiling). `group_by_input_shapes` (with `record_shapes=True`) splits
+the table by input shape; `table_kwargs` go to `EventList.table`. `emit_nvtx=True`
+emits NVTX ranges for `nsys`/`nvprof` instead (CUDA only, no table).
+
 Inherits from `Profiler`.
 
 ### `PassThroughProfiler`
@@ -1035,6 +1550,20 @@ glt.PassThroughProfiler(dirpath: str | Path | None = None, filename: str | None 
 ```
 
 Does nothing.
+
+Inherits from `Profiler`.
+
+### `XLAProfiler`
+
+```python
+glt.XLAProfiler(port: int = 9012)
+```
+
+torch_xla's profiler, for TPUs (needs `torch_xla`). The first traced action starts the
+profiler server on `port` (local rank 0, one per machine), for TensorBoard's profile
+plugin or `xp.trace` to capture from. Training batches, backward, optimizer steps and
+evaluation loops are wrapped in `xp.Trace`; `validation_step`, `test_step` and
+`predict_step` actions in a numbered `xp.StepTrace`.
 
 Inherits from `Profiler`.
 
@@ -1098,6 +1627,86 @@ Weights and inputs in float64.
 
 Inherits from `Precision`.
 
+### `FSDPPrecision`
+
+```python
+glt.FSDPPrecision(precision: str | int = '32-true')
+```
+
+Precision for `strategy="fsdp"`: `"32-true"` or `"bf16-mixed"`.
+
+Inherits from `Precision`.
+
+### `DeepSpeedPrecision`
+
+```python
+glt.DeepSpeedPrecision(precision: str | int = '32-true')
+```
+
+Precision for DeepSpeed (it runs mixed precision itself): `"16-mixed"`,
+`"bf16-mixed"`, `"32-true"`.
+
+Inherits from `Precision`.
+
+### `XLAPrecision`
+
+```python
+glt.XLAPrecision(precision: str | int = '32-true')
+```
+
+Precision on TPUs: `"32-true"`, `"bf16-true"` (`XLA_USE_BF16`-style weights) or
+`"16-true"`.
+
+Inherits from `Precision`.
+
+### `BitsandbytesPrecision`
+
+```python
+glt.BitsandbytesPrecision(
+    mode: str,
+    dtype: torch.dtype | None = None,
+    ignore_modules: set[str] | None = None,
+)
+```
+
+Quantized `nn.Linear` layers with bitsandbytes (CUDA), as Lightning's plugin:
+`mode` is `"nf4"`, `"nf4-dq"`, `"fp4"`, `"fp4-dq"` (4-bit; `-dq` also quantizes
+the quantization constants), `"int8"` (frozen 8-bit weights, for fine-tuning adapters or
+inference) or `"int8-training"`. `dtype` is the compute dtype (bfloat16 by default);
+`ignore_modules` names layers to keep, such as the output head. Needs
+`pip install bitsandbytes`; implemented, not run on hardware.
+
+Inherits from `Precision`.
+
+| Method | |
+|---|---|
+| `convert_module(module)` | Replace `module`'s `nn.Linear` layers with quantized ones, in place. |
+
+### `TransformerEnginePrecision`
+
+```python
+glt.TransformerEnginePrecision(
+    weights_dtype: torch.dtype | None = None,
+    recipe: Any = None,
+    replace_layers: bool | None = None,
+    fallback_compute_dtype: torch.dtype | None = None,
+)
+```
+
+FP8 training with NVIDIA Transformer Engine (Hopper, Ada or newer GPUs), as Lightning's
+plugin: `nn.Linear` and `nn.LayerNorm` become their `transformer_engine.pytorch`
+versions and the forward pass runs under `fp8_autocast`. `weights_dtype` keeps the
+weights (bfloat16 by default); `recipe` is a `DelayedScaling` recipe or its keyword
+arguments. Layers whose sizes are not multiples of 16 are kept, as FP8 needs them. Needs
+`transformer_engine`; implemented, not run on hardware.
+
+Inherits from `Precision`.
+
+| Method | |
+|---|---|
+| `convert_module(module)` | Replace `nn.Linear` and `nn.LayerNorm` with Transformer Engine layers, in place. |
+| `forward_context()` | `fp8_autocast` with the recipe, entered around every forward. |
+
 ### `CheckpointIO`
 
 ```python
@@ -1143,6 +1752,31 @@ Inherits from `CheckpointIO`.
 |---|---|
 | `wait()` | Block until every pending write is on disk. |
 
+### `XLACheckpointIO`
+
+```python
+glt.XLACheckpointIO()
+```
+
+Checkpoints from TPU runs. The Trainer already moves XLA tensors to the CPU before
+saving (as `xm.save` does), so this is `TorchCheckpointIO`; it exists so code written
+for Lightning keeps working.
+
+Inherits from `TorchCheckpointIO`, `CheckpointIO`.
+
+### `LayerSync`
+
+```python
+glt.LayerSync()
+```
+
+Base class: layers that synchronise across processes (`apply` and `revert`).
+
+| Method | |
+|---|---|
+| `apply(model)` | Make `model`'s layers synchronise across processes. |
+| `revert(model)` | Undo `apply`. |
+
 ### `TorchSyncBatchNorm`
 
 ```python
@@ -1150,6 +1784,8 @@ glt.TorchSyncBatchNorm()
 ```
 
 BatchNorm statistics over all processes (`torch.nn.SyncBatchNorm`).
+
+Inherits from `LayerSync`.
 
 ## Command line
 
@@ -1159,22 +1795,104 @@ Guide: [Command line](cli.md). `glt.LightningCLI` is the same class.
 
 ```python
 glt.GPULayerCLI(
-    model_class: type | None = None,
-    datamodule_class: type | None = None,
-    trainer_class: type | None = None,
+    model_class: Any = None,
+    datamodule_class: Any = None,
+    save_config_callback: type[SaveConfigCallback] | None = SaveConfigCallback,
+    save_config_kwargs: dict[str, Any] | None = None,
+    trainer_class: Any = None,
     trainer_defaults: dict[str, Any] | None = None,
     seed_everything_default: int | bool | None = True,
+    parser_kwargs: dict[str, Any] | None = None,
+    parser_class: type[GPULayerArgumentParser] = GPULayerArgumentParser,
+    subclass_mode_model: bool = False,
+    subclass_mode_data: bool = False,
     args: list[str] | dict[str, Any] | None = None,
     run: bool = True,
+    auto_configure_optimizers: bool = True,
+    load_from_checkpoint_support: bool = True,
     description: str | None = None,
 )
 ```
 
 Parse the command line, build the model, data and Trainer, and run the subcommand.
 
-After construction: `cli.config` (the merged configuration), `cli.model`,
-`cli.datamodule`, `cli.trainer` and `cli.subcommand`. With `run=False` there are no
+After construction: `cli.config` (the merged configuration, a flat dict),
+`cli.config_init` (the built objects), `cli.model`, `cli.datamodule`,
+`cli.trainer`, `cli.subcommand` and `cli.parser`. With `run=False` there are no
 subcommands and nothing is run, so the script can call the Trainer itself.
+
+Arguments as in Lightning: `save_config_callback` writes the config to the run's folder
+(None disables it), with `save_config_kwargs`; `parser_kwargs` go to the parser (or,
+under a subcommand's name, to that subcommand's parser); `parser_class` must subclass
+`GPULayerArgumentParser`; `subclass_mode_model`/`subclass_mode_data` accept any
+subclass by name (`--model MyModel`); `auto_configure_optimizers` adds
+`--optimizer` and `--lr_scheduler`, which replace the model's
+`configure_optimizers` when given; `load_from_checkpoint_support` records the class
+path and injected `class_path` specs in the hparams of models and DataModules that call
+`save_hyperparameters`.
+
+| Method | |
+|---|---|
+| `add_arguments_to_parser(parser)` | Override to add arguments or links (`parser.link_arguments`). |
+| `add_core_arguments_to_parser(parser)` | Add the Trainer's, the model's and the DataModule's arguments. |
+| `add_default_arguments_to_parser(parser)` | Add `--seed_everything`. |
+| `after_instantiate_classes()` | Override to run code after the classes are built. |
+| `before_instantiate_classes()` | Override to run code before the classes are built (`self.config` is set). |
+| `configure_optimizers(lightning_module, optimizer, lr_scheduler=None)` | What the model's `configure_optimizers` returns when `--optimizer` is given. Override to change it. |
+| `init_parser(**kwargs)` | Create a parser (`parser_class(**kwargs)`) with `-c/--config` and `--print_config`. |
+| `instantiate_classes()` | Build the extra sections (callbacks added with `add_lightning_class_args`), the DataModule, the model and the Trainer. |
+| `instantiate_trainer(**kwargs)` | Build the Trainer from the `trainer` section; `kwargs` override it. |
+| `link_optimizers_and_lr_schedulers(parser)` | Link optimizer and scheduler arguments whose `link_to` is not `AUTOMATIC` to that key (for example `model.optimizer`). |
+| `parse_arguments(parser, args)` | Parse the command line (`args`: a list of strings, a dict config, or None for `sys.argv`) and store the merged configuration in `self.config`. |
+| `setup_parser(add_subcommands, main_kwargs, subparser_kwargs)` | Create `self.parser` and add the subcommands (or, with `run=False`, the arguments). |
+| `subcommands()` | The subcommands, each with the Trainer method arguments not offered as flags. |
+
+### `GPULayerArgumentParser`
+
+```python
+glt.GPULayerArgumentParser(*args: Any, **kwargs: Any)
+```
+
+`argparse.ArgumentParser` with the methods of Lightning's `LightningArgumentParser`
+that CLI subclasses use: `add_lightning_class_args`, `add_class_arguments`,
+`add_optimizer_args`, `add_lr_scheduler_args`, `add_method_arguments`,
+`link_arguments` and `set_defaults` with a dict of dotted keys.
+
+| Method | |
+|---|---|
+| `add_class_arguments(theclass, nested_key, subclass_mode=False, required=True, skip=None, default_class=None)` | Add `--<nested_key>.<arg>` for each `__init__` argument of `theclass`. In subclass mode, add `--<nested_key> Name` (a subclass of `theclass`, which may be a tuple of base classes) and accept `--<nested_key>.<arg>` for the chosen class. Returns the added keys. |
+| `add_lightning_class_args(lightning_class, nested_key, subclass_mode=False, required=True)` | Add the arguments of a Trainer, Module, DataModule or Callback class (or a function returning one) under `nested_key`. Callbacks added this way are built and given to the Trainer. |
+| `add_lr_scheduler_args(lr_scheduler_class=(<class 'torch.optim.lr_scheduler.LRScheduler'>, <class 'gpulayer.pytorch.cli.ReduceLROnPlateau'>), nested_key='lr_scheduler', link_to='AUTOMATIC')` | Add learning-rate scheduler arguments, as `add_optimizer_args`. |
+| `add_method_arguments(theclass, themethod, nested_key=None, skip=None)` | Add `--<arg>` (or `--<nested_key>.<arg>`) for the arguments of a method, such as `Trainer.fit`'s `ckpt_path`. Returns the argument names. |
+| `add_optimizer_args(optimizer_class=(<class 'torch.optim.optimizer.Optimizer'>,), nested_key='optimizer', link_to='AUTOMATIC')` | Add optimizer arguments: one class (`--optimizer.lr`) or, for a tuple of base classes, any subclass (`--optimizer Adam --optimizer.lr 0.01`). `link_to="AUTOMATIC"` lets the CLI define `configure_optimizers`; a dotted key such as `model.optimizer` passes the `class_path` spec to that argument instead. |
+| `link_arguments(source, target, compute_fn=None, apply_on='parse')` | Set `target` (for example `model.num_classes`) from `source`: a config value after parsing (`apply_on="parse"`), or an attribute of a built object (`apply_on="instantiate"`, e.g. `data.num_classes` read from the DataModule). `compute_fn` transforms the value. Linked values are passed to `__init__` as they are (a `class_path` spec is not built). |
+| `set_defaults(*args, **kwargs)` | `argparse`'s `set_defaults(**kwargs)`, plus Lightning's form: a dict of dotted keys, such as `{"trainer.max_epochs": 5}`. |
+
+### `SaveConfigCallback`
+
+```python
+glt.SaveConfigCallback(
+    parser: Any,
+    config: dict[str, Any],
+    config_filename: str = 'config.yaml',
+    overwrite: bool = True,
+    multifile: bool = False,
+    save_to_log_dir: bool = True,
+)
+```
+
+Write the CLI's resolved config to `<log_dir>/config.yaml` when the run starts
+(`setup`), on global rank 0, as Lightning's. `config.yaml` is YAML when PyYAML is
+installed, else JSON (valid YAML). `overwrite` defaults to True because GPUlayer reuses
+one run folder per script (Lightning's default is False); with False an existing file
+raises `RuntimeError`. `multifile` is accepted and ignored (one file is written).
+Override `save_config` to also save it elsewhere, for example to a logger.
+
+Inherits from `Callback`.
+
+| Method | |
+|---|---|
+| `save_config(trainer, pl_module, stage)` | Override to save the config somewhere else too (runs on rank 0 only). |
 
 ## Launch and runtime
 
@@ -1254,7 +1972,7 @@ glt.Runtime(
 | Method | |
 |---|---|
 | `any(flag)` | True on every rank if `flag` is true on any rank. |
-| `autocast()` | The mixed-precision context for the forward pass (a no-op for 32-true and "-true" precisions). |
+| `autocast()` | The mixed-precision context for the forward pass (a no-op for 32-true and "-true" precisions), inside a precision plugin's context when one is set. |
 | `backward(loss)` | `loss.backward()`, through the gradient scaler with 16-mixed. |
 | `barrier()` | Wait until every process reaches this point (no-op in one process). |
 | `batches(loader, prefetch=True)` | Iterate `loader` with each batch on the device. |
@@ -1262,12 +1980,14 @@ glt.Runtime(
 | `dataloader(loader, shuffle=None)` | Return a loader that gives each rank its own shard (unchanged when not distributed). |
 | `full_state(model, optimizer)` | Unsharded model and optimizer state on the CPU. With FSDP this is a collective: call it on every rank. |
 | `load_full_state(model, optimizer, model_state, optim_state)` | Load an unsharded checkpoint into a (possibly sharded) model and optimizer. |
+| `load_sharded(model, optimizers, path)` | Load a sharded checkpoint into `model` and `optimizers` (each rank reads its own part) and return `meta.pt`. A collective. |
 | `mean(value)` | The average of `value` across processes (one all-reduce). |
 | `mean_dict(values)` | Average every value across ranks in one all-reduce (keys sorted, so ranks agree). |
 | `module(model)` | Move `model` to the device and wrap it in DDP when distributed (with two-level gradient sync when it applies). |
 | `no_sync(model, enabled=True)` | Skip the gradient exchange for this backward (gradient accumulation), with DDP or FSDP. |
 | `output_dir(default='gpulayer_runs/local')` | $GPULAYER_OUTPUT_DIR inside a job (returned as artifacts), else `default`. |
-| `shard(model)` | FSDP (experimental): shard the parameters of every submodule that owns them across all ranks, so each rank holds about 1/world_size of the model, and make `model` the FSDP root. Call `model` (its forward) every step, so the root's hooks run and the submodules release their gathered parameters after their forward. Call this before creating the optimizer. A no-op in a single process. |
+| `save_sharded(model, optimizers, path, meta)` | A sharded checkpoint: the folder `path` with each rank's part of the model and optimizer state (`torch.distributed.checkpoint`) and `meta.pt` with everything else. A collective: call it on every rank. |
+| `shard(model, options=None)` | FSDP (experimental): shard the parameters of every submodule that owns them across all ranks, so each rank holds about 1/world_size of the model, and make `model` the FSDP root. Call `model` (its forward) every step, so the root's hooks run and the submodules release their gathered parameters after their forward. Call this before creating the optimizer. A no-op in a single process and on TPUs. `options` is an `FSDPStrategy` (sharding strategy, wrap and activation checkpointing policies, CPU offload, mixed precision). |
 | `step(optimizer, params=None, clip_val=None, clip_algorithm='norm')` | Optimizer step, clipping gradients first: by total norm, or each value to [-clip_val, clip_val] with `clip_algorithm="value"`. |
 | `to_device(batch)` | A batch on this process's device (float tensors in the "-true" precision's dtype). |
 | `uses_two_level_sync()` | Sum gradients inside each machine before crossing the network (ADR-0020). "auto" does it for gloo with several machines and several processes per machine; NCCL plans its own topology-aware rings. |
@@ -1280,7 +2000,7 @@ glt.Runtime(
 
 | Hook | |
 |---|---|
-| `setup()` | Select the GPU of this process and start the process group when distributed (NCCL on GPUs, gloo otherwise). Returns self. |
+| `setup(backend=None, timeout=None)` | Select the GPU of this process and start the process group when distributed (NCCL on GPUs, gloo otherwise, or `backend`; `timeout` for its collectives). Returns self. |
 | `teardown()` | Destroy the process group if this Runtime started it. |
 
 ### `resolve_accelerator`
