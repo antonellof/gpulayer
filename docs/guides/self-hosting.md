@@ -2,17 +2,7 @@
 
 `gpulayer up` turns a machine into a GPUlayer server. Other machines join with `gpulayer join`.
 
-```mermaid
-flowchart LR
-    subgraph Server["Machine running gpulayer up"]
-        CP["Control plane<br/>queue, scheduler, artifacts"]
-        W0["Worker<br/>(this machine's GPU)"]
-    end
-    W1["gpulayer join<br/>GPU server"] -- HTTPS, pinned cert --> CP
-    W2["gpulayer join<br/>cloud VM"] -- HTTPS, pinned cert --> CP
-    Dev["Your laptop<br/>Trainer / launch / @gl.remote"] -- HTTPS, pinned cert --> CP
-    CP --- W0
-```
+![A GPUlayer server: your laptop and joined machines connect to the machine running gpulayer up over HTTPS with a pinned certificate](../assets/server-light.svg)
 
 ## 1. Start the server
 
