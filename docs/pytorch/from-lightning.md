@@ -60,11 +60,16 @@ trained weights come back to the `model` in your process.
 | `benchmark=None` leaves cuDNN autotuning off | `None` turns it on for CUDA runs of 1,000 steps or more |
 | `L.seed_everything` | `glt.seed_everything` |
 
-## Not available
+## Not run on hardware yet, or not available
 
-DeepSpeed, TPU/HPU/XLA, `plugins=`, `LightningCLI`, several dataloaders per stage, and
-distributed `predict`. Keep Lightning for those and run it with [`launch()`](launch.md), which
-gives it the same placement: GPUlayer picks the machines and starts torchrun's environment.
+- DeepSpeed and TPU (XLA) are implemented but not yet run on hardware; see
+  [DeepSpeed and TPU](trainer.md#deepspeed-and-tpu).
+- `LightningCLI` is `glt.LightningCLI` ([Command line](cli.md)), without `jsonargparse`'s
+  linking of arguments between sections.
+- Cluster-environment plugins are not needed: GPUlayer starts every process itself.
+- Not available: Habana HPUs (a separate Lightning package) and several TPU cores in one run.
+  Keep Lightning for those and run it with [`launch()`](launch.md), which gives it the same
+  placement: GPUlayer picks the machines and starts torchrun's environment.
 
 ## Validated on GPUs
 

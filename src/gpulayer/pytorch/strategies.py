@@ -71,17 +71,82 @@ class FSDPStrategy:
         return {}
 
 
+@dataclass
+class DeepSpeedStrategy:
+    """DeepSpeed ZeRO (needs the ``deepspeed`` package and CUDA GPUs; implemented, not yet
+    validated on hardware). ``stage`` 1 shards optimizer state, 2 also gradients, 3 also
+    parameters; ``offload_optimizer``/``offload_parameters`` move them to CPU memory.
+    ``config`` (a dict or a JSON file) replaces the generated configuration. Checkpoints hold
+    full weights (gathered from all ranks with stage 3); resuming a DeepSpeed run from a
+    checkpoint is not supported yet."""
+
+    stage: int = 2
+    offload_optimizer: bool = False
+    offload_parameters: bool = False
+    config: Any = None
+    name = "deepspeed"
+
+    def __post_init__(self) -> None:
+        if self.stage not in (0, 1, 2, 3):
+            raise ValidationFailed("DeepSpeedStrategy stage must be 0, 1, 2 or 3")
+
+    def ddp_kwargs(self) -> dict[str, Any]:
+        """Always empty: DeepSpeed wraps the model itself."""
+        return {}
+
+    def deepspeed_config(
+        self, precision: str, accumulate: int, clip: float | None, micro_batch: int | None
+    ) -> dict[str, Any]:
+        """The DeepSpeed configuration for this Trainer's settings."""
+        import json
+        from pathlib import Path
+
+        if isinstance(self.config, (str, Path)):
+            return dict(json.loads(Path(self.config).read_text()))
+        if isinstance(self.config, dict):
+            return dict(self.config)
+        zero: dict[str, Any] = {"stage": self.stage}
+        if self.offload_optimizer:
+            zero["offload_optimizer"] = {"device": "cpu", "pin_memory": True}
+        if self.offload_parameters:
+            zero["offload_param"] = {"device": "cpu", "pin_memory": True}
+        cfg: dict[str, Any] = {
+            "zero_optimization": zero,
+            "gradient_accumulation_steps": accumulate,
+            "train_micro_batch_size_per_gpu": micro_batch or 1,
+            "zero_allow_untested_optimizer": True,
+        }
+        if clip:
+            cfg["gradient_clipping"] = clip
+        if precision in ("16-mixed", "16-true"):
+            cfg["fp16"] = {"enabled": True}
+        elif precision in ("bf16-mixed", "bf16-true"):
+            cfg["bf16"] = {"enabled": True}
+        return cfg
+
+
 _STRINGS: dict[str, Any] = {
     "auto": lambda: DDPStrategy(),
     "ddp": lambda: DDPStrategy(),
     "ddp_find_unused_parameters_false": lambda: DDPStrategy(find_unused_parameters=False),
     "ddp_find_unused_parameters_true": lambda: DDPStrategy(find_unused_parameters=True),
     "fsdp": lambda: FSDPStrategy(),
+    "deepspeed": lambda: DeepSpeedStrategy(),
+    "deepspeed_stage_1": lambda: DeepSpeedStrategy(stage=1),
+    "deepspeed_stage_2": lambda: DeepSpeedStrategy(stage=2),
+    "deepspeed_stage_2_offload": lambda: DeepSpeedStrategy(stage=2, offload_optimizer=True),
+    "deepspeed_stage_3": lambda: DeepSpeedStrategy(stage=3),
+    "deepspeed_stage_3_offload": lambda: DeepSpeedStrategy(
+        stage=3, offload_optimizer=True, offload_parameters=True
+    ),
 }
 
 
-def resolve_strategy(strategy: str | DDPStrategy | FSDPStrategy) -> DDPStrategy | FSDPStrategy:
-    if isinstance(strategy, (DDPStrategy, FSDPStrategy)):
+Strategy = DDPStrategy | FSDPStrategy | DeepSpeedStrategy
+
+
+def resolve_strategy(strategy: Any) -> Any:
+    if isinstance(strategy, (DDPStrategy, FSDPStrategy, DeepSpeedStrategy)):
         return strategy
     if strategy in _STRINGS:
         return _STRINGS[strategy]()
@@ -91,6 +156,7 @@ def resolve_strategy(strategy: str | DDPStrategy | FSDPStrategy) -> DDPStrategy 
             "fork and notebook launchers are not needed; use 'ddp'"
         )
     raise ValidationFailed(
-        f"strategy must be one of {sorted(_STRINGS)}, a DDPStrategy or an FSDPStrategy, "
+        f"strategy must be one of {sorted(_STRINGS)}, or a DDPStrategy, FSDPStrategy or "
+        "DeepSpeedStrategy, "
         f"got {strategy!r}"
     )

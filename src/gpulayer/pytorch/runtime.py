@@ -59,12 +59,25 @@ def _rocm_build() -> bool:
     return bool(getattr(torch.version, "hip", None))
 
 
+def _xla_available() -> bool:
+    try:
+        import torch_xla  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
 def resolve_accelerator(accelerator: str = "auto") -> str:
-    """'auto' -> the accelerator GPUlayer granted this job, else cuda/rocm > mps > cpu."""
+    """'auto' -> the accelerator GPUlayer granted this job, else a TPU (when PJRT_DEVICE=TPU
+    and torch_xla is installed), else cuda/rocm > mps > cpu."""
+    if accelerator == "xla":
+        accelerator = "tpu"
     if accelerator == "auto":
         granted = os.environ.get("GPULAYER_ACCELERATOR")
         if granted:
             return granted
+        if os.environ.get("PJRT_DEVICE") == "TPU" and _xla_available():
+            return "tpu"
         if torch.cuda.is_available():
             return "rocm" if _rocm_build() else "cuda"
         return "mps" if _mps_available() else "cpu"
@@ -76,7 +89,11 @@ def resolve_accelerator(accelerator: str = "auto") -> str:
         )
     if accelerator == "mps" and not _mps_available():
         raise ValidationFailed("accelerator='mps' requested but torch MPS is not available")
-    if accelerator not in ("cpu", "cuda", "rocm", "mps"):
+    if accelerator == "tpu" and not _xla_available():
+        raise ValidationFailed(
+            "accelerator='tpu' needs torch_xla (pip install torch_xla[tpu]) on a TPU VM"
+        )
+    if accelerator not in ("cpu", "cuda", "rocm", "mps", "tpu"):
         raise ValidationFailed(f"unknown accelerator {accelerator!r}")
     return accelerator
 
@@ -224,8 +241,18 @@ class Runtime:
         self.param_dtype: torch.dtype | None = (
             getattr(torch, _TRUE_DTYPES[precision]) if precision in _TRUE_DTYPES else None
         )
+        self.xla = self.accelerator == "tpu"
+        if self.xla and self.world_size > 1:
+            raise ValidationFailed(
+                "accelerator='tpu' runs one TPU device per process in this version; several "
+                "TPU cores (xmp.spawn / PJRT multi-process) are not supported yet"
+            )
         if self.gpu:
             self.device = torch.device("cuda", self.local_rank)
+        elif self.xla:
+            import torch_xla.core.xla_model as xm
+
+            self.device = xm.xla_device()
         else:
             self.device = torch.device(self.accelerator)
         self._owns_group = False
@@ -527,7 +554,14 @@ class Runtime:
         """Optimizer step, clipping gradients first: by total norm, or each value to
         [-clip_val, clip_val] with ``clip_algorithm="value"``."""
         clip = nn.utils.clip_grad_value_ if clip_algorithm == "value" else nn.utils.clip_grad_norm_
-        if self.scaler is not None:
+        if self.xla:
+            import torch_xla.core.xla_model as xm
+
+            if clip_val:
+                clip(params, clip_val)
+            xm.optimizer_step(optimizer)
+            xm.mark_step()  # run the step's graph now, as torch_xla expects once per step
+        elif self.scaler is not None:
             if clip_val:
                 self.scaler.unscale_(optimizer)
                 clip(params, clip_val)

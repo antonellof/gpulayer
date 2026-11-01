@@ -41,6 +41,10 @@
           "title": "Moving from Lightning"
         },
         {
+          "slug": "pytorch/cli",
+          "title": "Command line"
+        },
+        {
           "slug": "pytorch/distributed",
           "title": "Distributed training"
         },

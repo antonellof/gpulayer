@@ -28,12 +28,12 @@ SECTIONS: list[tuple[str, str, list[str]]] = [
     (
         "Module and DataModule",
         "Your model and data. Guide: [Trainer and Module](trainer.md).",
-        ["Module", "DataModule", "AttributeDict"],
+        ["Module", "DataModule", "CombinedLoader", "AttributeDict"],
     ),
     (
         "Strategies",
         "How the model is replicated or sharded across processes.",
-        ["DDPStrategy", "FSDPStrategy"],
+        ["DDPStrategy", "FSDPStrategy", "DeepSpeedStrategy"],
     ),
     (
         "Callbacks",
@@ -81,6 +81,25 @@ SECTIONS: list[tuple[str, str, list[str]]] = [
         ],
     ),
     ("Tuner", "Learning-rate and batch-size search.", ["Tuner"]),
+    (
+        "Plugins",
+        "Pass as `Trainer(plugins=[...])`.",
+        [
+            "Precision",
+            "MixedPrecision",
+            "HalfPrecision",
+            "DoublePrecision",
+            "CheckpointIO",
+            "TorchCheckpointIO",
+            "AsyncCheckpointIO",
+            "TorchSyncBatchNorm",
+        ],
+    ),
+    (
+        "Command line",
+        "Guide: [Command line](cli.md). `glt.LightningCLI` is the same class.",
+        ["GPULayerCLI"],
+    ),
     (
         "Launch and runtime",
         "Lower layers, usable without the Trainer. Guides: [launch()](launch.md), "
@@ -220,7 +239,7 @@ def render() -> str:
         n
         for n in glt.__all__
         if n not in listed
-        and n not in ("LightningModule", "LightningDataModule", "TQDMProgressBar")
+        and n not in ("LightningModule", "LightningDataModule", "TQDMProgressBar", "LightningCLI")
     )
     if missing:
         raise SystemExit(f"exported but not placed in a section: {missing}")

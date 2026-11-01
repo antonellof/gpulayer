@@ -101,3 +101,27 @@ Lightning's speed-related choices are few, and the GPUlayer Trainer already had 
   `on_train_batch_end(trainer, model, loss, batch_idx)` signature keep working.
 - The Trainer is larger; ADR-0018's rule that loop changes come with a comparison run still
   holds.
+
+## Amendment (2026-11-01): the rest of the surface
+
+Point 2 listed what was not adopted. Most of it is now implemented, with Lightning's names:
+
+- Several dataloaders per stage: `CombinedLoader` (`max_size_cycle`, `min_size`, `max_size`,
+  `sequential`) for training; lists for validate/test/predict, with `dataloader_idx` and
+  `/dataloader_idx_N` metric names.
+- Distributed `validate`, `test` and `predict`: with several devices or machines they run on
+  the workers, each rank on its shard; metrics are averaged across ranks and predictions come
+  back in rank order. A job launched by an earlier `fit` of the same Trainer is reused, since it
+  already ran the rest of the script.
+- `LightningCLI` as `GPULayerCLI` (standard library only; no argument linking).
+- `plugins=`: precision plugins, `CheckpointIO`, `TorchCheckpointIO`, `AsyncCheckpointIO`
+  (background checkpoint writes) and `TorchSyncBatchNorm`. Cluster-environment plugins are not
+  needed because GPUlayer starts the processes.
+- `DeepSpeedStrategy` (ZeRO 1–3, offload, Lightning's strategy names) and `accelerator="tpu"`
+  (one device per process, `xm.optimizer_step`, `xm.mark_step`). Both are implemented and
+  unit-tested for their configuration and error paths, but not run: they need DeepSpeed with
+  CUDA GPUs and torch_xla on a TPU VM.
+
+Still not available: Habana HPUs (a separate Lightning package), several TPU cores in one run,
+resuming DeepSpeed runs from a checkpoint.
+

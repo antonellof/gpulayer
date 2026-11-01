@@ -222,7 +222,7 @@ const NOTES: Note[] = [
     summary:
       "Both decide how a PyTorch model trains inside the machines they are started on: device placement, precision, DDP, FSDP or DeepSpeed, callbacks, logging. They do not choose those machines, copy code to them, or start the processes on each node. GPUlayer works one level below: it decides where a workload runs and starts it there. Its own PyTorch Trainer uses Lightning's names: hooks, manual optimization, DataModule, callbacks, loggers, profilers and the tuner, with experimental FSDP and no DeepSpeed.",
     choose:
-      "Choose Lightning for DeepSpeed, TPUs, plugins or LightningCLI, which the GPUlayer Trainer does not have; Accelerate makes an existing loop portable.",
+      "Choose Lightning for its ecosystem and hardware it has run on (DeepSpeed and TPUs are implemented in the GPUlayer Trainer but not yet run on hardware); Accelerate makes an existing loop portable.",
     together:
       "Keep your training code and add `gpulayer.pytorch.launch(...)` at the top of the script. GPUlayer then places it on workers and starts the processes with the standard torchrun environment that both libraries read. This combination follows from the torchrun environment but has not been tested in this repository yet.",
   },
@@ -274,7 +274,7 @@ const PERF_ROWS: { case: string; gl: number; pl: number; glOver: number; plOver:
 const BEHIND = [
   "Cloud provisioning covers Google Cloud only, with no autoscaling of a standing pool; SkyPilot, dstack and Ray cover more clouds.",
   "Services have no load balancer, rolling updates or autoscaling; dstack, Ray Serve, Modal and Kubernetes have them.",
-  "The PyTorch Trainer has Lightning's hooks, callbacks and loggers but no DeepSpeed, TPU support, plugins or LightningCLI; FSDP is experimental (trained over NCCL on 8 T4 machines; speed not measured).",
+  "The Trainer's DeepSpeed and TPU support has not been run on hardware yet; FSDP is experimental (trained over NCCL on 8 T4 machines; speed not measured).",
   "Across machines over NCCL with one GPU each, Lightning is 1 to 9% faster on a CNN (the GPUlayer Trainer is faster on an MLP); with gloo on CPUs the GPUlayer Trainer is 17.8% faster on 8 machines.",
   "Distributed jobs support PyTorch process groups only; no JAX multi-host or MPI launcher yet.",
   "v0.8.1: validated on machines with up to 4 NVIDIA GPUs (NCCL) and on up to 30 machines; NCCL across up to 8 machines with one GPU each. Not a sandbox for untrusted users.",

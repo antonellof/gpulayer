@@ -28,6 +28,8 @@ machines named. Everything else says what is missing.
 | Trainer Lightning parity (ADR-0024): hooks, manual optimization, DataModule, scheduler forms, "-true" precisions, DDP options, callbacks (checkpointing, early stopping, SWA, EMA, fine-tuning, pruning, timers, monitors), CSV logger, profilers, tuner | tested on CPU, one process and two DDP processes; step time within 1.4% of 0.7 on an M2 Pro CPU |
 | Trainer `sync_batchnorm`, `torch.compile` with Inductor, 16-mixed with manual optimization, "-true" precisions, `PyTorchProfiler` on CUDA | validated on Tesla T4 (one GPU, and up to 8 machines for `sync_batchnorm` and manual optimization) |
 | TensorBoard, Weights & Biases and MLflow loggers | implemented; not tested (optional packages) |
+| Trainer: several dataloaders (`CombinedLoader`, `dataloader_idx`), distributed `validate`/`test`/`predict`, `LightningCLI`, plugins (precision, `CheckpointIO`, `AsyncCheckpointIO`) | tested on CPU, distributed cases with two processes |
+| Trainer `DeepSpeedStrategy` and `accelerator="tpu"` | implemented; not run (need DeepSpeed with CUDA GPUs, and torch_xla on a TPU VM) |
 | Long-running services: replicas, `$PORT`, endpoints, restarts | tested on a local worker and on Kubernetes (kind); no load balancer |
 | Google Cloud provisioning | validated: a CPU VM and a Spot T4 created for a job, joined, ran it and were deleted |
 | Kubernetes Helm chart | tested in CI on kind (jobs, a distributed job, upgrade, server restart); GPU worker pool not run |

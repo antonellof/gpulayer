@@ -139,10 +139,10 @@ from datasets.
 | `max_time` | `None` | stop after this long: seconds, a `timedelta`, a dict or `"DD:HH:MM:SS"`; checked every step in one process, at the end of each epoch when distributed (so all processes stop together) |
 | `check_val_every_n_epoch` | `1` | validate every N epochs (and always after the last one) |
 | `val_check_interval` | `None` | also validate within an epoch: every N batches (int) or every fraction of the epoch (float, e.g. `0.25`); results go to `trainer.val_history` |
-| `accelerator` | `"auto"` | `"cpu"`, `"cuda"`, `"mps"`, `"rocm"` or `"auto"` (the device granted to the job, else CUDA, then MPS, then CPU) |
+| `accelerator` | `"auto"` | `"cpu"`, `"cuda"`, `"mps"`, `"rocm"`, `"tpu"` (or `"xla"`, see [TPU](#deepspeed-and-tpu)) or `"auto"` (the device granted to the job, else a TPU when `PJRT_DEVICE=TPU`, else CUDA, then MPS, then CPU) |
 | `devices` | `1` | processes per node; with CUDA, one GPU per process. `"auto"` or `-1`: every GPU of this machine |
 | `num_nodes` | `1` | number of workers for a distributed run |
-| `strategy` | `"ddp"` | `"ddp"`, `"ddp_find_unused_parameters_true"`, `glt.DDPStrategy(find_unused_parameters=, static_graph=, gradient_as_bucket_view=, **ddp_kwargs)`, or `"fsdp"` (experimental); see [FSDP](#fsdp-experimental) |
+| `strategy` | `"ddp"` | `"ddp"`, `"ddp_find_unused_parameters_true"`, `glt.DDPStrategy(find_unused_parameters=, static_graph=, gradient_as_bucket_view=, **ddp_kwargs)`, `"fsdp"` (experimental; see [FSDP](#fsdp-experimental)), or `"deepspeed"`, `"deepspeed_stage_3_offload"` and the other stage names, or `glt.DeepSpeedStrategy(...)` (see [DeepSpeed](#deepspeed-and-tpu)) |
 | `precision` | `"32-true"` | `"32-true"`, `"bf16-mixed"` (CUDA, CPU), `"16-mixed"` (CUDA, with a gradient scaler), or `"bf16-true"`, `"16-true"`, `"64-true"`, which keep the weights and inputs in that dtype; Lightning's short forms `32`, `"16"`, `"bf16"`, `64` are accepted |
 | `sync_batchnorm` | `False` | BatchNorm statistics over all processes (`SyncBatchNorm`; CUDA or ROCm only) |
 | `target` | `None` | `None` runs here when possible; `"local"`, `"remote"` or `"cloud"` always submits a job |
@@ -170,6 +170,7 @@ from datasets.
 | `enable_model_summary` | `False` | print the layers and parameter counts at the start (Lightning's default is `True`) |
 | `barebones` | `False` | turn off everything that may cost speed: checkpoints, logging, summaries, progress bar, sanity check |
 | `default_root_dir` | `"gpulayer_runs"` | where local checkpoints and downloaded job outputs go |
+| `plugins` | `None` | `glt.MixedPrecision(...)`, `glt.HalfPrecision(...)`, `glt.DoublePrecision()`, `glt.TorchCheckpointIO()`, `glt.AsyncCheckpointIO()` (writes checkpoints in a background thread), your own `CheckpointIO`, or `glt.TorchSyncBatchNorm()` |
 | `launch_options` | `{}` | extra arguments for [`launch()`](launch.md), for example `{"env": {...}, "timeout_seconds": 3600}` |
 
 A model passed through `torch.compile(model, ...)` trains compiled, with the options it was
@@ -177,7 +178,7 @@ compiled with (Inductor validated on a Tesla T4: the same loss as eager).
 
 Unsupported combinations fail with an error instead of quietly doing something else. Examples:
 `precision="16-mixed"` on MPS, `accelerator="cuda"` on a machine without CUDA, `devices=2` with
-MPS, `sync_batchnorm=True` on CPU processes, `plugins=...`, or `accelerator="auto"` with
+MPS, `sync_batchnorm=True` on CPU processes, an unknown plugin, or `accelerator="auto"` with
 `target="remote"` (the remote device is unknown until the
 job is placed, so name it).
 
@@ -326,6 +327,37 @@ trainer = glt.Trainer(accelerator="cuda", devices=8, num_nodes=2, strategy="fsdp
 - Validated over NCCL on 2 and 8 AWS machines with one Tesla T4 each (32-true): each rank held
   1/N of the parameters and the loss fell as with DDP. Speed and large models are not measured.
 
+## Several dataloaders
+
+```python
+trainer.fit(model, {"images": image_loader, "text": text_loader}, [val_a, val_b])
+```
+
+- **Training** takes a list or dict of loaders (or a `glt.CombinedLoader`); each batch is the
+  matching list or dict of batches. The default mode, `max_size_cycle`, runs as many steps as
+  the longest loader and restarts shorter ones; `CombinedLoader(loaders, mode="min_size")`,
+  `"max_size"` and `"sequential"` are the others. Each loader is sharded across processes.
+- **Validation, test and predict** take a list of loaders. The step and the batch hooks then
+  receive `dataloader_idx` (`validation_step(self, batch, batch_idx, dataloader_idx=0)`), and
+  logged names get a `/dataloader_idx_N` suffix unless logged with
+  `self.log(..., add_dataloader_idx=False)`. `predict` returns one list per loader.
+
+## DeepSpeed and TPU
+
+These are implemented with Lightning's names but have not been run on hardware yet; use them
+expecting rough edges.
+
+- **DeepSpeed** (`strategy="deepspeed_stage_2"`, `glt.DeepSpeedStrategy(stage=3,
+  offload_optimizer=True)`, or your own `config=` dict or JSON file) needs `pip install
+  deepspeed` and CUDA GPUs. The Trainer builds the DeepSpeed configuration from `precision`,
+  `accumulate_grad_batches` and `gradient_clip_val`, lets DeepSpeed run backward and the
+  optimizer step, and saves full weights in its checkpoints (gathered from every rank with
+  stage 3). One optimizer and automatic optimization only; resuming a DeepSpeed run from a
+  checkpoint is not supported yet.
+- **TPU** (`accelerator="tpu"`) needs `torch_xla` on a TPU VM. It trains on one TPU device per
+  process: optimizer steps go through `xm.optimizer_step` and each step ends with
+  `xm.mark_step()`. Several TPU cores in one run are not supported yet.
+
 ## Validate, test and predict
 
 ```python
@@ -337,6 +369,14 @@ outputs = trainer.predict(model, loader)        # one output per batch, on the C
 
 The results are a dict that also answers `metrics[0]`, Lightning's list form. `predict` calls
 `Module.predict_step(batch, batch_idx)`, which by default returns `self(batch)` (or
-`self(batch[0])` for an `(inputs, targets)` batch). All three run in the current process with
-the Trainer's precision, under `torch.inference_mode` (`inference_mode=False` for `no_grad`).
+`self(batch[0])` for an `(inputs, targets)` batch). With one device they run in the current
+process, with the Trainer's precision, under `torch.inference_mode` (`inference_mode=False` for
+`no_grad`).
+
+With several devices or machines (or a `target`), they run on GPUlayer workers like `fit`: each
+process takes its shard of the data, `validate` and `test` average the metrics across
+processes, and `predict` returns every process's outputs in rank order, with
+`trainer.predict_batch_indices` holding each batch's dataset indices. When an earlier `fit` of
+the same Trainer launched a job, that job already ran the rest of the script, so its results are
+used without a second job.
 `ckpt_path` is a path, `"best"` (the `ModelCheckpoint`'s best) or `"last"`.

@@ -77,7 +77,7 @@ Lightning; the GPUlayer-only ones are `target`, `gradient_sync`, `prefetch` and
 |---|---|
 | `fit(model, train_dataloaders=None, val_dataloaders=None, datamodule=None, ckpt_path=None)` | Train `model`. The loaders may be given as functions that return them, or come from a `DataModule` or the model's `train_dataloader`/`val_dataloader`: then they are built only in the processes that train. When the Trainer launches a job, the launching process only waits, so data it built would be thrown away (measured: a 6 s dataset built for nothing made a 2-GPU run look 25% slower per step). |
 | `log_metrics(metrics, step=None)` | Record extra values for the current step (used by monitoring callbacks): they go to metrics.csv and the loggers, from rank 0. |
-| `predict(model=None, dataloaders=None, datamodule=None, return_predictions=None, ckpt_path=None)` | Run `predict_step` over `dataloaders` in this process (no gradients) and return one output per batch, moved to the CPU. With `return_predictions=False` (for example with a `BasePredictionWriter`) nothing is kept in memory. |
+| `predict(model=None, dataloaders=None, datamodule=None, return_predictions=None, ckpt_path=None)` | Run `predict_step` over `dataloaders` (no gradients) and return one output per batch, moved to the CPU; with several loaders, one list per loader. With `return_predictions=False` (for example with a `BasePredictionWriter`) nothing is kept in memory. |
 | `save_checkpoint(filepath, weights_only=False, storage_options=None, dirpath=None)` | Write a checkpoint from rank 0 (other ranks return None) and return its path. A plain file name goes to `checkpoints/` of the run (or `dirpath`); a path is used as it is. Call it on every rank: with `strategy="fsdp"` the full state is gathered from all of them. |
 | `test(model=None, dataloaders=None, ckpt_path=None, verbose=True, datamodule=None)` | Run `test_step` over `dataloaders` in this process and return the averaged logs, e.g. `{"test_acc": 0.93}`. |
 | `validate(model=None, dataloaders=None, ckpt_path=None, verbose=True, datamodule=None)` | Run `validation_step` over `dataloaders` in this process and return the averaged logs, e.g. `{"val_loss": 0.21}` (`result[0]` also works, as in Lightning). |
@@ -158,7 +158,7 @@ steps and ranks. Override any of the `on_*` hooks to run code at that point of t
 | `optimizer_step(epoch, batch_idx, optimizer, closure=None)` | Run the optimizer step (override to change it, e.g. learning-rate warm-up). |
 | `optimizer_zero_grad(epoch, batch_idx, optimizer)` | Reset gradients after an optimizer step (`set_to_none=True`); override to change it. |
 | `optimizers(use_pl_optimizer=True)` | The optimizer(s) from `configure_optimizers`: one, or a list. |
-| `predict_step(batch, batch_idx)` | Default: `self(batch)`, or `self(batch[0])` for an `(inputs, ...)` batch. |
+| `predict_step(batch, batch_idx, dataloader_idx=0)` | Default: `self(batch)`, or `self(batch[0])` for an `(inputs, ...)` batch. |
 | `print(*args, **kwargs)` | `print` on rank 0 only. |
 | `save_hyperparameters(*args, ignore=None, frame=None)` | Record the `__init__` arguments (all of them, or the names in `args`) as `self.hparams`. They are saved in checkpoints, and `load_from_checkpoint` uses them to rebuild the model without passing the arguments again. |
 | `test_step(batch, batch_idx)` | One test batch, run by `Trainer.test`: compute metrics and `self.log` them. |
@@ -170,7 +170,7 @@ steps and ranks. Override any of the `on_*` hooks to run code at that point of t
 | `transfer_batch_to_device(batch, device, dataloader_idx)` | Move a batch to `device`. Override for custom batch types. |
 | `unfreeze()` | Gradients for every parameter again, and training mode. |
 | `untoggle_optimizer(optimizer)` | Restore `requires_grad` changed by `toggle_optimizer`. |
-| `validation_step(batch, batch_idx)` | One validation batch: compute metrics and `self.log` them (optional). |
+| `validation_step(batch, batch_idx, dataloader_idx=0)` | One validation batch: compute metrics and `self.log` them (optional). |
 
 | Property | |
 |---|---|
@@ -198,15 +198,15 @@ steps and ranks. Override any of the `on_*` hooks to run code at that point of t
 | `on_fit_end()` | At the end of `fit`. In the launching process of a submitted run, only this hook runs (after the outputs came back). |
 | `on_fit_start()` | At the start of `fit`, after setup and optimizers, before the sanity check. |
 | `on_load_checkpoint(checkpoint)` | When a checkpoint is loaded (resume or `load_from_checkpoint`), before the weights are restored; change entries in place. |
-| `on_predict_batch_end(outputs, batch, batch_idx)` | After `predict_step`, with the prediction (on the CPU). |
-| `on_predict_batch_start(batch, batch_idx)` | Before `predict_step`. |
+| `on_predict_batch_end(outputs, batch, batch_idx, dataloader_idx=0)` | After `predict_step`, with the prediction (on the CPU). |
+| `on_predict_batch_start(batch, batch_idx, dataloader_idx=0)` | Before `predict_step`. |
 | `on_predict_end()` | After `Trainer.predict`. |
 | `on_predict_epoch_end()` | After the last prediction batch. |
 | `on_predict_epoch_start()` | Before the first prediction batch. |
 | `on_predict_start()` | Before `Trainer.predict` runs its batches. |
 | `on_save_checkpoint(checkpoint)` | When a checkpoint is written, with the dict about to be saved; add or change entries in place. |
-| `on_test_batch_end(outputs, batch, batch_idx)` | After `test_step`, with what it returned. |
-| `on_test_batch_start(batch, batch_idx)` | Before `test_step`. |
+| `on_test_batch_end(outputs, batch, batch_idx, dataloader_idx=0)` | After `test_step`, with what it returned. |
+| `on_test_batch_start(batch, batch_idx, dataloader_idx=0)` | Before `test_step`. |
 | `on_test_end()` | After `Trainer.test`. |
 | `on_test_epoch_end()` | After the last test batch; `self.log` here adds to the results. |
 | `on_test_epoch_start()` | Before the first test batch. |
@@ -217,8 +217,8 @@ steps and ranks. Override any of the `on_*` hooks to run code at that point of t
 | `on_train_epoch_end()` | At the end of each training epoch, after its validation; `trainer.callback_metrics` holds the epoch's values. `self.log` here adds to them. |
 | `on_train_epoch_start()` | At the start of each training epoch. |
 | `on_train_start()` | Once, before the first training epoch. |
-| `on_validation_batch_end(outputs, batch, batch_idx)` | After `validation_step`, with what it returned. |
-| `on_validation_batch_start(batch, batch_idx)` | Before `validation_step`. |
+| `on_validation_batch_end(outputs, batch, batch_idx, dataloader_idx=0)` | After `validation_step`, with what it returned. |
+| `on_validation_batch_start(batch, batch_idx, dataloader_idx=0)` | Before `validation_step`. |
 | `on_validation_end()` | After a validation run. |
 | `on_validation_epoch_end()` | After the last validation batch; `self.log` here adds to the validation results. |
 | `on_validation_epoch_start()` | Before the first validation batch, with the model in eval mode. |
@@ -262,6 +262,18 @@ not build its data in the launching process.
 | `prepare_data()` | Once per machine (local rank 0) before `setup`; download data here. Do not set state here: other processes do not run it. |
 | `setup(stage)` | At the start of fit, validate, test or predict, in every process (`stage` is "fit", "validate", "test" or "predict"); build layers or datasets here. |
 | `teardown(stage)` | At the end of fit, validate, test or predict, in every process. |
+
+### `CombinedLoader`
+
+```python
+glt.CombinedLoader(iterables: Any, mode: str = 'max_size_cycle')
+```
+
+Iterate a list or dict of loaders together (see the module docstring for the modes).
+
+| Property | |
+|---|---|
+| `flattened` | The loaders, in order. |
 
 ### `AttributeDict`
 
@@ -310,6 +322,29 @@ Fully sharded data parallel (FSDP2), experimental: see the Trainer docs.
 | Method | |
 |---|---|
 | `ddp_kwargs()` | Always empty: FSDP does not use DistributedDataParallel. |
+
+### `DeepSpeedStrategy`
+
+```python
+glt.DeepSpeedStrategy(
+    stage: int = 2,
+    offload_optimizer: bool = False,
+    offload_parameters: bool = False,
+    config: Any = None,
+)
+```
+
+DeepSpeed ZeRO (needs the `deepspeed` package and CUDA GPUs; implemented, not yet
+validated on hardware). `stage` 1 shards optimizer state, 2 also gradients, 3 also
+parameters; `offload_optimizer`/`offload_parameters` move them to CPU memory.
+`config` (a dict or a JSON file) replaces the generated configuration. Checkpoints hold
+full weights (gathered from all ranks with stage 3); resuming a DeepSpeed run from a
+checkpoint is not supported yet.
+
+| Method | |
+|---|---|
+| `ddp_kwargs()` | Always empty: DeepSpeed wraps the model itself. |
+| `deepspeed_config(precision, accumulate, clip, micro_batch)` | The DeepSpeed configuration for this Trainer's settings. |
 
 ## Callbacks
 
@@ -1020,6 +1055,127 @@ Searches that run short trainings with a Trainer's settings.
 | `lr_find(model, train_dataloaders=None, val_dataloaders=None, dataloaders=None, datamodule=None, method='fit', min_lr=1e-08, max_lr=1.0, num_training=100, mode='exponential', early_stop_threshold=4.0, update_attr=True, attr_name='')` | Train `num_training` steps with the rate rising from `min_lr` to `max_lr` (`"exponential"` or `"linear"`), recording the smoothed loss; stop early when it exceeds `early_stop_threshold` times the best. The weights are restored afterwards. With `update_attr` the suggestion is written to `model.lr` or `model.learning_rate` (or `attr_name`, or the same key in `model.hparams`). |
 | `scale_batch_size(model, train_dataloaders=None, val_dataloaders=None, dataloaders=None, datamodule=None, method='fit', mode='power', steps_per_trial=3, init_val=2, max_trials=25, batch_arg_name='batch_size')` | Find the largest batch size that fits in memory: double it (`"power"`) until a step runs out of memory, then, with `"binsearch"`, search between the last two. The loader must be rebuilt from `batch_arg_name` on the model, its `hparams` or the DataModule (a `train_dataloader` method or a loader function). The size is left on that attribute. |
 
+## Plugins
+
+Pass as `Trainer(plugins=[...])`.
+
+### `Precision`
+
+```python
+glt.Precision(precision: str | int = '32-true')
+```
+
+Base precision plugin: the Trainer uses its `precision` name.
+
+### `MixedPrecision`
+
+```python
+glt.MixedPrecision(precision: str | int = '16-mixed', device: str = 'cuda', scaler: Any = None)
+```
+
+Mixed precision with autocast: `"16-mixed"` (with a gradient scaler) or
+`"bf16-mixed"`. `device` is accepted for Lightning compatibility.
+
+Inherits from `Precision`.
+
+### `HalfPrecision`
+
+```python
+glt.HalfPrecision(precision: str = '16-true')
+```
+
+Weights and inputs in half precision: `"16-true"` or `"bf16-true"`.
+
+Inherits from `Precision`.
+
+### `DoublePrecision`
+
+```python
+glt.DoublePrecision()
+```
+
+Weights and inputs in float64.
+
+Inherits from `Precision`.
+
+### `CheckpointIO`
+
+```python
+glt.CheckpointIO()
+```
+
+How checkpoints are written and read. Subclass to store them elsewhere.
+
+| Method | |
+|---|---|
+| `load_checkpoint(path, map_location='cpu')` | Read a checkpoint dict from `path`. |
+| `remove_checkpoint(path)` | Delete the checkpoint at `path` (used when ModelCheckpoint drops a worse one). |
+| `save_checkpoint(checkpoint, path, storage_options=None)` | Write the checkpoint dict to `path`. |
+
+| Hook | |
+|---|---|
+| `teardown()` | Called when fit ends; finish pending writes here. |
+
+### `TorchCheckpointIO`
+
+```python
+glt.TorchCheckpointIO()
+```
+
+`torch.save` to a temporary file, then an atomic rename (a crash never leaves a
+half-written checkpoint).
+
+Inherits from `CheckpointIO`.
+
+### `AsyncCheckpointIO`
+
+```python
+glt.AsyncCheckpointIO(checkpoint_io: CheckpointIO | None = None)
+```
+
+Write checkpoints in a background thread, so the training loop does not wait for the
+disk. The state is copied to the CPU first (training keeps changing the weights); a
+failed write is raised on the next save or at the end of fit.
+
+Inherits from `CheckpointIO`.
+
+| Method | |
+|---|---|
+| `wait()` | Block until every pending write is on disk. |
+
+### `TorchSyncBatchNorm`
+
+```python
+glt.TorchSyncBatchNorm()
+```
+
+BatchNorm statistics over all processes (`torch.nn.SyncBatchNorm`).
+
+## Command line
+
+Guide: [Command line](cli.md). `glt.LightningCLI` is the same class.
+
+### `GPULayerCLI`
+
+```python
+glt.GPULayerCLI(
+    model_class: type | None = None,
+    datamodule_class: type | None = None,
+    trainer_class: type | None = None,
+    trainer_defaults: dict[str, Any] | None = None,
+    seed_everything_default: int | bool | None = True,
+    args: list[str] | dict[str, Any] | None = None,
+    run: bool = True,
+    description: str | None = None,
+)
+```
+
+Parse the command line, build the model, data and Trainer, and run the subcommand.
+
+After construction: `cli.config` (the merged configuration), `cli.model`,
+`cli.datamodule`, `cli.trainer` and `cli.subcommand`. With `run=False` there are no
+subcommands and nothing is run, so the script can call the Trainer itself.
+
 ## Launch and runtime
 
 Lower layers, usable without the Trainer. Guides: [launch()](launch.md), [Runtime helpers](runtime.md).
@@ -1132,7 +1288,8 @@ glt.Runtime(
 glt.resolve_accelerator(accelerator: str = 'auto')
 ```
 
-'auto' -> the accelerator GPUlayer granted this job, else cuda/rocm > mps > cpu.
+'auto' -> the accelerator GPUlayer granted this job, else a TPU (when PJRT_DEVICE=TPU
+and torch_xla is installed), else cuda/rocm > mps > cpu.
 
 ### `seed_everything`
 

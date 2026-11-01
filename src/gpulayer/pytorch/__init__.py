@@ -32,9 +32,21 @@ from gpulayer.pytorch.callbacks import (
     TrainingSpikeException,
     WeightAveraging,
 )
+from gpulayer.pytorch.cli import GPULayerCLI, LightningCLI
+from gpulayer.pytorch.combined import CombinedLoader
 from gpulayer.pytorch.launch import LaunchResult, in_gpulayer_job, is_launcher_process, launch
 from gpulayer.pytorch.loggers import CSVLogger, Logger, MLFlowLogger, TensorBoardLogger, WandbLogger
 from gpulayer.pytorch.module import AttributeDict, DataModule, Module
+from gpulayer.pytorch.plugins import (
+    AsyncCheckpointIO,
+    CheckpointIO,
+    DoublePrecision,
+    HalfPrecision,
+    MixedPrecision,
+    Precision,
+    TorchCheckpointIO,
+    TorchSyncBatchNorm,
+)
 from gpulayer.pytorch.profilers import (
     AdvancedProfiler,
     PassThroughProfiler,
@@ -43,7 +55,7 @@ from gpulayer.pytorch.profilers import (
     SimpleProfiler,
 )
 from gpulayer.pytorch.runtime import Runtime, resolve_accelerator, seed_everything
-from gpulayer.pytorch.strategies import DDPStrategy, FSDPStrategy
+from gpulayer.pytorch.strategies import DDPStrategy, DeepSpeedStrategy, FSDPStrategy
 from gpulayer.pytorch.trainer import LRSchedulerConfig, Trainer
 from gpulayer.pytorch.tuner import BatchSizeFinder, LearningRateFinder, Tuner
 
@@ -52,6 +64,18 @@ LightningModule = Module
 LightningDataModule = DataModule
 
 __all__ = [
+    "AsyncCheckpointIO",
+    "CheckpointIO",
+    "CombinedLoader",
+    "DeepSpeedStrategy",
+    "DoublePrecision",
+    "GPULayerCLI",
+    "HalfPrecision",
+    "LightningCLI",
+    "MixedPrecision",
+    "Precision",
+    "TorchCheckpointIO",
+    "TorchSyncBatchNorm",
     "AdvancedProfiler",
     "AttributeDict",
     "BackboneFinetuning",

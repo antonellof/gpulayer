@@ -5,6 +5,14 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Trainer, the rest of Lightning's surface (ADR-0024 amendment): several dataloaders
+  (`glt.CombinedLoader` for training; lists for validate/test/predict with `dataloader_idx`);
+  `validate`, `test` and `predict` on several devices or machines (each rank on its shard,
+  results back in the launching process); `glt.LightningCLI`/`GPULayerCLI` (subcommands,
+  `--trainer.*`/`--model.*`/`--data.*`, JSON/YAML configs, `class_path`); `plugins=` with
+  precision plugins, `CheckpointIO`, `TorchCheckpointIO`, `AsyncCheckpointIO` and
+  `TorchSyncBatchNorm`; `DeepSpeedStrategy` and `accelerator="tpu"` (implemented, not run on
+  hardware). New guide page: [Command line](docs/pytorch/cli.md).
 - Install script at a short URL: `curl -fsSL https://gpulayer.dev/install.sh | sh` (the site
   proxies the repository's `install.sh`). The home hero no longer shows a `gpulayer up` button.
 - Site: the home page hero has an animated wireframe landscape (mountains, lakes, hills) behind
