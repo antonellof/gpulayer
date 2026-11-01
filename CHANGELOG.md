@@ -5,6 +5,13 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Tests: every public name of the reference trainer API is exercised by at least one behaviour
+  test (`tests/pytorch/test_feature_coverage.py`, `test_speed_mechanisms.py`); check it with
+  `python scripts/compare_api.py <reference-source> --tests`. The speed-mechanism tests run on
+  every accelerator present (CPU, Apple GPU, CUDA).
+- Fix: `trainer.test_dataloaders`, `val_dataloaders` and `predict_dataloaders` are set by
+  `test`, `validate` and `predict` (they stayed None).
+
 ## 0.9.0 (2026-11-01)
 
 The Trainer now covers the rest of the reference training API, validated on Tesla T4s for

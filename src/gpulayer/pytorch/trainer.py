@@ -2069,7 +2069,14 @@ class Trainer:
                 f"{stage} needs data: pass dataloaders, a datamodule, or define "
                 f"{name}_dataloader() on the model"
             )
-        return rt, model, self._prepare_loaders(rt, src)
+        loaders = self._prepare_loaders(rt, src)
+        # The loaders of this call, under the reference attribute names.
+        setattr(
+            self,
+            {"val": "val_dataloaders", "test": "test_dataloaders"}.get(name, "predict_dataloaders"),
+            loaders,
+        )
+        return rt, model, loaders
 
     def validate(
         self,

@@ -1,7 +1,7 @@
 """List PyTorch Lightning public names that gpulayer.pytorch does not have.
 
     git clone https://github.com/Lightning-AI/pytorch-lightning /tmp/lightning
-    python scripts/compare_api.py /tmp/lightning
+    python scripts/compare_api.py /tmp/lightning [--tests]
 
 Compares the ``__all__`` of Lightning's callbacks, loggers, profilers, plugins, strategies,
 accelerators and utilities, the Trainer's arguments and members, and the LightningModule's
@@ -98,6 +98,33 @@ def main(root: str) -> int:
                         and not hasattr(glt.DataModule, f.name)
                     ):
                         missing.append(f"{c.name}.{f.name}")
+    if "--tests" in sys.argv:
+        # Every name GPUlayer provides must also be used by at least one test.
+        import re
+
+        tests = "\n".join(p.read_text() for p in Path("tests").rglob("*.py"))
+        names: set[str] = set()
+        for sub in (
+            "callbacks",
+            "loggers",
+            "profilers",
+            "plugins",
+            "strategies",
+            "accelerators",
+            "utilities",
+        ):
+            names |= {RENAMED.get(n, n) for n in _all_of(src / sub / "__init__.py")}
+        names |= {a.arg for a in init.args.args[1:] + init.args.kwonlyargs}
+        names |= {RENAMED.get(f.name, f.name) for f in trainer_cls.body
+                  if isinstance(f, ast.FunctionDef) and not f.name.startswith("_")}  # fmt: skip
+        for rel in ("core/module.py", "core/hooks.py", "core/datamodule.py"):
+            for c in ast.parse((src / rel).read_text()).body:
+                if isinstance(c, ast.ClassDef):
+                    names |= {RENAMED.get(f.name, f.name) for f in c.body
+                              if isinstance(f, ast.FunctionDef) and not f.name.startswith("_")}  # fmt: skip
+        missing += [
+            f"untested: {n}" for n in sorted(names) if not re.search(rf"\b{re.escape(n)}\b", tests)
+        ]
     for m in sorted(set(missing)):
         print(m)
     print(f"{len(set(missing))} missing", file=sys.stderr)
@@ -105,6 +132,7 @@ def main(root: str) -> int:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
+    paths = [a for a in sys.argv[1:] if not a.startswith("--")]
+    if len(paths) != 1:
         sys.exit(__doc__)
-    sys.exit(main(sys.argv[1]))
+    sys.exit(main(paths[0]))
