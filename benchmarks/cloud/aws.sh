@@ -13,10 +13,15 @@
 #   benchmarks/cloud/aws.sh allow 203.0.113.7 [8470]     # let one outside IP reach a GPUlayer
 #                                                        # server on these instances (TLS port)
 #   benchmarks/cloud/aws.sh revoke 203.0.113.7 [8470]
+#   benchmarks/cloud/aws.sh ssh gl-gpu4 'nvidia-smi'      # run a command; also: ip, private-ip
 #
-# Instances use the AWS Deep Learning Base OSS NVIDIA driver AMI (Ubuntu 22.04), the default
-# VPC, a key pair and a security group named gpulayer-bench (SSH from this machine's public IP,
-# all traffic between members, for NCCL across machines). Instances are tagged
+# Instances use the AWS Deep Learning Base OSS NVIDIA driver AMI (Ubuntu 22.04), a VPC of their
+# own named gpulayer-bench (one subnet per zone, internet gateway; the default VPC is not used
+# or changed), a key pair and a security group named gpulayer-bench (SSH from this machine's
+# public IP, all traffic between members, for NCCL across machines). On first boot
+# (aws-boot.sh, user-data) each instance installs uv, Python 3.12, PyTorch, Lightning and the
+# current commit of GPUlayer (pushed to GitHub) into ~/venv; `ready NAME...` waits for it.
+# GL_AWS_BOOT=0 skips that. `down-network` deletes the VPC when no instance uses it. Instances are tagged
 # purpose=gpulayer-bench; `down` terminates them. Results stay on the instance until `fetch`.
 set -euo pipefail
 
@@ -35,13 +40,46 @@ id_of() { aws ec2 describe-instances "${A[@]}" --filters "Name=tag:Name,Values=$
 on() { local vm=$1; shift; ssh -i "$KEY" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
   "ubuntu@$(ip_of "$vm")" "$@"; }
 
-setup() {  # key pair and security group, created once
+AZ=${GL_AWS_AZ:-${REGION}c}
+
+tagged() { aws ec2 "describe-$1" "${A[@]}" --filters "Name=tag:Name,Values=$2" \
+  --query "$3" --output text; }
+
+network() {  # a VPC of its own (not the default VPC): subnet per zone, internet gateway, route
+  local vpc igw rt sub n
+  vpc=$(tagged vpcs gpulayer-bench "Vpcs[0].VpcId")
+  if [ "$vpc" = None ]; then
+    vpc=$(aws ec2 create-vpc "${A[@]}" --cidr-block 10.77.0.0/16 --query Vpc.VpcId --output text \
+      --tag-specifications "ResourceType=vpc,Tags=[{Key=Name,Value=gpulayer-bench},{Key=purpose,Value=gpulayer-bench}]")
+    aws ec2 modify-vpc-attribute "${A[@]}" --vpc-id "$vpc" --enable-dns-hostnames >/dev/null
+    igw=$(aws ec2 create-internet-gateway "${A[@]}" --query InternetGateway.InternetGatewayId --output text \
+      --tag-specifications "ResourceType=internet-gateway,Tags=[{Key=Name,Value=gpulayer-bench}]")
+    aws ec2 attach-internet-gateway "${A[@]}" --vpc-id "$vpc" --internet-gateway-id "$igw"
+    rt=$(aws ec2 create-route-table "${A[@]}" --vpc-id "$vpc" --query RouteTable.RouteTableId --output text \
+      --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=gpulayer-bench}]")
+    aws ec2 create-route "${A[@]}" --route-table-id "$rt" --destination-cidr-block 0.0.0.0/0 \
+      --gateway-id "$igw" >/dev/null
+  fi
+  sub=$(tagged subnets "gpulayer-bench-$AZ" "Subnets[0].SubnetId")
+  if [ "$sub" = None ]; then
+    n=$(( $(printf '%d' "'${AZ: -1}") - 96 ))  # a=1, b=2, ...
+    sub=$(aws ec2 create-subnet "${A[@]}" --vpc-id "$vpc" --availability-zone "$AZ" \
+      --cidr-block "10.77.$n.0/24" --query Subnet.SubnetId --output text \
+      --tag-specifications "ResourceType=subnet,Tags=[{Key=Name,Value=gpulayer-bench-$AZ}]")
+    aws ec2 modify-subnet-attribute "${A[@]}" --subnet-id "$sub" --map-public-ip-on-launch
+    rt=$(tagged route-tables gpulayer-bench "RouteTables[0].RouteTableId")
+    aws ec2 associate-route-table "${A[@]}" --route-table-id "$rt" --subnet-id "$sub" >/dev/null
+  fi
+  echo "$vpc $sub"
+}
+
+setup() {  # key pair, network and security group, created once; prints "sg subnet"
   if [ ! -f "$KEY" ]; then ssh-keygen -q -t ed25519 -N '' -f "$KEY" -C gpulayer-bench; fi
   aws ec2 describe-key-pairs "${A[@]}" --key-names gpulayer-bench >/dev/null 2>&1 ||
     aws ec2 import-key-pair "${A[@]}" --key-name gpulayer-bench \
       --public-key-material "fileb://$KEY.pub" >/dev/null
-  local vpc sg me
-  vpc=$(aws ec2 describe-vpcs "${A[@]}" --filters Name=isDefault,Values=true --query "Vpcs[0].VpcId" --output text)
+  local vpc sub sg me
+  read -r vpc sub < <(network)
   sg=$(aws ec2 describe-security-groups "${A[@]}" --filters Name=group-name,Values=gpulayer-bench \
     "Name=vpc-id,Values=$vpc" --query "SecurityGroups[0].GroupId" --output text)
   if [ "$sg" = None ]; then
@@ -53,21 +91,28 @@ setup() {  # key pair and security group, created once
   me=$(curl -s https://checkip.amazonaws.com)
   aws ec2 authorize-security-group-ingress "${A[@]}" --group-id "$sg" --protocol tcp --port 22 \
     --cidr "$me/32" >/dev/null 2>&1 || true
-  echo "$sg"
+  echo "$sg $sub"
 }
 
 cmd=${1:-}; shift || true
 case "$cmd" in
   up)
     name=$1 type=${2:-g4dn.12xlarge}
-    sg=$(setup)
+    read -r sg sub < <(setup)
     market=()
-    if [ -n "${GL_AWS_AZ:-}" ]; then market+=(--placement "AvailabilityZone=$GL_AWS_AZ"); fi
+    boot=()
+    if [ "${GL_AWS_BOOT:-1}" = 1 ]; then
+      # Install uv, Python, PyTorch, Lightning and this commit of GPUlayer on first boot.
+      ref=$(git -C "$ROOT" rev-parse HEAD)
+      bootfile=$(mktemp)
+      sed "s/@REF@/$ref/" "$ROOT/benchmarks/cloud/aws-boot.sh" > "$bootfile"
+      boot=(--user-data "file://$bootfile")
+    fi
     if [ "${GL_AWS_SPOT:-}" = 1 ]; then
       market+=(--instance-market-options 'MarketType=spot,SpotOptions={SpotInstanceType=one-time,InstanceInterruptionBehavior=terminate}')
     fi
     aws ec2 run-instances "${A[@]}" --image-id "$(ami)" --instance-type "$type" "${market[@]}" \
-      --key-name gpulayer-bench --security-group-ids "$sg" \
+      --key-name gpulayer-bench --security-group-ids "$sg" --subnet-id "$sub" "${boot[@]}" \
       --block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeSize=150,VolumeType=gp3}' \
       --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$name},{Key=purpose,Value=gpulayer-bench}]" \
       --query "Instances[0].[InstanceId,InstanceType,Placement.AvailabilityZone]" --output text
@@ -91,6 +136,33 @@ case "$cmd" in
     on "$vm" 'cd gpulayer && $HOME/.local/bin/uv pip freeze --python .venv-validate/bin/python' > "$dest/pip-freeze.txt" || true
     for f in "$dest"/*; do [ -f "$f" ] && sed -i.bak "s#/home/[A-Za-z0-9_.-]*#/home/user#g" "$f" && rm -f "$f.bak"; done
     ls -la "$dest" ;;
+  ssh)
+    vm=$1; shift; on "$vm" "$@" ;;
+  ready)  # wait until the boot install finished on each instance
+    for vm in "$@"; do
+      for _ in $(seq 1 90); do on "$vm" test -f .gpulayer-ready 2>/dev/null && break; sleep 10; done
+      on "$vm" 'test -f .gpulayer-ready && tail -1 gpulayer-setup.log' || echo "$vm: not ready"
+    done ;;
+  down-network)  # delete the VPC created by `network` (after `down` of every instance)
+    vpc=$(tagged vpcs gpulayer-bench "Vpcs[0].VpcId")
+    [ "$vpc" = None ] && exit 0
+    for sub in $(aws ec2 describe-subnets "${A[@]}" --filters "Name=vpc-id,Values=$vpc" --query "Subnets[].SubnetId" --output text); do
+      aws ec2 delete-subnet "${A[@]}" --subnet-id "$sub"; done
+    for sg in $(aws ec2 describe-security-groups "${A[@]}" --filters "Name=vpc-id,Values=$vpc" Name=group-name,Values=gpulayer-bench --query "SecurityGroups[].GroupId" --output text); do
+      aws ec2 delete-security-group "${A[@]}" --group-id "$sg"; done
+    rt=$(tagged route-tables gpulayer-bench "RouteTables[0].RouteTableId")
+    [ "$rt" != None ] && aws ec2 delete-route-table "${A[@]}" --route-table-id "$rt"
+    igw=$(tagged internet-gateways gpulayer-bench "InternetGateways[0].InternetGatewayId")
+    if [ "$igw" != None ]; then
+      aws ec2 detach-internet-gateway "${A[@]}" --internet-gateway-id "$igw" --vpc-id "$vpc"
+      aws ec2 delete-internet-gateway "${A[@]}" --internet-gateway-id "$igw"
+    fi
+    aws ec2 delete-vpc "${A[@]}" --vpc-id "$vpc" && echo "deleted $vpc" ;;
+  ip)
+    ip_of "$1" ;;
+  private-ip)
+    aws ec2 describe-instances "${A[@]}" --filters "Name=tag:Name,Values=$1" \
+      "Name=instance-state-name,Values=running" --query "Reservations[].Instances[].PrivateIpAddress" --output text ;;
   allow|revoke)
     ip=$1 port=${2:-8470}
     sg=$(aws ec2 describe-security-groups "${A[@]}" --filters Name=group-name,Values=gpulayer-bench \

@@ -14,8 +14,15 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 - Docstrings for every public member of `gpulayer.pytorch`; hooks share one description of when
   they run (`gpulayer.pytorch.hooks`). `BackboneFinetuning`'s default `lambda_func` is now the
   named function `multiplicative`, as in Lightning.
-- `benchmarks/cloud/aws.sh`: `GL_AWS_SPOT=1`, `GL_AWS_AZ=...` and `allow`/`revoke` for one
-  outside IP.
+- `benchmarks/cloud/aws.sh`: instances run in a VPC of their own (`gpulayer-bench`, with its
+  own internet gateway; the default VPC is not used), install uv, PyTorch, Lightning and the
+  current GPUlayer commit on first boot (user-data, `aws-boot.sh`; `ready` waits for it), and
+  take `GL_AWS_SPOT=1`, `GL_AWS_AZ=...`, `allow`/`revoke` for one outside IP, `ssh`, `ip`,
+  `private-ip` and `down-network`.
+- `scripts/validate_trainer_gpu.py` (one GPU: Inductor `torch.compile`, 16-mixed manual
+  optimization, "-true" precisions, `PyTorchProfiler` CUDA columns, EMA, device stats) and
+  `scripts/validate_nccl.py` (DDP with `sync_batchnorm`, manual optimization and FSDP across
+  GPU machines over NCCL).
 
 ## 0.8.0 (2026-11-01)
 
