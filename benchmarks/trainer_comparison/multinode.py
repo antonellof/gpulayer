@@ -83,7 +83,7 @@ def run_pl(case: str, steps: int, ips: list[str]) -> float:
             [
                 *SSH,
                 f"{USER}@{ip}",
-                f"{PREFIX}cd {REMOTE}/benchmarks/lightning_comparison && "
+                f"{PREFIX}cd {REMOTE}/benchmarks/trainer_comparison && "
                 f"{VENV}/bin/torchrun --nnodes {n} --nproc-per-node {NPROC} "
                 f"--node-rank {r} --master-addr {master} --master-port 29511 "
                 f"bench.py pl {case} {steps} {n}",

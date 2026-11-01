@@ -1,3 +1,3 @@
 // Keep in sync with pyproject.toml (tests/unit/test_version.py checks it).
-export const VERSION = "0.8.1";
+export const VERSION = "0.9.0";
 export const RELEASE_URL = `https://github.com/antonellof/gpulayer/releases/tag/v${VERSION}`;

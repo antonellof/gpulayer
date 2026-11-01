@@ -222,7 +222,7 @@ def test_num_nodes_and_targets_are_not_used_with_tpus():
             t._xla_spawn_needed()
 
 
-def test_hpu_is_rejected_as_in_lightning():
+def test_hpu_is_rejected():
     import gpulayer.pytorch as glt
     from gpulayer.errors import ValidationFailed
 

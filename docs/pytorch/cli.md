@@ -1,6 +1,6 @@
 # Command line
 
-`GPULayerCLI` (also `glt.LightningCLI`) builds a command line from the `__init__` signatures of
+`GPULayerCLI` builds a command line from the `__init__` signatures of
 the Trainer, your model and your DataModule, like Lightning's `LightningCLI`.
 
 ```python
@@ -9,7 +9,7 @@ import gpulayer.pytorch as glt
 from my_project import MyModel, MyData
 
 if __name__ == "__main__":
-    glt.LightningCLI(MyModel, MyData, trainer_defaults={"accelerator": "auto"})
+    glt.GPULayerCLI(MyModel, MyData, trainer_defaults={"accelerator": "auto"})
 ```
 
 ```bash

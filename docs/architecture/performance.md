@@ -88,7 +88,7 @@ What the PyTorch `Trainer` does to keep steps fast:
 
 On a Tesla T4 the last two made a compute-bound CNN 1.16x faster per step (12.67 to 10.93 ms;
 autotuning about 9%, copy-ahead about 5%) and made no difference beyond run-to-run variation on
-small MLPs. Measured with `benchmarks/lightning_comparison` and
+small MLPs. Measured with `benchmarks/trainer_comparison` and
 `TRAINERS="gl gl-base gl-noprefetch gl-nobench pl"`; logs in
 `benchmarks/results/2026-10-31-gcp-t4/`. The comparison with PyTorch Lightning on a T4 is in
 [Performance and comparison](../get-started/performance-and-comparison.md).

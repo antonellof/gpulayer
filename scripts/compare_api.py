@@ -1,7 +1,7 @@
 """List PyTorch Lightning public names that gpulayer.pytorch does not have.
 
     git clone https://github.com/Lightning-AI/pytorch-lightning /tmp/lightning
-    python scripts/compare_lightning_api.py /tmp/lightning
+    python scripts/compare_api.py /tmp/lightning
 
 Compares the ``__all__`` of Lightning's callbacks, loggers, profilers, plugins, strategies,
 accelerators and utilities, the Trainer's arguments and members, and the LightningModule's
@@ -34,6 +34,17 @@ def _class(path: Path, name: str) -> ast.ClassDef:
     )
 
 
+# Reference names GPUlayer provides under its own name (its code carries no Lightning names).
+RENAMED = {
+    "LightningModule": "Module",
+    "LightningDataModule": "DataModule",
+    "LightningCLI": "GPULayerCLI",
+    "LightningArgumentParser": "GPULayerArgumentParser",
+    "LightningEnum": "CaseInsensitiveEnum",
+    "lightning_module": "module",
+}
+
+
 def main(root: str) -> int:
     import torch  # noqa: F401  (gpulayer.pytorch needs it)
 
@@ -52,6 +63,7 @@ def main(root: str) -> int:
         "utilities",
     ):
         for name in _all_of(src / sub / "__init__.py"):
+            name = RENAMED.get(name, name)
             if not hasattr(glt, name) and not hasattr(utilities, name):
                 missing.append(f"{sub}.{name}")
     trainer_cls = _class(src / "trainer" / "trainer.py", "Trainer")
@@ -67,7 +79,7 @@ def main(root: str) -> int:
         if (
             isinstance(f, ast.FunctionDef)
             and not f.name.startswith("_")
-            and not hasattr(trainer, f.name)
+            and not hasattr(trainer, RENAMED.get(f.name, f.name))
         ):
             missing.append(f"Trainer.{f.name}")
 

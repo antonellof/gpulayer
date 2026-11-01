@@ -1,5 +1,5 @@
 {
-  "_about": "Apple M2 Pro (10 CPU cores, 32 GB), macOS, Python 3.12, torch 2.15.0, Lightning 2.6.6, GPUlayer 0.8.0 (Lightning-parity Trainer, ADR-0024), 2026-11-01 (lightning-comparison.log). benchmarks/lightning_comparison/run.py, fresh process per run, nothing else running. Read by scripts/make_perf_charts.py.",
+  "_about": "Apple M2 Pro (10 CPU cores, 32 GB), macOS, Python 3.12, torch 2.15.0, Lightning 2.6.6, GPUlayer 0.8.0 (Lightning-parity Trainer, ADR-0024), 2026-11-01 (lightning-comparison.log). benchmarks/trainer_comparison/run.py, fresh process per run, nothing else running. Read by scripts/make_perf_charts.py.",
   "apple_cpu": {
     "subtitle": "Apple M2 Pro, torch 2.15.0, Lightning 2.6.6, GPUlayer 0.8.0, fp32, each trainer's defaults",
     "rows": [

@@ -5,6 +5,32 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+## 0.9.0 (2026-11-01)
+
+The Trainer now covers the rest of the reference training API, validated on Tesla T4s for
+DeepSpeed, FSDP options, tensor parallelism, DDP hooks, quantized training and TensorRT.
+
+**Migrating from 0.8** (breaking changes):
+
+- GPUlayer's code carries no Lightning names. Removed aliases: `glt.LightningModule` (use
+  `glt.Module`), `glt.LightningDataModule` (`glt.DataModule`), `glt.LightningCLI`
+  (`glt.GPULayerCLI`), `glt.LightningArgumentParser` (`glt.GPULayerArgumentParser`). Renamed:
+  `Trainer.lightning_module` is `Trainer.module`; the CLI parser's `add_lightning_class_args`
+  is `add_component_args`; `utilities.LightningEnum` is `utilities.CaseInsensitiveEnum`;
+  `LitLogger`'s default folder is `./gpulayer_logs`. The benchmark scripts moved from
+  `benchmarks/lightning_comparison/` to `benchmarks/trainer_comparison/`.
+- The training loop no longer calls `model.train()` every epoch (frozen submodules stay in
+  eval mode); call `model.train()` before `fit` if a model arrives in eval mode (`fit` warns).
+- `PyTorchProfiler`'s positional arguments after `filename` follow the reference order; pass
+  them by keyword.
+- `WandbLogger(log_model=...)` uploads checkpoints as W&B artifacts instead of `run.save`.
+- A bare class name on the CLI (`--data Data`) that matches classes in two modules is an error
+  naming both; give `module.Class`.
+
+- Validated on 2 Tesla T4 machines over NCCL: DDP communication hooks (fp16 compression, 11%
+  faster steps than plain DDP on that network) and post-local SGD (21% faster; replicas
+  identical after each averaging step) (`benchmarks/results/2026-11-01-aws-2xt4-ddp-hooks/`).
+- Home page: no Lightning names outside the benchmark comparisons.
 - Validated on 2 Tesla T4 machines over NCCL (`benchmarks/results/2026-11-01-aws-2xt4-parallel/`):
   FSDP sharding strategies, activation checkpointing, CPU offload and sharded checkpoints
   (merged across machines, resumed in a second job); tensor parallelism with
@@ -30,7 +56,7 @@ before 1.0, minor versions may change public APIs, with migration notes here.
   `num_workers`), once per process, silenced by
   `gpulayer.pytorch.utilities.disable_possible_user_warnings()`.
 - Trainer: the rest of Lightning's public API (ADR-0024, "Full public API"), checked with the
-  new `scripts/compare_lightning_api.py`. Highlights: SIGTERM saves a resumable checkpoint
+  new `scripts/compare_api.py`. Highlights: SIGTERM saves a resumable checkpoint
   and raises `SIGTERMException`; `trainer.init_module()`; FSDP options (sharding strategies,
   activation checkpointing, CPU offload, sharded checkpoints) and `ModelParallelStrategy`
   (tensor parallelism); DDP communication hooks and post-local SGD; `BitsandbytesPrecision`
@@ -69,7 +95,7 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 - Trainer, the rest of Lightning's surface (ADR-0024 amendment): several dataloaders
   (`glt.CombinedLoader` for training; lists for validate/test/predict with `dataloader_idx`);
   `validate`, `test` and `predict` on several devices or machines (each rank on its shard,
-  results back in the launching process); `glt.LightningCLI`/`GPULayerCLI` (subcommands,
+  results back in the launching process); `glt.GPULayerCLI` (subcommands,
   `--trainer.*`/`--model.*`/`--data.*`, JSON/YAML configs, `class_path`); `plugins=` with
   precision plugins, `CheckpointIO`, `TorchCheckpointIO`, `AsyncCheckpointIO` and
   `TorchSyncBatchNorm`; `DeepSpeedStrategy` and `accelerator="tpu"` (implemented, not run on
@@ -390,7 +416,7 @@ Lightning.
 - Apache-2.0 licence (ADR-0012), PyPI package metadata, and a trusted-publishing release
   workflow (`.github/workflows/publish.yml`).
 - Benchmarks: `benchmarks/cloud/gcp.sh` builds an image and starts a server plus a fleet of
-  workers; `benchmarks/scale_test.py`; `benchmarks/lightning_comparison/scaling_run.py` and
+  workers; `benchmarks/scale_test.py`; `benchmarks/trainer_comparison/scaling_run.py` and
   `multinode.py` compare multi-machine training with PyTorch Lightning.
 
 ## 0.2.0 (2026-10-30)
@@ -430,7 +456,7 @@ a measured comparison with PyTorch Lightning.
   repeats the single-machine part on any NVIDIA machine.
 - Performance and comparison: a docs page and README section with charts
   (`scripts/make_perf_charts.py`), the GPUlayer vs PyTorch Lightning harness
-  (`benchmarks/lightning_comparison/`), `benchmarks/multi_machine.py`, raw results in
+  (`benchmarks/trainer_comparison/`), `benchmarks/multi_machine.py`, raw results in
   `benchmarks/results/2026-10-30-gcp/`, and `benchmarks/cloud/gcp.sh` to rerun them on Google
   Cloud.
 - NVIDIA CUDA independent jobs are now `hardware-validated` in the support matrix.

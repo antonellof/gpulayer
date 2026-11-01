@@ -24,9 +24,9 @@ machines named. Everything else says what is missing.
 | Other GPU libraries (JAX, CuPy, TensorFlow, ONNX Runtime, Transformers) | detected on workers; not validated on a GPU (a validation run was stopped before it finished) |
 | Trainer FSDP (`strategy="fsdp"`) | experimental; validated over NCCL on 2 and 8 T4 machines (32-true; each rank held 1/N of the parameters) |
 | Trainer Lightning parity (ADR-0024): hooks, manual optimization, DataModule, scheduler forms, "-true" precisions, DDP options, callbacks (checkpointing, early stopping, SWA, EMA, fine-tuning, pruning, timers, monitors), CSV logger, profilers, tuner | tested on CPU, one process and two DDP processes; step time within 1.4% of 0.7 on an M2 Pro CPU |
-| Every public name of Lightning's Trainer, Module, hooks, callbacks, loggers, profilers, plugins, strategies, accelerators and utilities (`scripts/compare_lightning_api.py` finds none missing) | tested on CPU; SIGTERM checkpoints, `init_module`, eval/train mode hooks tested in one process |
+| Every public name of Lightning's Trainer, Module, hooks, callbacks, loggers, profilers, plugins, strategies, accelerators and utilities (`scripts/compare_api.py` finds none missing) | tested on CPU; SIGTERM checkpoints, `init_module`, eval/train mode hooks tested in one process |
 | FSDP options (sharding strategies, activation checkpointing, CPU offload, sharded checkpoints merged across machines), `ModelParallelStrategy` (tensor parallelism), `to_tensorrt` | validated on 2 Tesla T4 machines over NCCL ([results](../../benchmarks/results/2026-11-01-aws-2xt4-parallel/README.md)) |
-| DDP communication hooks and post-local SGD | tested with two CPU processes (gloo) |
+| DDP communication hooks (fp16 compression) and post-local SGD | validated on 2 Tesla T4 machines over NCCL ([results](../../benchmarks/results/2026-11-01-aws-2xt4-ddp-hooks/README.md)) |
 | Trainer `DeepSpeedStrategy` (ZeRO 1 to 3, CPU offload) | validated on Tesla T4s, one machine and two over NCCL ([results](../../benchmarks/results/2026-11-01-aws-2xt4-deepspeed/README.md)) |
 | `BitsandbytesPrecision` (nf4, int8) | validated on a Tesla T4 |
 | `TransformerEnginePrecision`, `XLAProfiler`, Comet, W&B, MLflow, TensorBoard and Lit loggers | implemented; tested against fake packages only |

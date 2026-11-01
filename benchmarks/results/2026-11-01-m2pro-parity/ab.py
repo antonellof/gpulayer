@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 OLD_TREE, CASE = sys.argv[1], sys.argv[2]
-BENCH = Path(__file__).resolve().parents[2] / "lightning_comparison" / "bench.py"
+BENCH = Path(__file__).resolve().parents[2] / "trainer_comparison" / "bench.py"
 
 
 def wall(tag: str, steps: int) -> float:

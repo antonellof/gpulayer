@@ -2,7 +2,7 @@
 
 Apple M2 Pro (10 CPU cores, 32 GB), macOS, Python 3.12, torch 2.15.0, 2026-11-01.
 
-Method: `benchmarks/lightning_comparison/bench.py gl <case>`, fresh process per run, wall time
+Method: `benchmarks/trainer_comparison/bench.py gl <case>`, fresh process per run, wall time
 from outside the process. ms/step = (median wall(2200 steps) - median wall(200 steps)) / 2000.
 
 ## A/B, alternating runs (ab.py, 5 repeats each)

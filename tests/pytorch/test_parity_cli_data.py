@@ -16,7 +16,7 @@ import gpulayer.pytorch as glt  # noqa: E402
 from gpulayer.errors import ValidationFailed  # noqa: E402
 from gpulayer.pytorch.cli import (  # noqa: E402
     GPULayerArgumentParser,
-    LightningCLI,
+    GPULayerCLI,
     ReduceLROnPlateau,
     SaveConfigCallback,
 )
@@ -94,7 +94,7 @@ def defaults(tmp_path, **kw):
 # ---------------------------------------------------------------- CLI order
 
 
-class RecordingCLI(LightningCLI):
+class RecordingCLI(GPULayerCLI):
     def __init__(self, *args, **kwargs):
         self.calls = []
         super().__init__(*args, **kwargs)
@@ -124,7 +124,7 @@ class RecordingCLI(LightningCLI):
     @staticmethod
     def link_optimizers_and_lr_schedulers(parser):
         parser._gl_linked = True
-        LightningCLI.link_optimizers_and_lr_schedulers(parser)
+        GPULayerCLI.link_optimizers_and_lr_schedulers(parser)
 
     def parse_arguments(self, parser, args):
         self.calls.append("parse_arguments")
@@ -151,7 +151,7 @@ class RecordingCLI(LightningCLI):
         self.calls.append("after_fit")
 
 
-def test_cli_calls_overridable_methods_in_lightning_order(tmp_path):
+def test_cli_calls_overridable_methods_in_order(tmp_path):
     cli = RecordingCLI(
         WithOpt,
         Data,
@@ -190,7 +190,7 @@ def test_cli_calls_overridable_methods_in_lightning_order(tmp_path):
 
 
 def test_cli_save_config_callback_writes_resolved_config(tmp_path):
-    cli = LightningCLI(
+    cli = GPULayerCLI(
         WithOpt,
         Data,
         trainer_defaults=defaults(tmp_path),
@@ -212,7 +212,7 @@ def test_cli_save_config_callback_writes_resolved_config(tmp_path):
 
     # overwrite=False refuses an existing file, as in Lightning
     with pytest.raises(RuntimeError, match="NOT exist"):
-        LightningCLI(
+        GPULayerCLI(
             WithOpt,
             Data,
             trainer_defaults=defaults(tmp_path),
@@ -220,7 +220,7 @@ def test_cli_save_config_callback_writes_resolved_config(tmp_path):
             args=["fit"],
         )
 
-    cli = LightningCLI(
+    cli = GPULayerCLI(
         WithOpt, Data, trainer_defaults=defaults(tmp_path), save_config_callback=None, args=["fit"]
     )
     assert not any(isinstance(c, SaveConfigCallback) for c in cli.trainer.callbacks)
@@ -230,7 +230,7 @@ def test_cli_save_config_callback_writes_resolved_config(tmp_path):
 
 
 def test_cli_optimizer_and_scheduler_define_configure_optimizers(tmp_path):
-    cli = LightningCLI(
+    cli = GPULayerCLI(
         NoOpt,
         Data,
         trainer_defaults=defaults(tmp_path, max_epochs=2),
@@ -262,12 +262,12 @@ def test_cli_optimizer_and_scheduler_define_configure_optimizers(tmp_path):
     # ReduceLROnPlateau with a monitor gives Lightning's dict form
     model = NoOpt()
     sched = ReduceLROnPlateau(torch.optim.SGD(model.parameters(), lr=0.1), monitor="val_loss")
-    out = LightningCLI.configure_optimizers(model, sched.optimizer, sched)
+    out = GPULayerCLI.configure_optimizers(model, sched.optimizer, sched)
     assert out["lr_scheduler"] == {"scheduler": sched, "monitor": "val_loss"}
 
     # a model with its own configure_optimizers is overridden with a warning, as in Lightning
     with pytest.warns(UserWarning, match="will be overridden"):
-        cli = LightningCLI(
+        cli = GPULayerCLI(
             WithOpt,
             Data,
             trainer_defaults=defaults(tmp_path),
@@ -277,7 +277,7 @@ def test_cli_optimizer_and_scheduler_define_configure_optimizers(tmp_path):
 
     # without auto_configure_optimizers there is no --optimizer
     with pytest.raises(SystemExit):
-        LightningCLI(
+        GPULayerCLI(
             WithOpt,
             Data,
             trainer_defaults=defaults(tmp_path),
@@ -287,9 +287,17 @@ def test_cli_optimizer_and_scheduler_define_configure_optimizers(tmp_path):
 
 
 def test_cli_subclass_mode_print_config_and_run_false(tmp_path, capsys):
-    cli = LightningCLI(
+    cli = GPULayerCLI(
         trainer_defaults=defaults(tmp_path),
-        args=["fit", "--model", "WithOpt", "--model.lr", "0.2", "--data", "Data"],
+        args=[
+            "fit",
+            "--model",
+            "WithOpt",
+            "--model.lr",
+            "0.2",
+            "--data",
+            f"{Data.__module__}.Data",
+        ],
     )
     assert type(cli.model) is WithOpt and cli.model.hparams.lr == 0.2
     assert type(cli.datamodule) is Data
@@ -299,7 +307,7 @@ def test_cli_subclass_mode_print_config_and_run_false(tmp_path, capsys):
     assert cli.model.hparams["_class_path"] == cli.config["model"]["class_path"]
 
     with pytest.raises(ValidationFailed, match="not a subclass"):
-        LightningCLI(
+        GPULayerCLI(
             WithOpt,
             Data,
             subclass_mode_model=True,
@@ -308,12 +316,12 @@ def test_cli_subclass_mode_print_config_and_run_false(tmp_path, capsys):
         )
 
     with pytest.raises(SystemExit) as e:
-        LightningCLI(WithOpt, Data, args=["fit", "--model.lr", "0.3", "--print_config"])
+        GPULayerCLI(WithOpt, Data, args=["fit", "--model.lr", "0.3", "--print_config"])
     assert e.value.code == 0
     printed = capsys.readouterr().out
     assert '"lr": 0.3' in printed or "lr: 0.3" in printed
 
-    cli = LightningCLI(
+    cli = GPULayerCLI(
         WithOpt,
         Data,
         trainer_defaults=defaults(tmp_path),
@@ -326,20 +334,20 @@ def test_cli_subclass_mode_print_config_and_run_false(tmp_path, capsys):
     class Custom(GPULayerArgumentParser):
         pass
 
-    cli = LightningCLI(
+    cli = GPULayerCLI(
         WithOpt, Data, parser_class=Custom, trainer_defaults=defaults(tmp_path), run=False, args=[]
     )
     assert isinstance(cli.parser, Custom)
     with pytest.raises(ValidationFailed, match="parser_class"):
-        LightningCLI(WithOpt, Data, parser_class=object, args=[])
+        GPULayerCLI(WithOpt, Data, parser_class=object, args=[])
 
 
 def test_cli_ckpt_path_hparams_and_test_subcommand(tmp_path):
-    cli = LightningCLI(
+    cli = GPULayerCLI(
         WithOpt, Data, trainer_defaults=defaults(tmp_path), args=["fit", "--model.lr", "0.07"]
     )
     ckpt = cli.trainer.checkpoint_path
-    cli = LightningCLI(
+    cli = GPULayerCLI(
         WithOpt,
         Data,
         trainer_defaults=defaults(tmp_path),
@@ -371,7 +379,7 @@ def test_datamodule_load_from_checkpoint_and_on_exception(tmp_path):
         Data.load_from_checkpoint(ckpt, hparams_file=tmp_path / "x.txt")
 
     # written by the CLI (load_from_checkpoint_support): rebuilt through instantiate_module
-    cli = LightningCLI(
+    cli = GPULayerCLI(
         WithOpt,
         Data,
         subclass_mode_data=True,
@@ -438,3 +446,16 @@ def test_combined_loader_sampler_limits_and_reset():
     c = CombinedLoader({"a": a, "b": b})
     c.flattened = [b, a]
     assert c.iterables == {"a": b, "b": a}
+
+
+def test_an_ambiguous_bare_class_name_is_an_error():
+    """Two DataModules named Data in different modules: the CLI must not pick one silently
+    (found when renamed test files changed the import order)."""
+    from gpulayer.pytorch.cli import _resolve_class
+
+    ns: dict = {}
+    exec("import gpulayer.pytorch as glt\nclass Twin(glt.DataModule):\n    pass", ns)
+    ns2: dict = {}
+    exec("import gpulayer.pytorch as glt\nclass Twin(glt.DataModule):\n    pass", ns2)
+    with pytest.raises(ValidationFailed, match="ambiguous"):
+        _resolve_class("Twin", (glt.DataModule,))

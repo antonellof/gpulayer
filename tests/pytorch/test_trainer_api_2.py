@@ -157,7 +157,7 @@ import sys, torch
 from torch.utils.data import DataLoader, TensorDataset
 import gpulayer.pytorch as glt
 sys.path.insert(0, {here!r})
-from test_lightning_parity_2 import Lin, ds
+from test_trainer_api_2 import Lin, ds
 
 class Data(glt.DataModule):
     def __init__(self, batch_size: int = 8):
@@ -168,7 +168,7 @@ class Data(glt.DataModule):
     def test_dataloader(self):
         return DataLoader(ds(32), batch_size=self.batch_size)
 
-cli = glt.LightningCLI(Lin, Data, trainer_defaults={{"accelerator": "cpu", "log_every_n_steps": 0}})
+cli = glt.GPULayerCLI(Lin, Data, trainer_defaults={{"accelerator": "cpu", "log_every_n_steps": 0}})
 print("LR", cli.model.hparams.lr, "BS", cli.datamodule.batch_size, "EPOCHS", cli.trainer.max_epochs,
       "STEPS", cli.trainer.global_step, "CB", [type(c).__name__ for c in cli.trainer.callbacks])
 """

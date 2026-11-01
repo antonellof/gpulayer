@@ -1,6 +1,6 @@
 """Where does a distributed training step spend its time? Run as a GPUlayer distributed job:
 
-    gpulayer submit --distributed --source benchmarks/lightning_comparison \
+    gpulayer submit --distributed --source benchmarks/trainer_comparison \
         --entrypoint profile_step.py --nodes 8 --procs-per-node 4
 
 Same model, data and per-process batch as scaling.py. Rank 0 prints the median time per step

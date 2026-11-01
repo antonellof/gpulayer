@@ -1,5 +1,5 @@
 {
-  "_about": "One GPU per machine, DDP over NCCL across 2, 4 and 8 AWS g4dn.xlarge (1x Tesla T4, 4 vCPU, up to 25 Gbps, one subnet in us-east-1c), GPUlayer 0.8.0 Trainer(num_nodes=N, target remote) vs Lightning 2.6.6 under torchrun on the same machines, 2026-11-01 (nccl-comparison.log). benchmarks/lightning_comparison/multinode.py: 100 and 600 steps, 3 runs each, one at a time; ms/step = (median 600 - median 100) / 500. Batch per GPU: CNN 128 (16-mixed), MLP 256 (fp32). Read by scripts/make_perf_charts.py.",
+  "_about": "One GPU per machine, DDP over NCCL across 2, 4 and 8 AWS g4dn.xlarge (1x Tesla T4, 4 vCPU, up to 25 Gbps, one subnet in us-east-1c), GPUlayer 0.8.0 Trainer(num_nodes=N, target remote) vs Lightning 2.6.6 under torchrun on the same machines, 2026-11-01 (nccl-comparison.log). benchmarks/trainer_comparison/multinode.py: 100 and 600 steps, 3 runs each, one at a time; ms/step = (median 600 - median 100) / 500. Batch per GPU: CNN 128 (16-mixed), MLP 256 (fp32). Read by scripts/make_perf_charts.py.",
   "multi_node_gpu": {
     "subtitle": "AWS g4dn.xlarge, one Tesla T4 each, DDP over NCCL, batch per GPU, each trainer's defaults",
     "rows": [

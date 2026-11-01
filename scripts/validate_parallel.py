@@ -286,9 +286,16 @@ else:
             )
         if args.case == "ddp":
             sums = r["rank_weight_sums"]
-            checks["identical weights on both ranks"] = len(sums) == args.nodes and max(sums) - min(
-                sums
-            ) <= 1e-3 * max(1.0, abs(sums[0]))
+            spread = max(sums) - min(sums) if len(sums) == args.nodes else float("inf")
+            # Post-local SGD averages the models every 4 steps after step 20 (counted from 0):
+            # the replicas are identical only when the last step averaged.
+            last_averaged = args.hook != "postlocal" or (args.steps - 1 - 20) % 4 == 0
+            if last_averaged:
+                checks["identical weights on both ranks"] = spread <= 1e-3 * max(1.0, abs(sums[0]))
+            else:
+                checks["replicas within 1% (local steps after the last averaging)"] = (
+                    spread <= 0.01 * abs(sums[0])
+                )
             if args.hook == "fp16":
                 checks["fp16 compression hook registered"] = "fp16_compress_hook" in str(
                     r["comm_hook"]

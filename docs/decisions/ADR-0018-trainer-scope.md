@@ -8,7 +8,7 @@
 GPUlayer's `Trainer` (ADR-0014) exists so that a PyTorch training script can choose where it
 runs: in this process, as DDP on one machine, or on several workers. Users compare it with
 PyTorch Lightning, the most common PyTorch trainer. On 2026-10-30 a measured comparison on a
-Tesla T4 (`benchmarks/lightning_comparison/`) found GPUlayer's loop 1.3 to 1.4x faster per
+Tesla T4 (`benchmarks/trainer_comparison/`) found GPUlayer's loop 1.3 to 1.4x faster per
 step on small models, equal on a compute-bound CNN, and quicker to start
 ([Performance and comparison](../get-started/performance-and-comparison.md)). Lightning has
 far more features. We need a rule for which ones the Trainer adopts, so that it stays small

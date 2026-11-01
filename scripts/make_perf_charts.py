@@ -13,6 +13,7 @@ import json
 import math
 import sys
 from pathlib import Path
+from typing import Any
 from xml.sax.saxutils import escape
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +25,7 @@ DEFAULT = [
     ROOT / "benchmarks" / "results" / "2026-11-01-vast-4x3070-xeon" / "summary.json",
     ROOT / "benchmarks" / "results" / "2026-11-01-m2pro" / "summary.json",
     ROOT / "benchmarks" / "results" / "2026-11-01-aws-8xt4-nccl" / "summary.json",
+    ROOT / "benchmarks" / "results" / "2026-11-01-aws-2xt4-parallel" / "summary.json",
 ]
 
 THEMES = {
@@ -79,8 +81,8 @@ def grouped(
     *,
     title: str,
     subtitle: str,
-    series: tuple[str, str],
-    rows: list[tuple[str, float, float]],
+    series: tuple[str, ...],
+    rows: list[tuple[Any, ...]],
     unit: str,
     fmt: str,
     note: str,
@@ -88,9 +90,10 @@ def grouped(
     t = THEMES[theme]
     plot_x0, plot_x1 = PAD + LABEL_W, W - PAD - 64
     top = 104
-    row_h = 2 * BAR + GAP + ROW_GAP
+    n = len(series)  # one or two bars per row
+    row_h = n * BAR + (n - 1) * GAP + ROW_GAP
     h = top + len(rows) * row_h + 56
-    vmax = max(max(a, b) for _, a, b in rows)
+    vmax = max(max(r[1:]) for r in rows)
     step = nice_step(vmax)
     xmax = step * math.ceil(vmax / step)
 
@@ -101,7 +104,7 @@ def grouped(
     p.append(text(PAD, 34, title, t, size=16, weight=600))
     p.append(text(PAD, 56, subtitle, t, size=12.5, color="muted"))
     lx = PAD
-    for name, color in zip(series, t["series"], strict=True):
+    for name, color in zip(series, t["series"][:n], strict=True):
         p.append(f'<rect x="{lx}" y="72" width="12" height="12" rx="3" fill="{color}"/>')
         p.append(text(lx + 18, 82.5, name, t, size=12.5))
         lx += 18 + 7.2 * len(name) + 28
@@ -119,10 +122,10 @@ def grouped(
     p.append(
         text(plot_x1, bottom + 34, f"{unit} · {note}", t, size=11, color="muted", anchor="end")
     )
-    for i, (label, a, b) in enumerate(rows):
+    for i, (label, *values) in enumerate(rows):
         y = top + i * row_h
-        p.append(text(PAD, y + BAR + 5, label, t, size=12.5))
-        for j, v in enumerate((a, b)):
+        p.append(text(PAD, y + (BAR + 5 if n == 2 else BAR - 3), label, t, size=12.5))
+        for j, v in enumerate(values):
             by = y + j * (BAR + GAP)
             p.append(bar(plot_x0, by, sx(v) - plot_x0, BAR, t["series"][j]))
             p.append(text(sx(v) + 6, by + BAR - 3, fmt.format(v), t, size=11.5))
@@ -136,6 +139,26 @@ def grouped(
 
 def charts(d: dict) -> dict[str, dict]:
     out = _base_charts(d) if "training_vs_lightning" in d else {}
+    if "strategies" in d:
+        st = d["strategies"]
+        out["strategies-step"] = dict(
+            title="Distribution strategies on two T4 machines: time per step",
+            subtitle=st["subtitle"],
+            series=("GPUlayer Trainer",),
+            rows=[(r["case"], r["ms"]) for r in st["rows"]],
+            unit="milliseconds per step",
+            fmt="{:.0f}",
+            note="lower is better",
+        )
+        out["strategies-memory"] = dict(
+            title="Distribution strategies on two T4 machines: GPU memory",
+            subtitle="Same runs: peak memory allocated on rank 0",
+            series=("GPUlayer Trainer",),
+            rows=[(r["case"], r["peak_mb"]) for r in st["rows"]],
+            unit="MB",
+            fmt="{:.0f}",
+            note="lower is better",
+        )
     if "strong_scaling" in d:
         sc = d["strong_scaling"]
         out["strong-scaling"] = dict(

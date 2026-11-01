@@ -56,8 +56,8 @@ import gpulayer.pytorch as glt
 
 | Name | Description | Page |
 |---|---|---|
-| `glt.Module` (`glt.LightningModule`) | `nn.Module` with Lightning's steps and hooks, `log`, `save_hyperparameters`, manual optimization, `load_from_checkpoint` | [Trainer and Module](../pytorch/trainer.md) |
-| `glt.DataModule` (`glt.LightningDataModule`) | `prepare_data`, `setup`, the four loaders | [Trainer and Module](../pytorch/trainer.md#datamodule) |
+| `glt.Module` | `nn.Module` with Lightning's steps and hooks, `log`, `save_hyperparameters`, manual optimization, `load_from_checkpoint` | [Trainer and Module](../pytorch/trainer.md) |
+| `glt.DataModule` | `prepare_data`, `setup`, the four loaders | [Trainer and Module](../pytorch/trainer.md#datamodule) |
 | `glt.Trainer(...)` | `fit(model, train, val, datamodule=, ckpt_path=)`, `validate`, `test`, `predict`, `save_checkpoint` | [Trainer and Module](../pytorch/trainer.md) |
 | Callbacks, loggers, profilers, `glt.Tuner` | `ModelCheckpoint`, `EarlyStopping`, `EMAWeightAveraging`, `CSVLogger`, `SimpleProfiler`, ... | [Callbacks, loggers and profilers](../pytorch/callbacks.md) |
 | `glt.launch(...) -> LaunchResult or None` | run this script on workers | [launch()](../pytorch/launch.md) |

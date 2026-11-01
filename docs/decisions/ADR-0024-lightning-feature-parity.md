@@ -83,7 +83,7 @@ Lightning's speed-related choices are few, and the GPUlayer Trainer already had 
    against 0.7.1 in alternating fresh processes): 0.589 ms per step before, 0.597 after
    (+1.4%, within run-to-run spread); MPS and 2-process DDP unchanged
    (`benchmarks/results/2026-11-01-m2pro-parity/`).
-5. **Validation status.** Every feature has a CPU test (`tests/pytorch/test_lightning_parity.py`);
+5. **Validation status.** Every feature has a CPU test (`tests/pytorch/test_trainer_api.py`);
    manual optimization with DDP and the DDP options run in a two-process test. CUDA-only
    features (`sync_batchnorm`, 16-mixed with manual optimization, `torch.compile` with
    Inductor, `PyTorchProfiler` CUDA tables) were validated on 2026-11-01 on Tesla T4s, across
@@ -142,7 +142,7 @@ batches copied to the device while the step runs), and evaluation uses `torch.no
 Lightning does on XLA. The simulated test covers one VM and a two-host pod.
 
 **Full public API (2026-11-01).** A comparison of Lightning's source (commit `84df182`) with
-`gpulayer.pytorch`, now `scripts/compare_lightning_api.py`, found the remaining gaps; all are
+`gpulayer.pytorch`, now `scripts/compare_api.py`, found the remaining gaps; all are
 closed, and the script reports none missing:
 
 - Trainer: `log_key_prefix`, `enable_autolog_hparams`, `suggest_integrations`, `init_module`
@@ -179,6 +179,16 @@ the run found (a process group and `LOCAL_RANK` for single-process DeepSpeed, th
 `bin` on `PATH`). Results: `benchmarks/results/2026-11-01-aws-2xt4-deepspeed/`. A second run on two
 T4 machines validated the FSDP options, sharded checkpoints merged across machines, tensor
 parallelism and `to_tensorrt` (`benchmarks/results/2026-11-01-aws-2xt4-parallel/`), and found
-that outputs over the worker's size cap were dropped silently (fixed). Transformer Engine (FP8
-needs Hopper or Ada GPUs) and TPUs have not run on hardware.
+that outputs over the worker's size cap were dropped silently (fixed). A third run validated
+DDP communication hooks and post-local SGD (`benchmarks/results/2026-11-01-aws-2xt4-ddp-hooks/`).
+Transformer Engine (FP8 needs Hopper or Ada GPUs) and TPUs have not run on hardware.
+
+**No Lightning names in GPUlayer's code (0.9.0, 2026-11-01).** The aliases
+`LightningModule`, `LightningDataModule`, `LightningCLI` and `LightningArgumentParser`, the
+`Trainer.lightning_module` property and the other Lightning-named identifiers are removed or
+renamed (`Module`, `DataModule`, `GPULayerCLI`, `GPULayerArgumentParser`, `Trainer.module`,
+`CaseInsensitiveEnum`, `add_component_args`); files and test names follow. The API stays
+compatible in shape: code moves with an import change and these renames
+(docs/pytorch/from-lightning.md). Lightning is named only where GPUlayer is compared with it
+(benchmarks, the compare page) or where the docs explain a migration.
 

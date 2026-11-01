@@ -42,7 +42,7 @@ if __name__ == "__main__":
 
 ## Module
 
-`glt.Module` (also `glt.LightningModule`) is an `nn.Module` with Lightning's methods:
+`glt.Module` is an `nn.Module` with Lightning's methods:
 
 - `training_step` returns the loss (or a dict with `"loss"`; `None` skips the batch).
   `validation_step`, `test_step` and `predict_step` are optional.
@@ -72,7 +72,7 @@ def training_step(self, batch, batch_idx):
 
 ## DataModule
 
-`glt.DataModule` (also `glt.LightningDataModule`) keeps a project's data in one place:
+`glt.DataModule` keeps a project's data in one place:
 `prepare_data()` runs once per machine, `setup(stage)` in every process, and
 `train_dataloader()` and the other loaders return `DataLoader`s. Pass it with
 `trainer.fit(model, datamodule=dm)`. It is built only in the processes that train.
@@ -184,7 +184,9 @@ epoch ends, so no step pays for an extra synchronisation.
 `glt.DDPStrategy` takes Lightning's options: `ddp_comm_hook` (for example
 `default_hooks.fp16_compress_hook`, half the bytes per gradient exchange; it replaces two-level
 sync), `model_averaging_period` with a `PostLocalSGDState` (post-local SGD),
-`process_group_backend` and `timeout`. Tested with two CPU processes.
+`process_group_backend` and `timeout`. Validated on two T4 machines over NCCL: fp16 compression
+made steps 11% faster and post-local SGD 21% faster than plain DDP on that network
+([results](../../benchmarks/results/2026-11-01-aws-2xt4-ddp-hooks/README.md)).
 
 ## FSDP (experimental)
 

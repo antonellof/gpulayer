@@ -42,7 +42,7 @@ validation, not a speed result. Logs: `ds<stage>[offload]-<machines>.log`.
    worker's venv, but jobs did not have that venv's `bin` on `PATH`. Workers now put the job
    Python's `bin` directory first on `PATH`, as an activated venv does.
 
-Each has a regression test (`tests/pytorch/test_lightning_parity_3.py`,
+Each has a regression test (`tests/pytorch/test_trainer_api_3.py`,
 `tests/unit/test_concurrency.py`). All rows above ran with the fixes.
 
 ## Manual optimization under DDP (scripts/validate_nccl.py --case manual --nodes 2)

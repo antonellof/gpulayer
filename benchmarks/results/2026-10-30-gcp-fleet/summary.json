@@ -1,5 +1,5 @@
 {
-  "_about": "Numbers from the 31-VM GCP run of 2026-10-30 (benchmarks/scale_test.py and benchmarks/lightning_comparison/scaling_run.py). Raw logs are in this directory.",
+  "_about": "Numbers from the 31-VM GCP run of 2026-10-30 (benchmarks/scale_test.py and benchmarks/trainer_comparison/scaling_run.py). Raw logs are in this directory.",
   "fleet": "1 server (n1-standard-4, gpulayer up --no-worker) and 30 workers (n1-standard-4, 4 slots each): 23 in europe-west1-b, 7 in europe-west4-a; Python 3.12, torch 2.15.0 CPU, Lightning 2.6.6",
   "strong_scaling": {
     "subtitle": "A CNN on 32,768 images, 2 epochs; GCP n1-standard-4, 4 processes per machine, gloo; same machines for both",

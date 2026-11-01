@@ -698,7 +698,7 @@ class LitLogger(Logger):
         save_logs: bool = True,
         checkpoint_name: str | None = None,
     ) -> None:
-        self._root_dir = os.fspath(root_dir or "./lightning_logs")
+        self._root_dir = os.fspath(root_dir or "./gpulayer_logs")
         self._name = name
         self._teamspace = teamspace
         self._metadata = {k: str(v) for k, v in (metadata or {}).items()}

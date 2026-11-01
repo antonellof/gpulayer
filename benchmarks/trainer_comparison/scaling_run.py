@@ -55,7 +55,7 @@ def run_pl(ips: list[str]) -> tuple[float, float]:
             [
                 *SSH,
                 f"{USER}@{ip}",
-                f"{PREFIX}cd {REMOTE}/benchmarks/lightning_comparison && "
+                f"{PREFIX}cd {REMOTE}/benchmarks/trainer_comparison && "
                 f"{VENV}/bin/torchrun --nnodes {n} --nproc-per-node {DEVICES} "
                 f"--node-rank {r} --master-addr {ips[0]} --master-port 29512 "
                 f"scaling.py pl {n} {DEVICES} {EPOCHS}",

@@ -14,7 +14,7 @@ A profile on 8 GCP machines x 4 processes (n1-standard-4, gloo, the 141k-paramet
 the strong-scaling benchmark) measured, per step on the slowest process: 83 ms of compute,
 25.5 ms for a flat all-reduce of the gradients, 11.0 ms for a two-level one, and a full DDP
 step of 117 ms flat against 102 ms with the two-level hook
-(`benchmarks/lightning_comparison/profile_step.py`).
+(`benchmarks/trainer_comparison/profile_step.py`).
 
 ## Decision
 

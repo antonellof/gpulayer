@@ -7,7 +7,7 @@ training loop: a SIGTERM flag check after every batch, a precision-plugin check 
 after, nothing else running.
 
 - Hardware: Apple M2 Pro (arm64), macOS; torch 2.15.0, Python 3.12.
-- Method: `benchmarks/lightning_comparison/bench.py gl CASE STEPS` from each tree, 100 and
+- Method: `benchmarks/trainer_comparison/bench.py gl CASE STEPS` from each tree, 100 and
   600 steps, five runs each, before and after alternating; ms per step is the difference of
   the median `fit` times divided by 500 (`hotpath.py`).
 

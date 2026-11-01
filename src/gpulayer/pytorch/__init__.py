@@ -47,8 +47,6 @@ from gpulayer.pytorch.callbacks import (
 from gpulayer.pytorch.cli import (
     GPULayerArgumentParser,
     GPULayerCLI,
-    LightningArgumentParser,
-    LightningCLI,
     SaveConfigCallback,
 )
 from gpulayer.pytorch.combined import CombinedLoader
@@ -101,13 +99,8 @@ from gpulayer.pytorch.strategies import (
 from gpulayer.pytorch.trainer import LRSchedulerConfig, SIGTERMException, Trainer
 from gpulayer.pytorch.tuner import BatchSizeFinder, LearningRateFinder, Tuner
 
-# Lightning's names, for code moving over.
-LightningModule = Module
-LightningDataModule = DataModule
-
 __all__ = [
     "GPULayerArgumentParser",
-    "LightningArgumentParser",
     "SaveConfigCallback",
     "LitLogger",
     "Accelerator",
@@ -141,7 +134,6 @@ __all__ = [
     "DoublePrecision",
     "GPULayerCLI",
     "HalfPrecision",
-    "LightningCLI",
     "MixedPrecision",
     "Precision",
     "TorchCheckpointIO",
@@ -166,8 +158,6 @@ __all__ = [
     "LaunchResult",
     "LearningRateFinder",
     "LearningRateMonitor",
-    "LightningDataModule",
-    "LightningModule",
     "Logger",
     "MLFlowLogger",
     "ModelCheckpoint",

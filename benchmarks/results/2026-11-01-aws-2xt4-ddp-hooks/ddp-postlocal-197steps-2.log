@@ -1,0 +1,25 @@
+[gpulayer] job-936bb262e168: validate_parallel.py on 2 node(s) x 1 cuda process(es), target remote
+[rank0] /home/ubuntu/gpulayer/src/gpulayer/pytorch/trainer.py:1033: UserWarning: the training DataLoader has num_workers=0; loading may limit speed. This machine can give each process up to num_workers=3
+[rank0]   self._run_fit(rt, model, train_dataloaders, val_dataloaders, ckpt_path)
+[rank0] [gpulayer] training on cuda, rank 0/2, precision 32-true, 1000 epoch(s)
+[rank0] epoch 0 done in 5.301s: train_loss=0.7148
+[rank0] epoch 1 done in 2.865s: train_loss=0.3046
+[rank0] epoch 2 done in 2.085s: train_loss=0.0928
+[rank0] epoch 3 done in 2.096s: train_loss=0.0366
+[rank0] epoch 4 done in 2.08s: train_loss=0.0242
+[rank0] epoch 5 done in 2.146s: train_loss=0.0185
+[rank0] epoch 6 done in 2.132s: train_loss=0.0144
+[rank0] epoch 7 done in 2.133s: train_loss=0.0094
+[rank0] epoch 8 done in 2.118s: train_loss=0.0055
+[rank0] epoch 9 done in 2.134s: train_loss=0.0034
+[rank0] epoch 10 done in 2.14s: train_loss=0.0019
+[rank0] epoch 11 done in 2.122s: train_loss=0.0010
+[rank0] epoch 12 done in 0.853s: train_loss=0.0004
+[gpulayer] job-936bb262e168 succeeded; 4 output file(s) in gpulayer_runs/job-936bb262e168
+RESULT {"case": "ddp-postlocal/2", "world": 2, "step": 197, "peak_mb_rank0": 1539, "ms_per_step": 563.63, "losses": [0.785, 0.3097, 0.0204, 0.0182, 0.0101, 0.0095, 0.0005, 0.0005], "trained_steps": 197, "local_param_fraction": 1.0, "fc1_local_shape": [4096, 1024], "activation_checkpointing": false, "params_on_cpu": false, "checkpoint": "gpulayer_runs/job-936bb262e168/node0/checkpoints/last.ckpt", "comm_hook": "post_localSGD_hook", "optimizer": "PostLocalSGDOptimizer", "rank_weight_sums": [8126.3433, 8126.3433], "checkpoint_is_folder": false}
+CHECK ddp-postlocal/2 loss falls: PASS
+CHECK ddp-postlocal/2 full weights load from the checkpoint: PASS
+CHECK ddp-postlocal/2 trained weights came back: PASS
+CHECK ddp-postlocal/2 identical weights on both ranks: PASS
+CHECK ddp-postlocal/2 post-local SGD optimizer: PASS
+CHECK ddp-postlocal/2 post-local SGD hook registered: PASS

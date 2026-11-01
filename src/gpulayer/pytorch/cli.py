@@ -99,15 +99,33 @@ def _subclasses(bases: tuple[type, ...]) -> list[type]:
 
 
 def _resolve_class(name: str, bases: tuple[type, ...]) -> Any:
-    """``pkg.mod.Class``, or a bare class name looked up among the subclasses of ``bases``
-    (classes defined here first, then ``torch``'s, then any other)."""
+    """``pkg.mod.Class``, or a bare class name looked up among the subclasses of ``bases``:
+    the running script's classes first, then GPUlayer's, then ``torch``'s, then any other. Two
+    classes of that name at the same rank are an error naming both, never a guess."""
     if "." in name:
         return _import_class(name)
     found = [c for c in _subclasses(bases) if c.__name__ == name]
     if not found:
         raise ValidationFailed(f"unknown class {name!r}: give module.Class or import it first")
-    found.sort(key=lambda c: (c.__module__ != __name__, not c.__module__.startswith("torch")))
-    return found[0]
+
+    def rank(c: type) -> int:
+        mod = c.__module__
+        return (
+            0
+            if mod == "__main__"
+            else 1
+            if mod == __name__
+            else 2
+            if mod.startswith("torch")
+            else 3
+        )
+
+    best = min(rank(c) for c in found)
+    top = [c for c in found if rank(c) == best]
+    if len(top) > 1:
+        paths = ", ".join(sorted(f"{c.__module__}.{c.__qualname__}" for c in top))
+        raise ValidationFailed(f"class name {name!r} is ambiguous ({paths}): give module.Class")
+    return top[0]
 
 
 def instantiate(spec: Any) -> Any:
@@ -359,7 +377,7 @@ class _Section:
 
 class GPULayerArgumentParser(argparse.ArgumentParser):
     """``argparse.ArgumentParser`` with the methods of Lightning's ``LightningArgumentParser``
-    that CLI subclasses use: ``add_lightning_class_args``, ``add_class_arguments``,
+    that CLI subclasses use: ``add_component_args``, ``add_class_arguments``,
     ``add_optimizer_args``, ``add_lr_scheduler_args``, ``add_method_arguments``,
     ``link_arguments`` and ``set_defaults`` with a dict of dotted keys."""
 
@@ -432,9 +450,9 @@ class GPULayerArgumentParser(argparse.ArgumentParser):
             added.append(dest)
         return added
 
-    def add_lightning_class_args(
+    def add_component_args(
         self,
-        lightning_class: Any,
+        component_class: Any,
         nested_key: str,
         subclass_mode: bool = False,
         required: bool = True,
@@ -442,13 +460,13 @@ class GPULayerArgumentParser(argparse.ArgumentParser):
         """Add the arguments of a Trainer, Module, DataModule or Callback class (or a function
         returning one) under ``nested_key``. Callbacks added this way are built and given to
         the Trainer."""
-        if inspect.isclass(lightning_class) and issubclass(lightning_class, Callback):
+        if inspect.isclass(component_class) and issubclass(component_class, Callback):
             self.callback_keys.append(nested_key)
         default = None
-        if subclass_mode and lightning_class not in (Module, DataModule):
-            default = lightning_class  # the class itself when no subclass is named
+        if subclass_mode and component_class not in (Module, DataModule):
+            default = component_class  # the class itself when no subclass is named
         return self.add_class_arguments(
-            lightning_class, nested_key, subclass_mode, required, default_class=default
+            component_class, nested_key, subclass_mode, required, default_class=default
         )
 
     def add_optimizer_args(
@@ -561,9 +579,6 @@ class GPULayerArgumentParser(argparse.ArgumentParser):
             self._defaults = {}
             self._gl_defaults = out
         return self._gl_defaults
-
-
-LightningArgumentParser = GPULayerArgumentParser
 
 
 # ----------------------------------------------------------- SaveConfigCallback
@@ -798,15 +813,15 @@ class GPULayerCLI:
 
     def add_core_arguments_to_parser(self, parser: GPULayerArgumentParser) -> None:
         """Add the Trainer's, the model's and the DataModule's arguments."""
-        parser.add_lightning_class_args(self.trainer_class, "trainer")
+        parser.add_component_args(self.trainer_class, "trainer")
         trainer_defaults = {
             "trainer." + k: v for k, v in self.trainer_defaults.items() if k != "callbacks"
         }
         parser.set_defaults(trainer_defaults)
-        parser.add_lightning_class_args(
+        parser.add_component_args(
             self._model_class, "model", subclass_mode=self.subclass_mode_model
         )
-        parser.add_lightning_class_args(
+        parser.add_component_args(
             self._datamodule_class,
             "data",
             subclass_mode=self.subclass_mode_data,
@@ -1023,7 +1038,7 @@ class GPULayerCLI:
         """Override to run code before the classes are built (``self.config`` is set)."""
 
     def instantiate_classes(self) -> None:
-        """Build the extra sections (callbacks added with ``add_lightning_class_args``), the
+        """Build the extra sections (callbacks added with ``add_component_args``), the
         DataModule, the model and the Trainer."""
         parser = self._parser(self.subcommand)
         skip = {"trainer", "model", "data", *parser._optimizers, *parser._lr_schedulers}
@@ -1106,7 +1121,7 @@ class GPULayerCLI:
     # ------------------------------------------------------------ optimizers
     @staticmethod
     def configure_optimizers(
-        lightning_module: Any, optimizer: torch.optim.Optimizer, lr_scheduler: Any = None
+        module: Any, optimizer: torch.optim.Optimizer, lr_scheduler: Any = None
     ) -> Any:
         """What the model's ``configure_optimizers`` returns when ``--optimizer`` is given.
         Override to change it."""
@@ -1177,6 +1192,3 @@ class GPULayerCLI:
         if self.datamodule is not None:
             kwargs["datamodule"] = self.datamodule
         return kwargs
-
-
-LightningCLI = GPULayerCLI

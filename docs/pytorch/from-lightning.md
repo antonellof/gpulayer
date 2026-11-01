@@ -34,7 +34,7 @@ trainer.fit(Model(), datamodule=dm)
 import gpulayer.pytorch as glt
 from gpulayer.pytorch import EarlyStopping, ModelCheckpoint
 
-class Model(glt.LightningModule):          # the same class as glt.Module
+class Model(glt.Module):                   # L.LightningModule in Lightning
     ...                                    # unchanged
 
 trainer = glt.Trainer(max_epochs=10, accelerator="cuda", devices=4, num_nodes=2,
@@ -49,6 +49,9 @@ Lightning needs torchrun, SLURM or a cluster to start processes on each machine.
 
 | Lightning | GPUlayer |
 |---|---|
+| `L.LightningModule`, `L.LightningDataModule` | `glt.Module`, `glt.DataModule` |
+| `LightningCLI`, `LightningArgumentParser` | `glt.GPULayerCLI`, `glt.GPULayerArgumentParser` |
+| `trainer.lightning_module` | `trainer.module` |
 | `accelerator="gpu"` | accepted; GPUlayer's name is `"cuda"` (or `"rocm"`, `"mps"`) |
 | `max_epochs=None` means 1000 | the default is `max_epochs=1`; pass a number |
 | progress bar and model summary on by default | off by default: `enable_progress_bar=True`, `enable_model_summary=True` |
@@ -65,7 +68,7 @@ Lightning needs torchrun, SLURM or a cluster to start processes on each machine.
 
 Every public name in Lightning's `Trainer`, `LightningModule`, hooks, callbacks, loggers,
 profilers, plugins, strategies, accelerators and utilities has a GPUlayer counterpart (compared
-with `scripts/compare_lightning_api.py` against Lightning's source). How far each has run:
+with `scripts/compare_api.py` against Lightning's source). How far each has run:
 
 - DeepSpeed (ZeRO 1 to 3, CPU offload) and `BitsandbytesPrecision` were validated on Tesla
   T4s; TPU (XLA) is implemented but not yet run on a TPU. See
@@ -76,7 +79,7 @@ with `scripts/compare_lightning_api.py` against Lightning's source). How far eac
 - `TransformerEnginePrecision`, `XLAProfiler`, and the
   Comet, W&B, MLflow, TensorBoard and `LitLogger` loggers are tested against fake packages: the
   real ones need NVIDIA GPUs, TPUs or accounts.
-- `glt.LightningCLI` ([Command line](cli.md)) uses `argparse`, not `jsonargparse`.
+- `glt.GPULayerCLI` ([Command line](cli.md)) uses `argparse`, not `jsonargparse`.
 - Habana HPUs are not supported. Current Lightning removed them too (`lightning-habana` is
   archived).
 

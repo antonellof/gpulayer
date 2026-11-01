@@ -65,7 +65,7 @@ Code: `control_plane/scheduler.py` (`locality`, `_pick_group`, `ever_schedulable
   regions, half the workers busy) an 8-node group spanned 5 zones in 2 regions before, and 1
   zone (3 zones in 1 region with only 15 free workers) after. Raw output:
   `benchmarks/results/2026-10-31-placement/`.
-- Measured on GCP (`benchmarks/lightning_comparison/locality_run.py`, 4 machines x 4
+- Measured on GCP (`benchmarks/trainer_comparison/locality_run.py`, 4 machines x 4
   processes, gloo, all Skylake, median of five): a job split across `europe-west1` and
   `europe-west4` took 56.2 s, against 45.0 to 48.6 s in one region. Two zones of one region
   were as fast as one zone. So the region level carries the measured benefit; preferring one

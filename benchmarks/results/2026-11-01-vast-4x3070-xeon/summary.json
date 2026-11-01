@@ -1,5 +1,5 @@
 {
-  "_about": "Several GPUs in one machine, GPUlayer 0.8.0 Trainer (ADR-0024) vs PyTorch Lightning 2.6.6, 2026-11-01 (multigpu.log). Vast.ai 4x RTX 3070 8 GB, Intel Xeon E5-2673 v4 (the same host model as 2026-10-31), torch 2.15.0+cu132. benchmarks/lightning_comparison/run.py, fresh process per run, one at a time. DDP over NCCL, batch per GPU (CNN 128, MLP 256), defaults for both trainers. Read by scripts/make_perf_charts.py.",
+  "_about": "Several GPUs in one machine, GPUlayer 0.8.0 Trainer (ADR-0024) vs PyTorch Lightning 2.6.6, 2026-11-01 (multigpu.log). Vast.ai 4x RTX 3070 8 GB, Intel Xeon E5-2673 v4 (the same host model as 2026-10-31), torch 2.15.0+cu132. benchmarks/trainer_comparison/run.py, fresh process per run, one at a time. DDP over NCCL, batch per GPU (CNN 128, MLP 256), defaults for both trainers. Read by scripts/make_perf_charts.py.",
   "multi_gpu": {
     "subtitle": "4x RTX 3070 (Vast.ai, Xeon E5-2673 v4), DDP over NCCL, batch per GPU, each trainer's defaults, GPUlayer 0.8",
     "rows": [

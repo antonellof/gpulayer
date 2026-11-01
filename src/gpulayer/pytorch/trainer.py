@@ -452,8 +452,8 @@ class Trainer:
         return self._strategy
 
     @property
-    def lightning_module(self) -> Module | None:
-        """The Module being trained or evaluated (Lightning's name)."""
+    def module(self) -> Module | None:
+        """The Module being trained or evaluated (unwrapped; ``model`` is what the loop calls)."""
         return self._model
 
     @property

@@ -3,7 +3,7 @@
   "training_vs_lightning": {
     "hardware": "AWS g4dn.xlarge (4 vCPU, 1x Tesla T4, driver 595.112.07), Deep Learning Base OSS NVIDIA driver AMI (Ubuntu 22.04), Python 3.12, torch 2.15.0+cu132, Lightning 2.6.6, GPUlayer 0.8.0; Spot",
     "subtitle": "Same model, data and optimizer on one Tesla T4 (AWS g4dn.xlarge), torch 2.15, Lightning 2.6.6, GPUlayer 0.8",
-    "method": "benchmarks/lightning_comparison/run.py: 100 and 600 steps, 3 runs each in fresh processes, one at a time; ms/step = (median 600 - median 100) / 500; start-up = median 100-step wall - 100 x step. The DDP case runs 2 CPU processes on the same 4-vCPU machine.",
+    "method": "benchmarks/trainer_comparison/run.py: 100 and 600 steps, 3 runs each in fresh processes, one at a time; ms/step = (median 600 - median 100) / 500; start-up = median 100-step wall - 100 x step. The DDP case runs 2 CPU processes on the same 4-vCPU machine.",
     "unit_step": "ms per step",
     "unit_startup": "s",
     "cases": [

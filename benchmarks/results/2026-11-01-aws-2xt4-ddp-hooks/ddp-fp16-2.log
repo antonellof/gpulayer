@@ -1,0 +1,24 @@
+[gpulayer] job-b0a2954b0e40: validate_parallel.py on 2 node(s) x 1 cuda process(es), target remote
+[rank0] /home/ubuntu/gpulayer/src/gpulayer/pytorch/trainer.py:1033: UserWarning: the training DataLoader has num_workers=0; loading may limit speed. This machine can give each process up to num_workers=3
+[rank0]   self._run_fit(rt, model, train_dataloaders, val_dataloaders, ckpt_path)
+[rank0] [gpulayer] training on cuda, rank 0/2, precision 32-true, 1000 epoch(s)
+[rank0] epoch 0 done in 3.451s: train_loss=0.7148
+[rank0] epoch 1 done in 3.166s: train_loss=0.3039
+[rank0] epoch 2 done in 3.197s: train_loss=0.0879
+[rank0] epoch 3 done in 3.166s: train_loss=0.0345
+[rank0] epoch 4 done in 3.147s: train_loss=0.0280
+[rank0] epoch 5 done in 3.192s: train_loss=0.0211
+[rank0] epoch 6 done in 3.153s: train_loss=0.0115
+[rank0] epoch 7 done in 3.174s: train_loss=0.0054
+[rank0] epoch 8 done in 3.258s: train_loss=0.0047
+[rank0] epoch 9 done in 3.218s: train_loss=0.0044
+[rank0] epoch 10 done in 3.201s: train_loss=0.0042
+[rank0] epoch 11 done in 3.197s: train_loss=0.0079
+[rank0] epoch 12 done in 1.651s: train_loss=0.0136
+[gpulayer] job-b0a2954b0e40 succeeded; 4 output file(s) in gpulayer_runs/job-b0a2954b0e40
+RESULT {"case": "ddp-fp16/2", "world": 2, "step": 200, "peak_mb_rank0": 1539, "ms_per_step": 628.46, "losses": [0.785, 0.3028, 0.0169, 0.0214, 0.0144, 0.001, 0.0029, 0.0077, 0.0172], "trained_steps": 200, "local_param_fraction": 1.0, "fc1_local_shape": [4096, 1024], "activation_checkpointing": false, "params_on_cpu": false, "checkpoint": "gpulayer_runs/job-b0a2954b0e40/node0/checkpoints/last.ckpt", "comm_hook": "fp16_compress_hook", "optimizer": "AdamW", "rank_weight_sums": [8110.0171, 8110.0171], "checkpoint_is_folder": false}
+CHECK ddp-fp16/2 loss falls: PASS
+CHECK ddp-fp16/2 full weights load from the checkpoint: PASS
+CHECK ddp-fp16/2 trained weights came back: PASS
+CHECK ddp-fp16/2 identical weights on both ranks: PASS
+CHECK ddp-fp16/2 fp16 compression hook registered: PASS

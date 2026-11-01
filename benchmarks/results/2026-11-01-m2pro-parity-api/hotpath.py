@@ -14,7 +14,7 @@ for _ in range(reps):
     for steps in (100, 600):
         for name, tree in trees.items():
             env = {**os.environ, "PYTHONPATH": f"{tree}/src"}
-            script = f"{tree}/benchmarks/lightning_comparison/bench.py"
+            script = f"{tree}/benchmarks/trainer_comparison/bench.py"
             out = subprocess.run(
                 [sys.executable, script, "gl", case, str(steps)],
                 cwd=S,

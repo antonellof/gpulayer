@@ -94,7 +94,7 @@ case "$cmd" in
     on "$vm" 'cd gpulayer && n=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader | wc -l);
       [ "$n" = 0 ] || { echo "GPU busy; not starting a timed run"; exit 1; };
       export PATH=$HOME/.local/bin:$PATH; uv pip install -q --python .venv-validate/bin/python "lightning==2.6.6";
-      cd benchmarks/lightning_comparison && TRAINERS="'"${TRAINERS:-gl pl}"'" ../../.venv-validate/bin/python run.py '"$*"' > ../../lightning-comparison.log 2>&1;
+      cd benchmarks/trainer_comparison && TRAINERS="'"${TRAINERS:-gl pl}"'" ../../.venv-validate/bin/python run.py '"$*"' > ../../lightning-comparison.log 2>&1;
       cat ../../lightning-comparison.log' ;;
   cluster)
     server=$1; shift

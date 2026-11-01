@@ -9,9 +9,9 @@ in [Performance](../docs/architecture/performance.md).
 | `dispatch.py` | time GPUlayer adds around a job, burst throughput | nothing |
 | `distributed_startup.py` | where a distributed job's start-up goes, direct launcher vs torchrun | torch |
 | `http_requests.py` | HTTP API latency and throughput over TLS | nothing |
-| `lightning_comparison/locality_run.py` | one distributed training job in one zone, two zones and two regions | a fleet in three zones (`gcp.sh fleet-up`) |
+| `trainer_comparison/locality_run.py` | one distributed training job in one zone, two zones and two regions | a fleet in three zones (`gcp.sh fleet-up`) |
 | `placement.py` | time to place a distributed group, and the zones it spans, on a simulated fleet | nothing |
-| `lightning_comparison/` | GPUlayer `Trainer` vs PyTorch Lightning: ms per step and start-up | torch, `lightning`, a CUDA GPU for the GPU cases |
+| `trainer_comparison/` | GPUlayer `Trainer` vs PyTorch Lightning: ms per step and start-up | torch, `lightning`, a CUDA GPU for the GPU cases |
 | `multi_machine.py` | placement, distributed jobs and failure across machines; hundreds of jobs | a server with workers on 2+ machines |
 | `../scripts/validate_gpu.sh` | full validation on an NVIDIA machine (tests, CUDA checks, benchmarks) | an NVIDIA GPU |
 
@@ -27,7 +27,7 @@ python benchmarks/distributed_startup.py --repeat 4            # direct launcher
 python benchmarks/http_requests.py
 
 uv pip install lightning==2.6.6
-cd benchmarks/lightning_comparison && python run.py mlp-fp32 cnn-fp16   # CUDA cases
+cd benchmarks/trainer_comparison && python run.py mlp-fp32 cnn-fp16   # CUDA cases
 TRAINERS="gl gl-base pl" python run.py cnn-fp16                         # also without prefetch and autotuning
 python run.py ddp-cpu-2                                                   # CPU only
 ```
@@ -46,7 +46,7 @@ C=benchmarks/cloud/gcp.sh
 $C gpu-up gl-gpu nvidia-tesla-t4          # tries GPU_ZONES, Spot first, then standard
 $C push gl-gpu                             # copy this checkout and install it
 $C validate gl-gpu                         # scripts/validate_gpu.sh
-$C compare gl-gpu                          # benchmarks/lightning_comparison (about 10 min)
+$C compare gl-gpu                          # benchmarks/trainer_comparison (about 10 min)
 
 # Add a CPU machine and test across both
 $C cpu-up gl-cpu
@@ -120,7 +120,7 @@ Profile a distributed step (compute, flat and two-level all-reduce, DDP with and
 two-level hook) on a running fleet:
 
 ```bash
-gpulayer submit --target remote --distributed --source benchmarks/lightning_comparison \
+gpulayer submit --target remote --distributed --source benchmarks/trainer_comparison \
   --entrypoint profile_step.py --nodes 8 --procs-per-node 4
 ```
 

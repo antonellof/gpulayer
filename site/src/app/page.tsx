@@ -144,8 +144,8 @@ const GPU_RESULTS: { gpu: string; result: string }[] = [
 const FEATURES = [
   {
     icon: Library,
-    title: "Lightning code, unchanged",
-    body: "LightningModule, DataModule, callbacks, loggers, profilers and the CLI keep Lightning's names. Most code moves with an import change.",
+    title: "A complete training API",
+    body: "Module, DataModule, hooks, callbacks, loggers, profilers and a CLI, with DDP, FSDP, DeepSpeed and tensor parallelism behind one Trainer.",
   },
   {
     icon: Flame,
@@ -191,9 +191,9 @@ const COMPARISON: { situation: string; without: string; with: string }[] = [
     with: "`Trainer(num_nodes=2, devices=4)`",
   },
   {
-    situation: "A Lightning project",
+    situation: "An existing PyTorch DDP script",
     without: "a cluster scheduler or manual torchrun to leave one machine",
-    with: "`import gpulayer.pytorch as glt`, same code",
+    with: "`glt.launch()` at the top, the rest unchanged",
   },
 ];
 

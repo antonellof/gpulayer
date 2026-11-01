@@ -211,11 +211,11 @@ def set_shared_parameters(module: nn.Module, shared_params: list[list[str]]) -> 
 # ------------------------------------------------------------------ enums
 
 
-class LightningEnum(str, Enum):
+class CaseInsensitiveEnum(str, Enum):
     """A string enum that compares equal to its value, case-insensitively."""
 
     @classmethod
-    def from_str(cls, value: str) -> LightningEnum | None:
+    def from_str(cls, value: str) -> CaseInsensitiveEnum | None:
         for member in cls:
             if member.value.lower() == value.lower():
                 return member
@@ -229,7 +229,7 @@ class LightningEnum(str, Enum):
         return hash(self.value.lower())
 
 
-class GradClipAlgorithmType(LightningEnum):
+class GradClipAlgorithmType(CaseInsensitiveEnum):
     """``gradient_clip_algorithm`` values."""
 
     VALUE = "value"
@@ -240,7 +240,7 @@ __all__ = [
     "AttributeDict",
     "CombinedLoader",
     "GradClipAlgorithmType",
-    "LightningEnum",
+    "CaseInsensitiveEnum",
     "disable_possible_user_warnings",
     "find_shared_parameters",
     "grad_norm",

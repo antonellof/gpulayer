@@ -1,0 +1,17 @@
+{
+  "strategies": {
+    "subtitle": "Same 67M-parameter MLP, batch 512 per GPU, 32-true; 2 AWS g4dn.xlarge (1x T4 each), NCCL over TCP",
+    "source": "benchmarks/results/2026-11-01-aws-2xt4-parallel (FSDP, tensor parallel, one GPU) and 2026-11-01-aws-2xt4-ddp-hooks (DDP rows)",
+    "rows": [
+      {"case": "1 GPU (no communication)", "ms": 288.27, "peak_mb": 1283},
+      {"case": "DDP", "ms": 706.81, "peak_mb": 1539},
+      {"case": "DDP + fp16 compression hook", "ms": 628.46, "peak_mb": 1539},
+      {"case": "DDP + post-local SGD", "ms": 555.8, "peak_mb": 1539},
+      {"case": "FSDP FULL_SHARD", "ms": 840.83, "peak_mb": 671},
+      {"case": "FSDP + activation checkpointing", "ms": 853.42, "peak_mb": 643},
+      {"case": "FSDP SHARD_GRAD_OP", "ms": 733.03, "peak_mb": 836},
+      {"case": "FSDP + CPU offload", "ms": 986.58, "peak_mb": 270},
+      {"case": "Tensor parallel (2 GPUs)", "ms": 312.2, "peak_mb": 657}
+    ]
+  }
+}

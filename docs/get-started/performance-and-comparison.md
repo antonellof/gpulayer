@@ -19,7 +19,7 @@ defaults (GPUlayer 0.8.0, Lightning 2.6.6, torch 2.15.0, measured 2026-11-01). L
 without logger, progress bar, model summary or checkpoints, GPUlayer without checkpoints. Each
 case runs 100 and 600 steps three times in fresh processes, one at a time with nothing else on
 the GPU; ms per step is the difference of the median wall times divided by 500. Script:
-`benchmarks/lightning_comparison/`.
+`benchmarks/trainer_comparison/`.
 
 ## One GPU
 
@@ -143,10 +143,33 @@ zone every time and took 42.5 s; with `"any"` it was split across regions and to
 
 Logs: `benchmarks/results/2026-10-30-gcp/`, `2026-10-30-gcp-9vm/` and `2026-10-30-gcp-fleet/`.
 
+## Distribution strategies on two machines
+
+![Distribution strategies on two T4 machines: time per step](../assets/perf/strategies-step-light.svg)
+
+![Distribution strategies on two T4 machines: GPU memory](../assets/perf/strategies-memory-light.svg)
+
+One 67M-parameter MLP on two AWS `g4dn.xlarge` (one T4 each, NCCL over TCP), every
+`strategy=` the Trainer offers. The data-parallel rows (DDP, FSDP) train 1,024 samples per step,
+512 per GPU; tensor parallelism and the single GPU train 512, so compare memory across all rows
+and time only within a group.
+
+- On this network the gradient exchange dominates DDP: compressing it to fp16 saves 11% per
+  step and post-local SGD (averaging every 4 steps) 21%.
+- FSDP halves the memory per GPU; `SHARD_GRAD_OP` trades some of that back for 13% faster
+  steps, and CPU offload keeps the parameters off the GPU (270 MB) for 17% slower steps.
+- Tensor parallelism sends activations, not gradients: here it is the fastest way to use both
+  GPUs for one batch, with half the memory per GPU.
+
+Logs: `benchmarks/results/2026-11-01-aws-2xt4-parallel/` and `2026-11-01-aws-2xt4-ddp-hooks/`.
+DeepSpeed ZeRO 1 to 3 on the same machines (a smaller model) is in
+`2026-11-01-aws-2xt4-deepspeed/`.
+
 ## Not measured yet
 
-- Training speed on NVLink GPUs, multi-GPU machines across the network, FSDP speed.
-- Runs of several hours, more than 30 machines, AMD GPUs.
+- Training speed on NVLink GPUs and multi-GPU machines across the network; FSDP and tensor
+  parallelism on large models and fast interconnects.
+- Runs of several hours, more than 30 machines, AMD GPUs, FP8, TPUs.
 
 To run the benchmarks yourself, see
 [`benchmarks/README.md`](https://github.com/antonellof/gpulayer/blob/main/benchmarks/README.md).

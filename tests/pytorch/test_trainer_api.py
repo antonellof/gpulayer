@@ -99,7 +99,7 @@ def test_hyperparameters_are_saved_and_restore_the_model(tmp_path):
     assert torch.equal(restored.net[0].weight, model.net[0].weight)
 
 
-def test_hooks_follow_lightnings_order(tmp_path):
+def test_hooks_follow_the_reference_order(tmp_path):
     calls = []
 
     class Hooked(Lin):
@@ -164,7 +164,7 @@ def test_hooks_follow_lightnings_order(tmp_path):
     assert t.callback_metrics["from_val_end"] == 7.0  # logged in an epoch-end hook
 
 
-def test_lightning_callback_signature_and_outputs(tmp_path):
+def test_callback_signature_and_outputs(tmp_path):
     seen = {}
 
     class CB(glt.Callback):
@@ -280,7 +280,7 @@ class Data(glt.DataModule):
         return DataLoader(self.ds, batch_size=64)
 
 
-def test_datamodule_fit_test_and_results_like_lightning(tmp_path):
+def test_datamodule_fit_test_and_results(tmp_path):
     dm = Data()
     t = trainer(tmp_path, max_epochs=2)
     t.fit(Lin(), datamodule=dm)
@@ -667,7 +667,7 @@ def test_module_utilities(tmp_path):
     scripted = m.to_torchscript(tmp_path / "m.pt", method="trace", example_inputs=torch.randn(2, 4))
     assert torch.allclose(scripted(torch.ones(1, 4)), m(torch.ones(1, 4)))
     assert m.device.type == "cpu" and m.dtype == torch.float32
-    assert glt.LightningModule is glt.Module and glt.seed_everything(7) == 7
+    assert not hasattr(glt, "LightningModule") and glt.seed_everything(7) == 7
 
 
 def test_compiled_model_trains_with_its_compile_options(tmp_path):
