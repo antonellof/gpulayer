@@ -189,13 +189,13 @@ export default function Home() {
         <section className="relative overflow-hidden border-b border-border">
           <HeroLandscape />
           <div className="relative mx-auto max-w-6xl px-6 pb-16 pt-20 lg:pt-28">
-            <Link
-              href="/docs/pytorch/from-lightning/"
+            <a
+              href={REPO}
               className="inline-flex items-center gap-2 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
-              PyTorch Lightning code moves over with one import change
+              Open source, Apache 2.0 · no cluster to set up
               <ArrowRight className="h-3 w-3" />
-            </Link>
+            </a>
             <h1 className="mt-6 max-w-4xl text-5xl font-semibold leading-[1.02] tracking-[-0.045em] sm:text-6xl lg:text-7xl">
               Train PyTorch on every GPU you can reach.
             </h1>
