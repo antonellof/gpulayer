@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { HeroLandscape } from "@/components/landing/hero-landscape";
 import { VERSION } from "@/lib/version";
+import { FeatureArt } from "@/components/landing/feature-art";
 import { WorksWith } from "@/components/landing/logos";
 import { Terminal, type TerminalTab } from "@/components/landing/terminal";
 import { SiteFooter } from "@/components/site/footer";
@@ -138,26 +139,32 @@ const GPU_RESULTS: { gpu: string; result: string }[] = [
 
 const FEATURES = [
   {
+    art: "api" as const,
     title: "A complete training API",
     body: "Module, DataModule, hooks, callbacks, loggers, profilers and a CLI, with DDP, FSDP, DeepSpeed and tensor parallelism behind one Trainer.",
   },
   {
+    art: "scale" as const,
     title: "One Trainer, any scale",
     body: "The same script runs in your process, as DDP on every GPU of a machine, or across machines with Trainer(num_nodes=N). DDP, FSDP and DeepSpeed are validated on GPUs.",
   },
   {
+    art: "placement" as const,
     title: "Placed where it trains fastest",
     body: "A run goes only to machines that can train it, on their best-connected GPUs, in one rack or zone when possible. Otherwise it is rejected with a reason per machine.",
   },
   {
+    art: "gpus" as const,
     title: "Every GPU you can reach",
     body: "Laptops, workstations and servers that join with one command, cloud GPUs on AWS and Vast.ai that join the same way, and Google Cloud VMs created for a run. NVIDIA CUDA and Apple Metal are validated.",
   },
   {
+    art: "results" as const,
     title: "Logs, checkpoints, metrics",
     body: "Logs stream while training runs. Checkpoints and metrics come back to your machine, and a dashboard lists every run.",
   },
   {
+    art: "loop" as const,
     title: "Your own loop works too",
     body: "Any training script runs anywhere with two launch() lines; Runtime handles device, DDP and precision in a custom loop.",
   },
@@ -307,10 +314,12 @@ export default function Home() {
           <div className="mx-auto max-w-6xl px-6 py-24">
             <SectionHeader eyebrow="Capabilities" title="What you get" />
             <div className="mt-14 grid overflow-hidden rounded-xl border border-border sm:grid-cols-2 lg:grid-cols-3">
-              {FEATURES.map(({ title, body }, i) => (
+              {FEATURES.map(({ art, title, body }) => (
                 <div key={title} className="-mb-px -mr-px border-b border-r border-border p-8">
-                  <span className="font-mono text-xs text-muted-foreground">{String(i + 1).padStart(2, "0")}</span>
-                  <h3 className="mt-3 font-medium tracking-[-0.01em]">{title}</h3>
+                  <div className="-mx-2 overflow-hidden rounded-lg border border-border">
+                    <FeatureArt kind={art} />
+                  </div>
+                  <h3 className="mt-6 font-medium tracking-[-0.01em]">{title}</h3>
                   <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{body}</p>
                 </div>
               ))}
