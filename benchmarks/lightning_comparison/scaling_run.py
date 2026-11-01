@@ -19,7 +19,7 @@ import sys
 import time
 from pathlib import Path
 
-from multinode import SSH, idle_workers
+from multinode import PREFIX, REMOTE, SSH, USER, VENV, idle_workers
 
 HERE = Path(__file__).resolve().parent
 DEVICES = int(os.environ.get("DEVICES", "4"))
@@ -54,9 +54,9 @@ def run_pl(ips: list[str]) -> tuple[float, float]:
         subprocess.Popen(
             [
                 *SSH,
-                f"gl@{ip}",
-                "cd /opt/gpulayer/benchmarks/lightning_comparison && "
-                f"/opt/gpulayer/.venv/bin/torchrun --nnodes {n} --nproc-per-node {DEVICES} "
+                f"{USER}@{ip}",
+                f"{PREFIX}cd {REMOTE}/benchmarks/lightning_comparison && "
+                f"{VENV}/bin/torchrun --nnodes {n} --nproc-per-node {DEVICES} "
                 f"--node-rank {r} --master-addr {ips[0]} --master-port 29512 "
                 f"scaling.py pl {n} {DEVICES} {EPOCHS}",
             ],

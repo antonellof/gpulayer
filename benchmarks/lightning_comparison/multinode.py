@@ -1,6 +1,7 @@
 """Multi-node DDP: GPUlayer Trainer(num_nodes=N) vs PyTorch Lightning under torchrun.
 
-Run on the GPUlayer server of a fleet (benchmarks/cloud/gcp.sh), with ~/env.sh sourced:
+Run on the GPUlayer server of a fleet (benchmarks/cloud/gcp.sh or aws.sh), with the server's
+GPULAYER_URL/TOKEN/FINGERPRINT exported (MN_* variables below set the workers' layout):
 
     python multinode.py [NODES ...]          # default: 2 4 8
 
@@ -28,7 +29,7 @@ PY = sys.executable
 SSH = [
     "ssh",
     "-i",
-    os.path.expanduser("~/.ssh/fleet"),
+    os.path.expanduser(os.environ.get("MN_SSH_KEY", "~/.ssh/fleet")),
     "-o",
     "StrictHostKeyChecking=no",
     "-o",
@@ -37,6 +38,14 @@ SSH = [
     "LogLevel=ERROR",
 ]
 SHORT, LONG, REPEAT = 100, 600, 3
+# Where Lightning runs on the workers (defaults: the GCP fleet image of gcp.sh). For the AWS
+# fleet of aws.sh: MN_SSH_USER=ubuntu MN_REMOTE=/home/ubuntu/gpulayer MN_VENV=/home/ubuntu/venv
+# MN_NPROC=1 MN_PREFIX='unset LD_LIBRARY_PATH; '.
+USER = os.environ.get("MN_SSH_USER", "gl")
+REMOTE = os.environ.get("MN_REMOTE", "/opt/gpulayer")
+VENV = os.environ.get("MN_VENV", "/opt/gpulayer/.venv")
+NPROC = int(os.environ.get("MN_NPROC", "2"))
+PREFIX = os.environ.get("MN_PREFIX", "")
 CASES = os.environ.get("MN_CASES", "ddp-nodes ddp-nodes-big").split()
 
 
@@ -73,9 +82,9 @@ def run_pl(case: str, steps: int, ips: list[str]) -> float:
         subprocess.Popen(
             [
                 *SSH,
-                f"gl@{ip}",
-                f"cd /opt/gpulayer/benchmarks/lightning_comparison && "
-                f"/opt/gpulayer/.venv/bin/torchrun --nnodes {n} --nproc-per-node 2 "
+                f"{USER}@{ip}",
+                f"{PREFIX}cd {REMOTE}/benchmarks/lightning_comparison && "
+                f"{VENV}/bin/torchrun --nnodes {n} --nproc-per-node {NPROC} "
                 f"--node-rank {r} --master-addr {master} --master-port 29511 "
                 f"bench.py pl {case} {steps} {n}",
             ],

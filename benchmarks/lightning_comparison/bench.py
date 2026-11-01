@@ -50,6 +50,9 @@ CASES = {
     # batch x GPUs samples (weak scaling).
     **{f"cnn-gpu{g}": ("cnn", 128, "cuda", g, "16-mixed") for g in (1, 2, 4, 8)},
     **{f"mlp-gpu{g}": ("mlp", 256, "cuda", g, "32") for g in (1, 2, 4, 8)},
+    # Several machines with one GPU each, DDP over NCCL (multinode.py); batch per GPU.
+    "cnn-gpu-nodes": ("cnn", 128, "cuda", 1, "16-mixed"),
+    "mlp-gpu-nodes": ("mlp", 256, "cuda", 1, "32"),
 }
 kind, batch, accel, devices, precision = CASES[case]
 
