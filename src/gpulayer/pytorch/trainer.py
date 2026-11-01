@@ -1282,7 +1282,7 @@ class Trainer:
             raise ValidationFailed("strategy='fsdp' supports one optimizer")
         averaging = getattr(self._strategy, "model_averaging_period", None)
         if averaging and rt.distributed:
-            optimizers = _post_local_sgd(optimizers, self._strategy)
+            optimizers = _post_local_sgd(optimizers, self._strategy, rt)
         self.optimizers, self.lr_scheduler_configs = optimizers, sched_configs
         self._model, self.should_stop = model, False
         automatic = model.automatic_optimization
@@ -2635,7 +2635,7 @@ def _checkpoints_last(callbacks: list[Callback]) -> list[Callback]:
     ]
 
 
-def _post_local_sgd(optimizers: list[Any], strategy: Any) -> list[Any]:
+def _post_local_sgd(optimizers: list[Any], strategy: Any, rt: Runtime) -> list[Any]:
     """Post-local SGD (``DDPStrategy(model_averaging_period=N)``): wrap each optimizer so the
     models are averaged every N steps after the warm-up, as Lightning does."""
     from torch.distributed.algorithms.ddp_comm_hooks.post_localSGD_hook import PostLocalSGDState
@@ -2648,6 +2648,12 @@ def _post_local_sgd(optimizers: list[Any], strategy: Any) -> list[Any]:
             "model_averaging_period needs ddp_comm_state=PostLocalSGDState(...) and "
             "ddp_comm_hook=post_localSGD_hook"
         )
+    if state.subgroup is None:
+        # PyTorch's default sizes the per-machine subgroup from the CUDA device count, which
+        # fails on CPU processes: use the processes on each machine, the same group on GPUs.
+        import torch.distributed as dist
+
+        state.subgroup, _ = dist.new_subgroups(group_size=rt.local_world_size)
     period = strategy.model_averaging_period
     return [
         PostLocalSGDOptimizer(
