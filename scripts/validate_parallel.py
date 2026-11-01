@@ -82,9 +82,14 @@ class TP(Net):
             parallelize_module,
         )
 
+        from torch.distributed.fsdp import fully_shard
+
         tp = self.device_mesh["tensor_parallel"]
         for block in self.blocks:
             parallelize_module(block, tp, {"fc1": ColwiseParallel(), "fc2": RowwiseParallel()})
+        # As in Lightning's examples: fully_shard over the data-parallel mesh makes every
+        # parameter a DTensor, so the optimizer's fused update sees one kind of tensor.
+        fully_shard(self, mesh=self.device_mesh["data_parallel"])
 
 
 class Report(glt.Callback):

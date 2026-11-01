@@ -20,7 +20,7 @@ needs. Remote workers do not share a filesystem with the submitter or the contro
   read verifies the digest. The `ArtifactStore` protocol lets an object store replace it.
 - Remote workers fetch artifacts over the API (`GET /v1/artifacts/<sha>`), verify the
   digest, and cache them per worker. Outputs written to `$GPULAYER_OUTPUT_DIR` are
-  uploaded after the task (limits: 1000 files, 512 MiB per task) and referenced in
+  uploaded after the task (limits: 1000 files, 4 GiB per task by default, `GPULAYER_MAX_OUTPUT_BYTES`, and 2 GiB per file; a file over a limit is skipped and named in the task's system log, the others still upload. Raised from 512 MiB on 2026-11-01 after an 800 MB checkpoint and every file after it were dropped without a message) and referenced in
   `JobResult.outputs`.
 - Logs are stored as database rows (lines truncated at 8 KiB). They are not artifacts.
 

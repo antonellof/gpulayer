@@ -65,7 +65,10 @@ _ENV_ALLOWLIST = (
     "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE",
 )  # fmt: skip
 MAX_OUTPUT_FILES = 1000
-MAX_OUTPUT_BYTES = 512 * 1024**2
+# Total outputs per task; GPULAYER_MAX_OUTPUT_BYTES overrides it on a worker. Checkpoints of
+# mid-size models are hundreds of MB (a 67M-parameter model with AdamW state is about 800 MB).
+MAX_OUTPUT_BYTES = 4 * 1024**3
+MAX_OUTPUT_FILE_BYTES = 2 * 1024**3  # the control plane's limit for one artifact
 
 
 _RANK_PREFIX = re.compile(r"^\[default(\d+)\]:(.*)$", re.S)
@@ -569,7 +572,13 @@ class WorkerAgent:
                     self._pgids.pop(a.task_id, None)
         finally:
             sink.close()
-        outputs = self._upload_outputs(ws / "outputs", a)
+        outputs, skipped = self._upload_outputs(ws / "outputs", a)
+        if skipped:
+            # Say which outputs did not come back and why (they used to be dropped silently).
+            notice = _LogBuffer(self.channel, a.task_id, secret_values)
+            for line in skipped:
+                notice("system", line)
+            notice.close()
         if out.cancelled:
             return TaskOutcome(
                 state=TaskState.CANCELLED,
@@ -730,21 +739,39 @@ class WorkerAgent:
         port = w.rendezvous.port or free_port()
         return self.channel.publish_rendezvous(a.task_id, addr, port)
 
-    def _upload_outputs(self, out_dir: Path, a: TaskAssignment) -> list[ArtifactReference]:
+    def _upload_outputs(
+        self, out_dir: Path, a: TaskAssignment
+    ) -> tuple[list[ArtifactReference], list[str]]:
+        """Upload the task's output files; returns the references and one line per file that
+        was skipped because of a limit. A file over a limit is skipped, not the rest: small
+        outputs (metrics, results) still come back next to a checkpoint too large to send."""
         refs: list[ArtifactReference] = []
+        skipped: list[str] = []
         total = 0
+        limit = int(os.environ.get("GPULAYER_MAX_OUTPUT_BYTES") or MAX_OUTPUT_BYTES)
         prefix = f"node{a.node_rank}/" if isinstance(a.spec.workload, DistributedJob) else ""
         for p in sorted(out_dir.rglob("*")):
             if not p.is_file() or p.is_symlink():
                 continue
-            if len(refs) >= MAX_OUTPUT_FILES:
-                break
-            total += p.stat().st_size
-            if total > MAX_OUTPUT_BYTES:
-                break
             name = prefix + p.relative_to(out_dir).as_posix()
-            refs.append(self.channel.put_artifact(p.read_bytes(), name, ArtifactKind.OUTPUT))
-        return refs
+            size = p.stat().st_size
+            mb = size / 2**20
+            if len(refs) >= MAX_OUTPUT_FILES:
+                skipped.append(f"output {name} not returned: more than {MAX_OUTPUT_FILES} files")
+            elif size > MAX_OUTPUT_FILE_BYTES:
+                skipped.append(
+                    f"output {name} not returned: {mb:.0f} MB is over the 2048 MB limit for "
+                    "one file; write it to shared or object storage"
+                )
+            elif total + size > limit:
+                skipped.append(
+                    f"output {name} not returned: {mb:.0f} MB would pass the worker's "
+                    f"{limit / 2**20:.0f} MB limit for one task (GPULAYER_MAX_OUTPUT_BYTES)"
+                )
+            else:
+                total += size
+                refs.append(self.channel.put_artifact(p.read_bytes(), name, ArtifactKind.OUTPUT))
+        return refs, skipped
 
 
 def _is_loopback(addr: str) -> bool:

@@ -204,8 +204,8 @@ glt.FSDPStrategy(
 ```
 
 Sharded checkpoints are folders (`last.ckpt/`); `ckpt_path` and `load_from_checkpoint` read
-them, and a launched job ships them to its workers. Across machines they need a shared
-filesystem, as in Lightning. The options above are tested with two CPU processes, not GPUs.
+them, and a launched job ships them to its workers. After a job on several machines, each
+node's shard files are merged into one folder, so no shared filesystem is needed. The options above are tested with two CPU processes, not GPUs.
 
 ## Tensor parallelism (experimental)
 

@@ -11,6 +11,7 @@
 | `GPULAYER_JOIN_TOKEN` | `join`, `worker start` | worker join token |
 | `GPULAYER_WORKER_PYTHON` | SDK in-process workers | interpreter for jobs |
 | `GPULAYER_REGION`, `GPULAYER_ZONE` | `up`, `join`, `worker start` | default `--region` and `--zone` for [group placement](../architecture/scheduling.md#distributed-groups-and-network-locality); from GCE metadata on Google Cloud when unset |
+| `GPULAYER_MAX_OUTPUT_BYTES` | workers | total output a task may return (default 4 GiB; one file at most 2 GiB). A file over it is skipped and named in the task's system log |
 
 ## Set for every job
 
@@ -20,7 +21,7 @@
 | `GPULAYER_NODE_RANK` | node rank (0 for independent jobs) |
 | `GPULAYER_ACCELERATOR` | requested `cpu`, `cuda` or `mps` |
 | `GPULAYER_INPUT_DIR` | staged inputs |
-| `GPULAYER_OUTPUT_DIR` | files here become output artifacts |
+| `GPULAYER_OUTPUT_DIR` | files here become output artifacts; the job's Python's `bin` is first on `PATH` |
 | `GPULAYER_COMM_BACKEND` | distributed: `gloo` or `nccl` |
 | `CUDA_VISIBLE_DEVICES` | granted CUDA devices; empty for CPU jobs |
 | `PYTHONUNBUFFERED=1` | logs stream as written |

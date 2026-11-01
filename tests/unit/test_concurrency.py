@@ -127,3 +127,25 @@ def test_job_path_starts_with_the_job_pythons_bin_dir(cp, tmp_path, monkeypatch)
     agent = WorkerAgent(ch, caps, tmp_path, python=str(venv_python))
     env, _ = agent._environment(a, tmp_path)
     assert env["PATH"].split(os.pathsep) == [str(venv_python.parent), "/usr/bin", "/bin"]
+
+
+def test_an_output_over_the_limit_is_skipped_and_reported_not_the_rest(cp, tmp_path, monkeypatch):
+    """Found on AWS: an 800 MB checkpoint passed the old 512 MB cap and the loop stopped, so
+    no output came back at all (not even the small result file) and nothing said why."""
+    from gpulayer.worker.agent import WorkerAgent
+    from gpulayer.worker.channel import EmbeddedChannel
+
+    caps = make_caps(accelerators=[cuda_device(0)])
+    ch = EmbeddedChannel.register(cp, "w", caps)
+    cp.submit(gpu_job())
+    a = cp.acquire_task(ch.worker_id)
+    out = tmp_path / "outputs"
+    (out / "checkpoints").mkdir(parents=True)
+    (out / "checkpoints" / "last.ckpt").write_bytes(b"x" * 3000)
+    (out / "metrics.json").write_text("[]")
+    (out / "result.json").write_text("{}")
+    monkeypatch.setenv("GPULAYER_MAX_OUTPUT_BYTES", "1000")
+    refs, skipped = WorkerAgent(ch, caps, tmp_path)._upload_outputs(out, a)
+    assert sorted(r.name for r in refs) == ["metrics.json", "result.json"]
+    assert len(skipped) == 1 and "checkpoints/last.ckpt" in skipped[0]
+    assert "GPULAYER_MAX_OUTPUT_BYTES" in skipped[0]

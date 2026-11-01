@@ -5,6 +5,13 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Fix: a task whose outputs passed the worker's 512 MiB cap returned none of them (the loop
+  stopped at the first file over the cap, so an 800 MB checkpoint also dropped the small
+  files after it) and said nothing. A file over a limit is now skipped and named in the task's
+  system log; the others still upload. The default cap is 4 GiB per task
+  (`GPULAYER_MAX_OUTPUT_BYTES`), 2 GiB per file. Found on AWS T4s with a 67M-parameter model.
+- Sharded checkpoints written on several machines are merged into one folder after the job,
+  so they load and resume without a shared filesystem.
 - DeepSpeed validated on Tesla T4s (AWS): ZeRO stages 1 to 3, with and without CPU offload, on
   one machine and across two over NCCL; `BitsandbytesPrecision` nf4 and int8 on one T4
   (`benchmarks/results/2026-11-01-aws-2xt4-deepspeed/`). Three bugs found and fixed there:
