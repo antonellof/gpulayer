@@ -10,11 +10,9 @@ import {
   Minus,
   ScrollText,
 } from "lucide-react";
-import { ArchitectureDiagram } from "@/components/landing/architecture-diagram";
 import { HeroLandscape } from "@/components/landing/hero-landscape";
 import { VERSION } from "@/lib/version";
 import { WorksWith } from "@/components/landing/logos";
-import { Quickstart } from "@/components/landing/quickstart";
 import { Terminal, type TerminalTab } from "@/components/landing/terminal";
 import { SiteFooter } from "@/components/site/footer";
 import { SiteHeader } from "@/components/site/header";
@@ -101,41 +99,41 @@ const GPU_RESULTS: { gpu: string; result: string }[] = [
 
 const FEATURES = [
   {
+    icon: Library,
+    title: "Lightning code, unchanged",
+    body: "LightningModule, DataModule, callbacks, loggers, profilers and the CLI keep Lightning's names. Most code moves with an import change.",
+  },
+  {
     icon: Flame,
     title: "One Trainer, any scale",
-    body: "The same script runs in your process, as DDP on every GPU of a machine, or across machines with Trainer(devices=4, num_nodes=2). Lightning's hooks, callbacks, loggers and tuner, mixed precision and experimental FSDP.",
+    body: "The same script runs in your process, as DDP on every GPU of a machine, or across machines with Trainer(num_nodes=N). FSDP is experimental.",
   },
   {
     icon: Boxes,
     title: "Placed where it trains fastest",
-    body: "Multi-GPU runs get the best-connected GPUs of a machine. Multi-machine runs stay in one rack, zone or region when possible.",
-  },
-  {
-    icon: Library,
-    title: "Every GPU you can reach",
-    body: "Your laptop, workstations, servers that join with one command, and cloud VMs. NVIDIA CUDA and Apple Metal are validated; AMD ROCm is implemented and not yet validated.",
+    body: "A run goes only to machines that can train it, on their best-connected GPUs, in one rack or zone when possible. Otherwise it is rejected with a reason per machine.",
   },
   {
     icon: Cloud,
-    title: "A cloud GPU for one run",
-    body: "When no machine fits, GPUlayer can create a Google Cloud VM from offers you list and delete it when training ends.",
+    title: "Every GPU you can reach",
+    body: "Laptops, workstations, servers that join with one command, and Google Cloud VMs created for a run. NVIDIA CUDA and Apple Metal are validated.",
   },
   {
     icon: ScrollText,
     title: "Logs, checkpoints, metrics",
-    body: "Logs stream while training runs, checkpoints and metrics come back when it ends, and a dashboard shows every run.",
+    body: "Logs stream while training runs. Checkpoints and metrics come back to your machine, and a dashboard lists every run.",
   },
   {
     icon: FileCode2,
-    title: "Your own training loop",
-    body: "Already have a DDP script? Two launch() lines make it run anywhere. Runtime handles device, DDP and precision in a custom loop.",
+    title: "Your own loop works too",
+    body: "Any training script runs anywhere with two launch() lines; Runtime handles device, DDP and precision in a custom loop.",
   },
 ];
 
 const COMPARISON: { situation: string; without: string; with: string }[] = [
   {
     situation: "Code on a laptop, GPUs elsewhere",
-    without: "ssh, copy code, rebuild the environment, run in tmux, copy checkpoints back",
+    without: "ssh, copy code, rebuild the environment, copy checkpoints back",
     with: "`python train.py --target remote`",
   },
   {
@@ -149,14 +147,9 @@ const COMPARISON: { situation: string; without: string; with: string }[] = [
     with: "`Trainer(num_nodes=2, devices=4)`",
   },
   {
-    situation: "NVIDIA servers and Apple Silicon Macs",
-    without: "separate setup per machine",
-    with: "`accelerator=\"cuda\"` or `\"mps\"`, same script",
-  },
-  {
-    situation: "A learning-rate sweep",
-    without: "loops and ad hoc scripts",
-    with: "`train.map([...])` in parallel across free GPUs",
+    situation: "A Lightning project",
+    without: "a cluster scheduler or manual torchrun to leave one machine",
+    with: "`import gpulayer.pytorch as glt`, same code",
   },
 ];
 
@@ -165,12 +158,12 @@ const STATUS: { label: string; dot: string; items: string }[] = [
     label: "Hardware-validated",
     dot: "bg-emerald-500",
     items:
-      "Trainer on NVIDIA CUDA (Tesla T4, RTX 3070, A100) and Apple Metal · DDP over NCCL on up to 4 GPUs of a machine and across 8 machines · FSDP across 8 machines · distributed training with gloo on up to 16 machines · Google Cloud VMs created per job",
+      "NVIDIA CUDA (T4, RTX 3070, A100) and Apple Metal · DDP over NCCL on 4 GPUs of a machine and across 8 machines · FSDP across 8 machines · gloo on 16 machines · Google Cloud VMs per run",
   },
   {
     label: "Implemented, not validated",
     dot: "bg-amber-500",
-    items: "AMD ROCm · NCCL across multi-GPU machines · FSDP speed (experimental) · NVIDIA GPU workers on Kubernetes",
+    items: "AMD ROCm · DeepSpeed · TPU · NCCL across multi-GPU machines · NVIDIA GPU workers on Kubernetes",
   },
   {
     label: "Planned",
@@ -254,14 +247,12 @@ export default function Home() {
             <SectionHeader
               eyebrow="Benchmarks"
               title="GPUlayer Trainer against PyTorch Lightning"
-              lede="Same model, data and optimizer, each trainer with its defaults. The GPUlayer Trainer (0.8) was faster in 13 of 17 GPU cases and every CPU case, and slower on a CNN on one GPU of one host and across machines over NCCL; each number has a script and a log in the repository."
+              lede="Same model, data and optimizer, each trainer's defaults. Faster in 13 of 17 GPU cases and every CPU case; slower on a CNN on one GPU of one host and on a CNN across machines. Every number has a script and a log."
             />
             <div className="mt-12 grid gap-6 lg:grid-cols-2">
               {[
-                ["training-step", "Training step time on one Tesla T4: GPUlayer and PyTorch Lightning"],
                 ["multigpu-step", "Step time on 1, 2 and 4 RTX 3070 GPUs: GPUlayer and PyTorch Lightning"],
                 ["nccl-step", "Step time with one T4 per machine on 2, 4 and 8 machines over NCCL: GPUlayer and PyTorch Lightning"],
-                ["apple-cpu-step", "Step time on an Apple M2 Pro GPU and CPU: GPUlayer and PyTorch Lightning"],
               ].map(([name, alt]) => (
                 <div key={name}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -298,26 +289,10 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Quickstart */}
-        <section id="quickstart" className="border-b border-border">
-          <div className="mx-auto max-w-6xl px-6 py-24">
-            <SectionHeader
-              eyebrow="Quickstart"
-              title="Start on your laptop, add machines later"
-            />
-            <div className="mt-12">
-              <Quickstart />
-            </div>
-            <Link href="/docs/get-started/quickstart/" className="link-arrow mt-12">
-              Full quickstart, with the output of every step <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          </div>
-        </section>
-
         {/* Features */}
         <section className="border-b border-border">
           <div className="mx-auto max-w-6xl px-6 py-24">
-            <SectionHeader eyebrow="Capabilities" title="What the Trainer handles" />
+            <SectionHeader eyebrow="Capabilities" title="What you get" />
             <div className="mt-14 grid overflow-hidden rounded-xl border border-border sm:grid-cols-2 lg:grid-cols-3">
               {FEATURES.map(({ icon: Icon, title, body }) => (
                 <div key={title} className="-mb-px -mr-px border-b border-r border-border p-8">
@@ -326,36 +301,6 @@ export default function Home() {
                   <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{body}</p>
                 </div>
               ))}
-            </div>
-          </div>
-        </section>
-
-        {/* Placement spotlight */}
-        <section className="border-b border-border bg-card">
-          <div className="mx-auto grid max-w-6xl items-center gap-12 px-6 py-24 lg:grid-cols-2">
-            <div>
-              <SectionHeader
-                eyebrow="Smart placement"
-                title="Every run on a GPU that can train it"
-                lede="Workers report their GPUs, memory, drivers and PyTorch build. A run goes only to machines that can train it, on their best-connected GPUs. When none can, it is rejected before it starts, with a reason for every machine."
-              />
-              <Link href="/docs/architecture/scheduling/" className="link-arrow mt-8">
-                How scheduling works <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-            </div>
-            <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950 shadow-frame">
-              <div className="border-b border-neutral-800 px-4 py-2.5 font-mono text-[11px] text-neutral-500">
-                gpulayer job status job-1ebd35a459b9
-              </div>
-              <pre className="overflow-x-auto p-5 font-mono text-[12.5px] leading-[1.8] text-neutral-300">
-                <span className="text-neutral-500">scheduling: </span>
-                <span className="text-rose-400">no eligible worker</span>
-                {"\n  gpu-box-1    needs 2 usable cuda device(s), worker has 1"}
-                {"\n  mac-studio   needs cuda, worker has mps"}
-                {"\n  laptop       torch on this worker cannot use CUDA"}
-                {"\n  "}
-                <span className="text-neutral-100">gpu-box-2    eligible</span>
-              </pre>
             </div>
           </div>
         </section>
@@ -406,23 +351,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Architecture */}
-        <section id="architecture" className="border-b border-border">
-          <div className="mx-auto max-w-6xl px-6 py-24">
-            <SectionHeader
-              eyebrow="Architecture"
-              title="How a run gets to the GPUs"
-              lede="The control plane runs inside your process or as a small server you host. A worker on each machine polls it, so machines can sit behind NAT, and starts the ranks of each run."
-            />
-            <div className="mt-14 rounded-xl border border-border bg-card p-4 md:p-10">
-              <ArchitectureDiagram />
-            </div>
-            <Link href="/docs/architecture/overview/" className="link-arrow mt-8">
-              Architecture overview <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          </div>
-        </section>
-
         {/* Status */}
         <section className="border-b border-border bg-card">
           <div className="mx-auto max-w-6xl px-6 py-24">
@@ -453,8 +381,8 @@ export default function Home() {
             <div className="max-w-xl">
               <h2 className="section-title">Try it on your own machines</h2>
               <p className="lede mt-4">
-                The quickstart trains one PyTorch file in your process, with DDP, on two nodes and on a GPU, in
-                about ten minutes.
+                Install with <code className="font-mono text-[0.9em]">curl -fsSL https://gpulayer.dev/install.sh | sh</code>{" "}
+                and train one file in your process, with DDP and on two nodes, in about ten minutes.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">

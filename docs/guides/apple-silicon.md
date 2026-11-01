@@ -1,11 +1,7 @@
 # Apple Silicon (Metal)
 
-Apple Silicon Macs have a GPU that frameworks reach through Metal: PyTorch through its MPS
-backend, MLX natively, Core ML and others. GPUlayer reports the GPU of every Apple Silicon worker
-as accelerator `mps` and schedules jobs that ask for it there. Whether torch on that machine can
-use it is reported separately as the `torch.mps` capability.
-
-## Check
+GPUlayer reports the GPU of every Apple Silicon worker as accelerator `mps`. PyTorch jobs also
+need the `torch.mps` capability: a recent torch in the worker's Python (or set `--python`).
 
 ```bash
 gpulayer resources detect
@@ -14,9 +10,6 @@ gpulayer resources detect
 ```text
 device    [0] mps Apple arm64 GPU (MPS) (32.0 GB unified) independent=hardware-validated distributed=unsupported
 ```
-
-For PyTorch jobs the worker must also report `torch.mps`; install a recent torch in the Python
-that runs jobs, or point the worker at another interpreter with `--python`.
 
 ## MLX
 
@@ -27,8 +20,8 @@ def matmul_benchmark(n: int) -> dict:
     ...
 ```
 
-[`examples/mlx_metal/matmul.py`](../../examples/mlx_metal/matmul.py) runs this on the Apple GPU
-(about 4.3 TFLOPS for 4096 x 4096 float32 matrix products on an M-series laptop).
+[`examples/mlx_metal/matmul.py`](../../examples/mlx_metal/matmul.py) reaches about 4.3 TFLOPS
+(4096 x 4096 float32 matmul) on an M-series laptop.
 
 ## PyTorch on MPS
 
@@ -46,14 +39,14 @@ python examples/remote_sweep/sweep.py --accelerator mps
 
 | Topic | MPS behaviour in GPUlayer |
 |---|---|
-| Multi-process or multi-node | not supported; `devices > 1` or `num_nodes > 1` with MPS is rejected |
-| Memory | unified with the CPU; reported as `memory_kind=unified`, never as dedicated VRAM |
-| `gpu_memory_gb` requirement | compared against the unified memory size |
+| Multi-process or multi-node | not supported; `devices > 1` or `num_nodes > 1` is rejected |
+| Memory | unified, reported as `memory_kind=unified`; `gpu_memory_gb` is compared against it |
 | Precision | `32-true` only; `bf16-mixed` and `16-mixed` raise an error |
-| Operators and dtypes | not every CUDA operator or dtype (for example float64) exists on MPS; test your model |
+| Operators and dtypes | some CUDA operators and dtypes (for example float64) are missing; test your model |
+| Docker | cannot use the Apple GPU; run Mac workers natively |
 
-A CUDA job never runs on an MPS worker, and an MPS job never runs on a CUDA worker. The design
-reasons are in [ADR-0006](../decisions/ADR-0006-apple-metal-mps-boundaries.md).
+CUDA and MPS jobs never run on each other's workers
+([ADR-0006](../decisions/ADR-0006-apple-metal-mps-boundaries.md)).
 
 ## Validation
 
@@ -62,21 +55,14 @@ documentation have been run on an Apple Silicon Mac.
 
 ## Performance notes (measured)
 
-Measured on an Apple Silicon Mac (10 CPU cores, 32 GB) with macOS 26.7, torch 2.15.0 and MLX
-0.32.4:
+Apple Silicon Mac (10 CPU cores, 32 GB), macOS 26.7, torch 2.15.0, MLX 0.32.4:
 
-- **One GPU job at a time is fastest.** Two training jobs sharing the Apple GPU finished no
-  sooner than running them one after the other (1.0x for a small MLP), and were slower for
-  larger ones (0.92x and 0.80x). Mac workers therefore default to one task at a time; raise it
-  with `--concurrency` only for CPU-bound jobs.
-- **Half precision does not speed up PyTorch training on MPS here.** For MLP training, fp16
-  autocast was 3 to 8% slower than fp32 and bf16 about 50% slower, so `Trainer` keeps
-  `bf16-mixed` and `16-mixed` disabled on MPS. Re-measure on your model before relying on it.
-- **Avoid reading values every step.** The `Trainer` keeps logged values on the GPU until it
-  prints them; this made MPS steps 1.6x faster. In your own loops, avoid `.item()` or
-  `print(tensor)` on every step, and in MLX, call `mx.eval` once per step, not per value.
-- **MLX uses unified memory**, so there is no host-to-device copy to optimise. `mx.compile`
-  can help on stable step functions; capture model and optimiser state as the MLX docs
-  describe rather than passing the model as an argument.
-- **Docker cannot use the Apple GPU.** Run Mac workers natively (`gpulayer join` or the
-  install script).
+- **One GPU job at a time is fastest.** Two jobs sharing the GPU gave 1.0x (small MLP), 0.92x
+  and 0.80x versus running in sequence, so Mac workers default to one task. Raise
+  `--concurrency` only for CPU-bound jobs.
+- **Half precision is slower.** fp16 autocast was 3 to 8% slower than fp32 for MLP training,
+  bf16 about 50% slower. Re-measure on your model.
+- **Avoid per-step reads.** Keeping logged values on the GPU made `Trainer` MPS steps 1.6x
+  faster. Avoid per-step `.item()` or `print(tensor)`; in MLX call `mx.eval` once per step.
+- **MLX:** unified memory means no host-to-device copy. `mx.compile` can help on stable step
+  functions; capture model and optimiser state as the MLX docs describe.

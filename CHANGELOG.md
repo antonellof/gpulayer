@@ -5,6 +5,15 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Docs and site made shorter: the guides, architecture, reference, PyTorch and get-started
+  pages lost 30 to 60% of their words with the same commands, settings and status; the
+  Trainer page points to the API reference for the full argument list. The compare page is
+  now one training-focused capability matrix (GPUlayer, Lightning, Accelerate, Ray, SkyPilot,
+  dstack, Modal, Slurm/Kubernetes) with the measured speed against Lightning and when to choose
+  something else. The home page drops the quickstart, placement and architecture sections.
+  Corrected two stale statements: Trainer DDP on GPUs (validated on RTX 3070s and T4 machines)
+  and NCCL across machines in the GPU compatibility matrix.
+
 - Fix: a worker that finished a task while the control plane was unreachable (a server pod
   restarting) lost the outcome on the refused connection, so the server kept the task running
   and the worker busy. Outcomes are now retried with backoff for up to 2 minutes; a rejection

@@ -1,8 +1,8 @@
 # JobSpec
 
-Every job is a `JobSpec` (API version `gpulayer.dev/v1alpha1`). The SDK builders, the Trainer
-and `launch()` create them for you; you can also write one as JSON and run
-`gpulayer submit -f job.json`. Unknown fields are rejected.
+Every job is a `JobSpec` (API version `gpulayer.dev/v1alpha1`). The SDK, the Trainer and
+`launch()` build them; you can also write JSON and run `gpulayer submit -f job.json`. Unknown
+fields are rejected.
 
 ```json
 {
@@ -23,46 +23,46 @@ and `launch()` create them for you; you can also write one as JSON and run
 
 | Field | Type | Default | Notes |
 |---|---|---|---|
-| `name` | string | `"job"` | letters, digits, `_ . -`; up to 63 characters |
-| `workload` | object | required | one of the three kinds below |
+| `name` | string | `"job"` | letters, digits, `_ . -`; max 63 characters |
+| `workload` | object | required | one of the kinds below |
 | `resources` | `ResourceRequest` | CPU, 1 core | per node |
 | `placement` | `PlacementPolicy` | target `local` | |
-| `env` | map | `{}` | not secret; `GPULAYER_*` and torchrun names are reserved |
-| `secrets` | list of `SecretRef` | `[]` | resolved on the worker from its own environment |
-| `inputs` | list of `{artifact, path}` | `[]` | staged under `$GPULAYER_INPUT_DIR/path` |
+| `env` | map | `{}` | not secret; `GPULAYER_*` and torchrun names reserved |
+| `secrets` | list of `SecretRef` | `[]` | resolved from the worker's environment |
+| `inputs` | list of `{artifact, path}` | `[]` | staged at `$GPULAYER_INPUT_DIR/path` |
 | `timeout_seconds` | number | none | |
-| `retry` | `{max_attempts, retry_on}` | `1`, `["worker_lost"]` | not allowed for distributed jobs |
+| `retry` | `{max_attempts, retry_on}` | `1`, `["worker_lost"]` | not for distributed jobs |
 | `labels` | map | `{}` | free-form |
-| `environment` | object | none | `{requirements: [...], requirements_file: "path in bundle"}`: extra packages, installed once per worker and reused ([details](../workloads/frameworks.md#extra-packages-for-one-job)) |
+| `environment` | object | none | `{requirements: [...], requirements_file: "path in bundle"}`, installed once per worker ([details](../workloads/frameworks.md#extra-packages-for-one-job)) |
 
 ## Workloads
 
 | `kind` | Fields |
 |---|---|
-| `command` | `command` (argv; a leading `python` means the worker's interpreter), `source` |
+| `command` | `command` (argv; leading `python` means the worker's interpreter), `source` |
 | `function` | `entrypoint` (`module:function`), `args`, `kwargs` (JSON), `source` |
-| `distributed` | `entrypoint` (script path in the bundle) and `args`, **or** `function`, `function_args`, `function_kwargs`; `source`, `num_workers`, `procs_per_worker`, `comm_backend` (`gloo`/`nccl`), `rendezvous` (`port`, `join_timeout_seconds`) |
+| `distributed` | `entrypoint` (script in the bundle) and `args`, **or** `function`, `function_args`, `function_kwargs`; plus `source`, `num_workers`, `procs_per_worker`, `comm_backend` (`gloo`/`nccl`), `rendezvous` (`port`, `join_timeout_seconds`) |
 
 ## ResourceRequest
 
 | Field | Default | Notes |
 |---|---|---|
-| `profile` | none | runtime profile (see below); fills in `accelerator` and `frameworks` |
-| `accelerator` | `cpu` | `cpu`, `cuda`, `mps`, `rocm` (rocm is never scheduled yet) |
-| `gpu_count` | `0` (`1` for GPU accelerators) | devices per node |
+| `profile` | none | sets `accelerator` and `frameworks` (below) |
+| `accelerator` | `cpu` | `cpu`, `cuda`, `mps`, `rocm` (rocm never scheduled yet) |
+| `gpu_count` | `0` (`1` for GPU accelerators) | per node |
 | `gpu_memory_gb` | none | minimum per device |
 | `gpu_memory_kind` | none | `dedicated` or `unified` |
 | `min_cuda_compute_capability` | none | e.g. `"8.0"` |
 | `cpu_cores`, `memory_gb`, `disk_gb` | 1, none, none | placement constraints, not enforced limits |
 | `os`, `cpu_arch` | `[]` | e.g. `["linux"]`, `["x86_64"]` |
-| `frameworks` | `{}` | PEP 440 specifiers, e.g. `{"torch": ">=2.2"}` |
+| `frameworks` | `{}` | PEP 440, e.g. `{"torch": ">=2.2"}` |
 | `python` | none | PEP 440 specifier for the worker's Python |
 
 ### Runtime profiles
 
-A profile is a shorthand for common requirements. Explicit `frameworks` entries override the
-profile's, and an explicit `accelerator` must match it. Workers are still matched on what they
-report, so a profile never makes an incompatible worker eligible.
+Shorthand for common requirements. Explicit `frameworks` entries override the profile's; an
+explicit `accelerator` must match. Workers are still matched on what they report, so a profile
+never makes an incompatible worker eligible.
 
 | Profile | Accelerator | Frameworks |
 |---|---|---|
@@ -88,10 +88,10 @@ gpulayer submit --profile mlx -- python bench.py
 |---|---|---|
 | `target` | `local` | `local`, `remote`, `cloud` |
 | `fallback_targets` | `[]` | tried in order after `target` |
-| `worker_ids`, `worker_labels` | `[]`, `{}` | pin to specific workers |
-| `providers`, `regions` | `[]` | restrict provider-backed workers; a `regions` entry may also name a zone |
-| `group_locality` | `prefer` | distributed jobs: `prefer` the closest group (one network group, zone, then region), require one with `network_group`, `zone` or `region`, or `any`; see [Scheduling](../architecture/scheduling.md#distributed-groups-and-network-locality) |
-| `strategy` | `spread` | `spread`: least-loaded worker first; `first_fit`: lowest worker id with a free slot (packs work); `most_free_memory` |
+| `worker_ids`, `worker_labels` | `[]`, `{}` | pin to workers |
+| `providers`, `regions` | `[]` | restrict provider-backed workers; a `regions` entry may name a zone |
+| `group_locality` | `prefer` | distributed: `prefer` the closest group (network group, then zone, then region); require one with `network_group`, `zone` or `region`; or `any` ([Scheduling](../architecture/scheduling.md#distributed-groups-and-network-locality)) |
+| `strategy` | `spread` | `spread`: least-loaded first; `first_fit`: lowest worker id with a free slot (packs); `most_free_memory` |
 | `on_unschedulable` | `queue` | `fail` rejects jobs no registered worker could ever run |
-| `max_hourly_cost`, `currency` | none, `USD` | offers without a price are rejected when set |
+| `max_hourly_cost`, `currency` | none, `USD` | when set, unpriced offers are rejected |
 | `provisioning` | none | `{provider, release, provisioning_timeout_seconds}` |

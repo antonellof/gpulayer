@@ -1,171 +1,82 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import {
-  ArrowRight,
-  Check,
-  CircleDashed,
-  Clock,
-  Cloud,
-  Cpu,
-  Layers,
-  Network,
-  Server,
-  Sparkles,
-  X,
-} from "lucide-react";
+import { ArrowRight, Check, CircleDashed, X } from "lucide-react";
 import { SiteFooter } from "@/components/site/footer";
 import { SiteHeader } from "@/components/site/header";
-import { LayerStack } from "@/components/landing/layer-stack";
 import { OG_IMAGE } from "@/lib/site";
 
 export const metadata: Metadata = {
-  title: "GPUlayer compared | PyTorch Lightning, Ray, SkyPilot, dstack, Modal and more",
+  title: "GPUlayer compared | PyTorch Lightning, Accelerate, Ray, SkyPilot, dstack, Modal",
   description:
-    "How GPUlayer relates to PyTorch Lightning, Hugging Face Accelerate, Ray, SkyPilot, dstack, Modal, Slurm and Kubernetes: what each one does, where they overlap, and when to use which.",
+    "How the GPUlayer Trainer compares with PyTorch Lightning, Hugging Face Accelerate, Ray, SkyPilot, dstack, Modal, Slurm and Kubernetes for training PyTorch on many GPUs.",
   alternates: { canonical: "/compare/" },
   openGraph: { url: "/compare/", images: [OG_IMAGE] },
 };
 
-type Row = {
-  name: string;
-  what: string;
-  runsOn: string;
-  machines: string;
-  workloads: string;
-  hosting: string;
-  highlight?: boolean;
-};
+type Mark = "yes" | "partial" | "no";
 
-const ROWS: Row[] = [
-  {
-    name: "GPUlayer",
-    what: "Places workloads on machines you can reach, starts them, returns logs and results",
-    runsOn: "This machine, servers that join, cloud VMs that join",
-    machines: "Picks a compatible machine per job (GPU, memory, frameworks), and can create Google Cloud VMs for it",
-    workloads: "Any command, Python functions with any library, distributed PyTorch on many machines, long-running services",
-    hosting: "Self-hosted; embedded mode needs no server",
-    highlight: true,
-  },
-  {
-    name: "PyTorch Lightning",
-    what: "Organizes PyTorch training code (LightningModule, Trainer) and handles devices, precision and parallel strategies",
-    runsOn: "The machines it is launched on",
-    machines: "No; you start it on each node (for example with Slurm or torchrun)",
-    workloads: "PyTorch training, fine-tuning, evaluation",
-    hosting: "Open-source library (a hosted platform is sold separately)",
-  },
-  {
-    name: "Hugging Face Accelerate",
-    what: "Adapts a PyTorch training loop to multi-GPU, multi-node and mixed precision with little code change",
-    runsOn: "The machines it is launched on",
-    machines: "No; `accelerate launch` runs on machines you provide",
-    workloads: "PyTorch training and inference",
-    hosting: "Open-source library",
-  },
-  {
-    name: "Ray",
-    what: "General distributed computing framework (tasks, actors) with libraries for training, tuning, serving and data",
-    runsOn: "A Ray cluster (head node plus workers) on VMs or Kubernetes",
-    machines: "Schedules tasks inside the cluster; an autoscaler can add cloud nodes",
-    workloads: "Python programs written against Ray's API; functions and objects are serialized",
-    hosting: "Open source, self-hosted; managed offerings exist",
-  },
-  {
-    name: "SkyPilot",
-    what: "Runs jobs and clusters across many clouds and Kubernetes from a YAML or Python spec",
-    runsOn: "Cloud VMs and Kubernetes it provisions",
-    machines: "Yes; provisions VMs, chooses regions and instance types, can recover spot jobs",
-    workloads: "Any command in a task spec",
-    hosting: "Open source, runs from your machine or a shared API server",
-  },
-  {
-    name: "dstack",
-    what: "Orchestrates AI dev environments, tasks and services",
-    runsOn: "Cloud providers, Kubernetes, and on-prem servers added over SSH",
-    machines: "Yes; provisions cloud capacity or uses fleets you register",
-    workloads: "Containers running any command; long-running services",
-    hosting: "Open source, self-hosted server; a hosted version exists",
-  },
-  {
-    name: "Modal",
-    what: "Serverless platform: decorate Python functions and run them on Modal's GPUs",
-    runsOn: "Modal's infrastructure",
-    machines: "Modal allocates them; you do not bring your own GPUs",
-    workloads: "Python functions, batch jobs, web endpoints, containers defined in code",
-    hosting: "Hosted service, pay per use",
-  },
-  {
-    name: "Slurm / Kubernetes",
-    what: "Cluster schedulers for shared HPC or container infrastructure",
-    runsOn: "A cluster you operate",
-    machines: "Yes, within the cluster; queues, quotas, priorities",
-    workloads: "Batch jobs (Slurm); containers and services (Kubernetes, plus operators for training)",
-    hosting: "Open source; needs cluster administration",
-  },
-];
-
-type Mark = "yes" | "partial" | "no" | "planned";
-
-const TOOLS = [
-  "GPUlayer",
-  "PyTorch Lightning",
-  "Accelerate",
-  "Ray",
-  "SkyPilot",
-  "dstack",
-  "Modal",
-  "Slurm / K8s",
-] as const;
-
-type MatrixRow = { feature: string; marks: Mark[]; note?: string };
+const TOOLS = ["GPUlayer", "Lightning", "Accelerate", "Ray", "SkyPilot", "dstack", "Modal", "Slurm / K8s"] as const;
 
 // Order of marks follows TOOLS.
-const MATRIX: MatrixRow[] = [
+const MATRIX: { feature: string; marks: Mark[]; note?: string }[] = [
   {
-    feature: "Run any command or binary",
-    marks: ["yes", "no", "no", "partial", "yes", "yes", "partial", "yes"],
+    feature: "Lightning-style Trainer (hooks, callbacks, loggers, CLI)",
+    marks: ["yes", "yes", "no", "partial", "no", "no", "no", "no"],
+    note: "GPUlayer keeps Lightning's names; Ray Train runs Lightning code inside Ray",
   },
   {
-    feature: "Run Python functions remotely",
-    marks: ["yes", "no", "no", "yes", "no", "no", "yes", "no"],
-  },
-  {
-    feature: "PyTorch training helpers (devices, DDP, precision)",
+    feature: "DDP, mixed precision, FSDP",
     marks: ["yes", "yes", "yes", "yes", "no", "no", "no", "partial"],
-    note: "GPUlayer: DDP, mixed precision, callbacks, best-N checkpoints, experimental FSDP; Lightning has more strategies and loggers. Kubernetes via training operators",
+    note: "GPUlayer's FSDP is experimental; Kubernetes through training operators",
   },
   {
-    feature: "Multi-node jobs",
-    marks: ["yes", "partial", "partial", "yes", "yes", "yes", "partial", "yes"],
-    note: "GPUlayer starts every node from one call (tested up to 16 machines) and keeps the group in one zone or rack when possible; Lightning and Accelerate train across nodes but need a launcher started on each node",
+    feature: "DeepSpeed",
+    marks: ["partial", "yes", "yes", "yes", "no", "no", "no", "partial"],
+    note: "GPUlayer: implemented, not yet run on hardware",
   },
   {
-    feature: "Chooses a machine that fits the job",
+    feature: "Starts every node of a multi-machine run from one call",
+    marks: ["yes", "no", "no", "yes", "yes", "yes", "partial", "yes"],
+    note: "Lightning and Accelerate train across nodes once a launcher is started on each",
+  },
+  {
+    feature: "Picks machines that can train the run",
     marks: ["yes", "no", "no", "yes", "yes", "yes", "yes", "yes"],
   },
   {
-    feature: "Uses machines you already have",
+    feature: "NVIDIA servers, Macs and cloud VMs in one pool",
+    marks: ["yes", "no", "no", "partial", "partial", "partial", "no", "partial"],
+  },
+  {
+    feature: "Creates cloud GPUs for a run",
+    marks: ["partial", "no", "no", "yes", "yes", "yes", "yes", "partial"],
+    note: "GPUlayer: Google Cloud only",
+  },
+  {
+    feature: "No cluster to operate",
+    marks: ["yes", "yes", "yes", "partial", "yes", "partial", "yes", "no"],
+  },
+  {
+    feature: "Runs on your own hardware",
     marks: ["yes", "yes", "yes", "yes", "partial", "yes", "no", "yes"],
   },
-  {
-    feature: "Provisions cloud capacity",
-    marks: ["partial", "no", "no", "yes", "yes", "yes", "yes", "partial"],
-    note: "GPUlayer: creates and deletes Google Cloud VMs per job; other clouds not yet",
-  },
-  {
-    feature: "Long-running services",
-    marks: ["partial", "no", "no", "yes", "yes", "yes", "yes", "partial"],
-    note: "GPUlayer: replicas, $PORT, endpoints and restarts; no load balancer yet. Kubernetes yes, Slurm no",
-  },
-  {
-    feature: "Start without operating a cluster",
-    marks: ["yes", "yes", "yes", "partial", "yes", "partial", "yes", "no"],
-    note: "Ray: a cluster for multi-node; dstack: a small server",
-  },
-  {
-    feature: "Runs on your own hardware (self-hosted)",
-    marks: ["yes", "yes", "yes", "yes", "yes", "yes", "no", "yes"],
-  },
+];
+
+const WHAT: [string, string][] = [
+  ["GPUlayer", "A PyTorch Trainer with Lightning's API that also places each run on the machines you can reach and starts every process."],
+  ["PyTorch Lightning", "The reference Trainer; runs on the machines it is started on (Slurm, torchrun or its own platform)."],
+  ["Accelerate", "Makes an existing training loop portable across devices and precision; you launch it on each machine."],
+  ["Ray", "A distributed computing framework; Ray Train runs training on a Ray cluster you operate."],
+  ["SkyPilot, dstack", "Run jobs on cloud VMs, Kubernetes or registered servers from a spec; training code is up to you."],
+  ["Modal", "Serverless GPUs: decorated Python functions run on Modal's hardware."],
+  ["Slurm, Kubernetes", "Cluster schedulers for shared infrastructure you administer."],
+];
+
+const ELSEWHERE = [
+  "You need a cloud other than Google Cloud, or autoscaling pools: SkyPilot, dstack or Ray cover more.",
+  "You rely on DeepSpeed or TPUs today: they are implemented in the GPUlayer Trainer but not yet run on hardware.",
+  "Untrusted users share the machines: GPUlayer does not sandbox jobs.",
+  "One GPU on the machine in front of you: a plain training loop is simpler.",
 ];
 
 function MarkIcon({ mark }: { mark: Mark }) {
@@ -182,125 +93,10 @@ function MarkIcon({ mark }: { mark: Mark }) {
         <CircleDashed className="h-3.5 w-3.5" strokeWidth={2.5} />
       </span>
     );
-  if (mark === "planned")
-    return (
-      <span className={`${base} bg-sky-500/15 text-sky-600 dark:text-sky-400`} title="Planned">
-        <Clock className="h-3.5 w-3.5" strokeWidth={2.5} />
-      </span>
-    );
   return (
     <span className={`${base} bg-muted text-muted-foreground/60`} title="No">
       <X className="h-3.5 w-3.5" strokeWidth={2.5} />
     </span>
-  );
-}
-
-function Legend() {
-  const items: [Mark, string][] = [
-    ["yes", "Yes"],
-    ["partial", "Partly"],
-    ["planned", "Planned"],
-    ["no", "No / not its job"],
-  ];
-  return (
-    <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
-      {items.map(([m, label]) => (
-        <span key={m} className="inline-flex items-center gap-1.5">
-          <MarkIcon mark={m} />
-          {label}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-type Note = { name: string; summary: string; choose: string; together: string };
-
-const NOTES: Note[] = [
-  {
-    name: "PyTorch Lightning and Hugging Face Accelerate",
-    summary:
-      "Both decide how a PyTorch model trains inside the machines they are started on: device placement, precision, DDP, FSDP or DeepSpeed, callbacks, logging. They do not choose those machines, copy code to them, or start the processes on each node. GPUlayer works one level below: it decides where a workload runs and starts it there. Its own PyTorch Trainer uses Lightning's names: hooks, manual optimization, DataModule, callbacks, loggers, profilers and the tuner, with experimental FSDP and no DeepSpeed.",
-    choose:
-      "Choose Lightning for its ecosystem and hardware it has run on (DeepSpeed and TPUs are implemented in the GPUlayer Trainer but not yet run on hardware); Accelerate makes an existing loop portable.",
-    together:
-      "Keep your training code and add `gpulayer.pytorch.launch(...)` at the top of the script. GPUlayer then places it on workers and starts the processes with the standard torchrun environment that both libraries read. This combination follows from the torchrun environment but has not been tested in this repository yet.",
-  },
-  {
-    name: "Ray",
-    summary:
-      "Ray is a programming model as much as a scheduler: you write tasks and actors against its API, run a Ray cluster, and use its libraries for training, tuning and serving. Functions and arguments are serialized and shipped between processes. GPUlayer ships source code and calls functions by name with JSON arguments, has no distributed object store, and runs plain commands written in any language.",
-    choose:
-      "Choose Ray for fine-grained distributed Python (many small tasks, actors, shared objects), Ray Tune sweeps, or Ray Serve.",
-    together:
-      "A Ray program can be a GPUlayer job on one machine; a multi-node Ray cluster is better managed by Ray itself or KubeRay.",
-  },
-  {
-    name: "SkyPilot and dstack",
-    summary:
-      "Both provision and manage cloud capacity: they choose instance types and regions, start VMs or pods, and run your commands there. dstack also runs services and dev environments and can use on-prem servers. GPUlayer creates and deletes Google Cloud VMs per job; other clouds need adapters. Its strengths are a lightweight join for any machine you already have, capability-aware placement with explanations, and the Python and PyTorch APIs.",
-    choose:
-      "Choose SkyPilot or dstack when you mainly need cloud capacity across providers, spot recovery, or services behind a load balancer.",
-    together:
-      "VMs they start can run `gpulayer join` and become GPUlayer workers.",
-  },
-  {
-    name: "Modal",
-    summary:
-      "Modal's developer experience (decorate a function, call `.remote()` or `.map()`) is close to GPUlayer's `@gl.remote`, but it runs on Modal's own infrastructure. GPUlayer runs on hardware you control: your laptop, office servers and VMs you rent, including Apple Silicon Macs.",
-    choose:
-      "Choose Modal if you want hosted, autoscaled GPUs with no machines to manage and are fine paying per use.",
-    together: "They solve the same problem for different hardware, so teams usually pick one.",
-  },
-  {
-    name: "Slurm and Kubernetes",
-    summary:
-      "Cluster schedulers with queues, quotas, priorities and multi-tenant isolation, run by an operations team. GPUlayer is much lighter, with one command to start a server and one to join a machine, and it is meant for groups whose members trust each other. Shared multi-tenant clusters are a job for Slurm or Kubernetes.",
-    choose: "Choose them for shared, policy-heavy clusters with many users.",
-    together:
-      "Integrations (submitting to Slurm or Kubernetes as a GPUlayer worker pool) are not built yet.",
-  },
-];
-
-// Measured with the same model, data, optimizer and torch version in both trainers; see the
-// method note under the table. Run of 2026-11-01 (GPUlayer 0.8): every row on one AWS g4dn.xlarge (T4).
-const PERF_ROWS: { case: string; gl: number; pl: number; glOver: number; plOver: number }[] = [
-  { case: "MLP, fp32, batch 256", gl: 3.58, pl: 4.94, glOver: 4.09, plOver: 4.46 },
-  { case: "MLP, fp16 mixed precision", gl: 4.22, pl: 5.57, glOver: 4.2, plOver: 4.59 },
-  { case: "CNN, fp16 mixed precision, batch 128", gl: 11.14, pl: 12.07, glOver: 4.35, plOver: 5.12 },
-  { case: "DDP, 2 CPU processes", gl: 4.01, pl: 7.76, glOver: 6.5, plOver: 7.93 },
-];
-
-const BEHIND = [
-  "Cloud provisioning covers Google Cloud only, with no autoscaling of a standing pool; SkyPilot, dstack and Ray cover more clouds.",
-  "Services have no load balancer, rolling updates or autoscaling; dstack, Ray Serve, Modal and Kubernetes have them.",
-  "The Trainer's DeepSpeed and TPU support has not been run on hardware yet; FSDP is experimental (trained over NCCL on 8 T4 machines; speed not measured).",
-  "Across machines over NCCL with one GPU each, Lightning is 1 to 9% faster on a CNN (the GPUlayer Trainer is faster on an MLP); with gloo on CPUs the GPUlayer Trainer is 17.8% faster on 8 machines.",
-  "Distributed jobs support PyTorch process groups only; no JAX multi-host or MPI launcher yet.",
-  "v0.8.1: validated on machines with up to 4 NVIDIA GPUs (NCCL) and on up to 30 machines; NCCL across up to 8 machines with one GPU each. Not a sandbox for untrusted users.",
-];
-
-const FITS = [
-  "Your GPUs are spread over a laptop, a few servers and some rented VMs, and you want to train on all of them from one script.",
-  "Your team mixes NVIDIA servers and Apple Silicon Macs and wants each run on hardware that can train it.",
-  "You want each run placed on a machine that can train it, and told why when none can.",
-  "You want to start small: `gpulayer up` on one machine, `gpulayer join` on the others, no cluster to operate.",
-];
-
-function Code({ text }: { text: string }) {
-  const parts = text.split(/(`[^`]+`)/g);
-  return (
-    <>
-      {parts.map((p, i) =>
-        p.startsWith("`") ? (
-          <code key={i} className="rounded bg-secondary px-1 py-0.5 font-mono text-[0.85em]">
-            {p.slice(1, -1)}
-          </code>
-        ) : (
-          <span key={i}>{p}</span>
-        ),
-      )}
-    </>
   );
 }
 
@@ -310,55 +106,28 @@ export default function ComparePage() {
       <SiteHeader />
       <main>
         <section className="border-b border-border">
-          <div className="mx-auto max-w-6xl px-6 pb-16 pt-20 lg:pt-24">
+          <div className="mx-auto max-w-6xl px-6 pb-14 pt-20 lg:pt-24">
             <p className="eyebrow">Compare</p>
             <h1 className="mt-3 max-w-3xl text-4xl font-semibold tracking-[-0.04em] sm:text-5xl">
               GPUlayer and the alternatives
             </h1>
             <p className="lede mt-5 max-w-3xl">
-              Training frameworks shape how a model trains on the machines they are started on,
-              and cloud orchestrators rent capacity. GPUlayer places any GPU workload on the
-              machines you can reach, starts it there and brings the results back. Several of these
-              tools work well together.
+              Training frameworks shape how a model trains on the machines they are started on; orchestrators find
+              and start machines. The GPUlayer Trainer does both for PyTorch, with Lightning&apos;s API.
             </p>
           </div>
         </section>
 
-        {/* Layer diagram */}
         <section className="border-b border-border">
           <div className="mx-auto max-w-6xl px-6 py-16">
-            <h2 className="section-title">Where each tool sits</h2>
-            <p className="mt-2 max-w-3xl text-muted-foreground">
-              Most of these tools work at different layers, so they combine more often than they
-              compete.
-            </p>
-            <div className="mt-8">
-              <LayerStack />
-            </div>
-          </div>
-        </section>
-
-        {/* Capability matrix */}
-        <section className="border-b border-border">
-          <div className="mx-auto max-w-6xl px-6 py-16">
-            <h2 className="section-title">Capabilities</h2>
-            <div className="mt-4">
-              <Legend />
-            </div>
-            <div className="mt-6 overflow-x-auto rounded-lg border border-border">
-              <table className="w-full min-w-[960px] text-sm">
-                <thead className="bg-secondary text-xs text-muted-foreground">
-                  <tr>
-                    <th className="w-[26%] px-4 py-3 text-left font-semibold uppercase tracking-wider">
-                      Capability
-                    </th>
-                    {TOOLS.map((t, i) => (
-                      <th
-                        key={t}
-                        className={`px-2 py-3 text-center font-semibold ${
-                          i === 0 ? "bg-primary/10 text-primary" : ""
-                        }`}
-                      >
+            <h2 className="section-title">For training PyTorch on many GPUs</h2>
+            <div className="mt-8 overflow-x-auto rounded-xl border border-border">
+              <table className="w-full min-w-[860px] text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-card text-xs text-muted-foreground">
+                    <th className="px-4 py-3 text-left font-medium" />
+                    {TOOLS.map((t) => (
+                      <th key={t} className={`px-2 py-3 font-medium ${t === "GPUlayer" ? "text-foreground" : ""}`}>
                         {t}
                       </th>
                     ))}
@@ -366,15 +135,13 @@ export default function ComparePage() {
                 </thead>
                 <tbody>
                   {MATRIX.map((row) => (
-                    <tr key={row.feature} className="border-t border-border">
-                      <td className="px-4 py-3 align-top">
+                    <tr key={row.feature} className="border-b border-border last:border-0">
+                      <td className="px-4 py-3">
                         <div className="font-medium">{row.feature}</div>
-                        {row.note && (
-                          <div className="mt-0.5 text-xs text-muted-foreground">{row.note}</div>
-                        )}
+                        {row.note && <div className="mt-0.5 text-xs text-muted-foreground">{row.note}</div>}
                       </td>
                       {row.marks.map((m, i) => (
-                        <td key={TOOLS[i]} className={`px-2 py-3 ${i === 0 ? "bg-primary/5" : ""}`}>
+                        <td key={TOOLS[i]} className={`px-2 py-3 ${i === 0 ? "bg-card" : ""}`}>
                           <MarkIcon mark={m} />
                         </td>
                       ))}
@@ -383,174 +150,39 @@ export default function ComparePage() {
                 </tbody>
               </table>
             </div>
-            <p className="mt-3 text-xs text-muted-foreground">
-              {"\"Accelerate\" is Hugging Face Accelerate. Marks summarize each project's public"}
-              documentation at the time of writing and simplify features with many options;
-              check each project for current details.
-            </p>
+            <dl className="mt-10 grid gap-x-10 gap-y-4 sm:grid-cols-2">
+              {WHAT.map(([name, text]) => (
+                <div key={name}>
+                  <dt className="text-sm font-medium">{name}</dt>
+                  <dd className="mt-1 text-sm text-muted-foreground">{text}</dd>
+                </div>
+              ))}
+            </dl>
           </div>
         </section>
 
         <section className="border-b border-border">
-          <div className="mx-auto max-w-6xl px-6 py-16">
-            <h2 className="section-title">At a glance</h2>
-            <div className="mt-8 overflow-x-auto rounded-lg border border-border">
-              <table className="w-full min-w-[1000px] text-left text-sm">
-                <thead className="bg-secondary text-xs uppercase tracking-wider text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-3 font-semibold">Tool</th>
-                    <th className="px-4 py-3 font-semibold">What it does</th>
-                    <th className="px-4 py-3 font-semibold">Runs on</th>
-                    <th className="px-4 py-3 font-semibold">Chooses machines?</th>
-                    <th className="px-4 py-3 font-semibold">Workloads</th>
-                    <th className="px-4 py-3 font-semibold">Hosting</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ROWS.map((r) => (
-                    <tr
-                      key={r.name}
-                      className={`border-t border-border align-top ${r.highlight ? "bg-primary/5" : ""}`}
-                    >
-                      <td className="px-4 py-3 font-medium">{r.name}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{r.what}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{r.runsOn}</td>
-                      <td className="px-4 py-3 text-muted-foreground">
-                        <Code text={r.machines} />
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">{r.workloads}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{r.hosting}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="mt-3 text-xs text-muted-foreground">
-              Descriptions of other projects are summaries of their public documentation at the
-              time of writing; check each project for current details.
-            </p>
-          </div>
-        </section>
-
-        <section className="border-b border-border">
-          <div className="mx-auto max-w-6xl px-6 py-16">
-            <h2 className="section-title">Training speed: GPUlayer and PyTorch Lightning</h2>
-            <p className="mt-2 max-w-3xl text-muted-foreground">
-              The same model, data and optimizer, trained with GPUlayer&apos;s Trainer and with
-              Lightning&apos;s Trainer on one NVIDIA Tesla T4. Lower is better.
-            </p>
-            <div className="mt-8 overflow-x-auto rounded-lg border border-border">
-              <table className="w-full min-w-[760px] text-sm">
-                <thead className="bg-secondary text-xs uppercase tracking-wider text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-semibold">Case</th>
-                    <th className="bg-primary/10 px-4 py-3 text-right font-semibold text-primary">
-                      GPUlayer, ms per step
-                    </th>
-                    <th className="px-4 py-3 text-right font-semibold">Lightning, ms per step</th>
-                    <th className="px-4 py-3 text-right font-semibold">Step time ratio</th>
-                    <th className="bg-primary/10 px-4 py-3 text-right font-semibold text-primary">
-                      GPUlayer start-up
-                    </th>
-                    <th className="px-4 py-3 text-right font-semibold">Lightning start-up</th>
-                  </tr>
-                </thead>
-                <tbody className="font-mono text-[13px]">
-                  {PERF_ROWS.map((r) => (
-                    <tr key={r.case} className="border-t border-border">
-                      <td className="px-4 py-3 font-sans">{r.case}</td>
-                      <td className="bg-primary/5 px-4 py-3 text-right">{r.gl.toFixed(2)}</td>
-                      <td className="px-4 py-3 text-right">{r.pl.toFixed(2)}</td>
-                      <td className="px-4 py-3 text-right">
-                        {Math.max(r.pl / r.gl, r.gl / r.pl) < 1.1
-                          ? "about the same"
-                          : r.gl < r.pl
-                            ? `${(r.pl / r.gl).toFixed(2)}x faster`
-                            : `${(r.gl / r.pl).toFixed(2)}x slower`}
-                      </td>
-                      <td className="bg-primary/5 px-4 py-3 text-right">{r.glOver.toFixed(2)} s</td>
-                      <td className="px-4 py-3 text-right">{r.plOver.toFixed(2)} s</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="mt-4 max-w-3xl space-y-2 text-xs text-muted-foreground">
-              <p>
-                Method: AWS g4dn.xlarge (4 vCPU) with one Tesla T4 (driver 595), Ubuntu 22.04, Python 3.12,
-                torch 2.15.0 with CUDA 13.2, Lightning 2.6.6, GPUlayer 0.8.0, 2026-11-01. SGD with momentum and one logged loss per step;
-                Lightning runs without logger, progress bar, model summary or checkpoints, GPUlayer without
-                checkpoints. Each case runs 100 and 600 steps, three times each in fresh processes, one run
-                at a time with nothing else on the GPU; ms per step is the median difference divided by 500
-                steps. Start-up is the import time plus the fixed time inside{" "}
-                <code className="font-mono">fit</code>. For DDP on CPU, GPUlayer gives each process one
-                thread and Lightning leaves PyTorch&apos;s default, which likely explains much of the gap.
-              </p>
-              <p>
-                On 1, 2 and 4 RTX 3070 GPUs of one machine (DDP over NCCL, each trainer&apos;s defaults), GPUlayer was
-                faster in 5 of 6 cases, by 1.26 to 1.60x, and 1.12x slower on the 1-GPU CNN. With one T4 per
-                machine on 2, 4 and 8 machines (DDP over NCCL), GPUlayer was 1.08 to 1.29x faster on an MLP
-                and Lightning 1.01 to 1.09x faster on a CNN.
-              </p>
-              <p>
-                One CNN training job on 2, 4 and 8 AWS machines (4 processes each, gloo, same machines and
-                interleaved runs for both trainers) took 78.0, 47.1 and 32.7 s with GPUlayer and 78.9, 50.2
-                and 39.8 s with Lightning under torchrun: 17.8% faster on 8 machines, from summing gradients
-                inside each machine before crossing the network. GPUlayer starts every node from one{" "}
-                <code className="font-mono">Trainer(num_nodes=N)</code> call. Charts, method and logs:{" "}
-                <Link href="/docs/get-started/performance-and-comparison/" className="underline underline-offset-2">
-                  Performance and comparison
-                </Link>
-                .
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <section className="border-b border-border">
-          <div className="mx-auto max-w-6xl space-y-10 px-6 py-16">
-            {NOTES.map((n) => (
-              <div key={n.name}>
-                <h2 className="text-xl font-semibold tracking-[-0.02em]">GPUlayer and {n.name}</h2>
-                <p className="mt-3 max-w-3xl text-muted-foreground">
-                  <Code text={n.summary} />
-                </p>
-                <dl className="mt-4 grid max-w-3xl gap-3 text-sm sm:grid-cols-2">
-                  <div className="rounded-lg border border-border p-4">
-                    <dt className="font-medium">When to choose it</dt>
-                    <dd className="mt-1 text-muted-foreground">
-                      <Code text={n.choose} />
-                    </dd>
-                  </div>
-                  <div className="rounded-lg border border-border p-4">
-                    <dt className="font-medium">Using both</dt>
-                    <dd className="mt-1 text-muted-foreground">
-                      <Code text={n.together} />
-                    </dd>
-                  </div>
-                </dl>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="border-b border-border">
-          <div className="mx-auto grid max-w-6xl gap-10 px-6 py-16 md:grid-cols-2">
+          <div className="mx-auto grid max-w-6xl gap-12 px-6 py-16 lg:grid-cols-2">
             <div>
-              <h2 className="text-xl font-semibold tracking-[-0.02em]">GPUlayer fits when</h2>
-              <ul className="mt-4 list-disc space-y-2 pl-5 text-sm text-muted-foreground">
-                {FITS.map((f) => (
-                  <li key={f}>
-                    <Code text={f} />
+              <h2 className="section-title">Speed against Lightning</h2>
+              <p className="mt-4 text-muted-foreground">
+                Same model, data and optimizer, each trainer&apos;s defaults (GPUlayer 0.8, Lightning 2.6.6). The
+                GPUlayer Trainer was faster in 13 of 17 GPU cases and every CPU case: 1.08 to 1.38x on a Tesla T4,
+                1.26 to 1.60x on 2 and 4 RTX 3070s, 17.8% on 8 CPU machines. Lightning was faster on a CNN on one GPU
+                of one host (1.12x) and on a CNN across 2 to 8 machines over NCCL (1.01 to 1.09x).
+              </p>
+              <Link href="/docs/get-started/performance-and-comparison/" className="link-arrow mt-6">
+                Charts, method and logs <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+            <div>
+              <h2 className="section-title">Choose something else when</h2>
+              <ul className="mt-4 space-y-3 text-muted-foreground">
+                {ELSEWHERE.map((t) => (
+                  <li key={t} className="flex gap-3">
+                    <ArrowRight className="mt-1 h-4 w-4 shrink-0" />
+                    <span>{t}</span>
                   </li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <h2 className="text-xl font-semibold tracking-[-0.02em]">Where GPUlayer is behind today</h2>
-              <ul className="mt-4 list-disc space-y-2 pl-5 text-sm text-muted-foreground">
-                {BEHIND.map((b) => (
-                  <li key={b}>{b}</li>
                 ))}
               </ul>
             </div>
@@ -559,17 +191,11 @@ export default function ComparePage() {
 
         <section>
           <div className="mx-auto flex max-w-6xl flex-wrap gap-3 px-6 py-16">
-            <Link
-              href="/docs/get-started/quickstart/"
-              className="inline-flex items-center gap-1 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-            >
+            <Link href="/docs/get-started/quickstart/" className="btn-primary">
               Try the quickstart <ArrowRight className="h-4 w-4" />
             </Link>
-            <Link
-              href="/docs/#what-it-does-for-a-training-run"
-              className="inline-flex items-center gap-1 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-secondary"
-            >
-              Why GPUlayer
+            <Link href="/docs/pytorch/from-lightning/" className="btn-secondary">
+              Moving from Lightning
             </Link>
           </div>
         </section>

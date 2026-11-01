@@ -1,8 +1,7 @@
 # Command line
 
-`GPULayerCLI` (also `glt.LightningCLI`) turns a training script into a command line, like
-PyTorch Lightning's `LightningCLI`: the arguments come from the `__init__` signatures of the
-Trainer, your model and your DataModule.
+`GPULayerCLI` (also `glt.LightningCLI`) builds a command line from the `__init__` signatures of
+the Trainer, your model and your DataModule, like Lightning's `LightningCLI`.
 
 ```python
 # train.py
@@ -21,15 +20,11 @@ python train.py fit --config experiment.yaml --trainer.max_epochs 20
 python train.py test --ckpt_path gpulayer_runs/my_project-train/checkpoints/best.ckpt
 ```
 
-- **Subcommands**: `fit`, `validate`, `test`, `predict`; each calls that Trainer method with
-  the model, the DataModule and `--ckpt_path`.
-- **Values** are converted with the parameter's type annotation: numbers, `true`/`false`,
-  `none`/`null`, and lists or dicts as JSON.
-- **Config files** are JSON, or YAML when PyYAML is installed, with the sections `trainer`,
-  `model`, `data`, `seed_everything` and `ckpt_path`. Several `--config` files merge in order;
-  command-line values override them.
-- **Objects** are written as `{"class_path": "module.Class", "init_args": {...}}`, for example
-  callbacks and loggers:
+- Subcommands: `fit`, `validate`, `test`, `predict`.
+- Values follow the type annotation; lists and dicts are JSON.
+- Config files are JSON, or YAML with PyYAML, with sections `trainer`, `model`, `data`,
+  `seed_everything` and `ckpt_path`. Several `--config` files merge in order; flags win.
+- Objects such as callbacks use `class_path` and `init_args`:
 
 ```yaml
 trainer:
@@ -41,10 +36,7 @@ model:
   lr: 0.003
 ```
 
-- `seed_everything` defaults to `true` (a seed is picked and recorded in the configuration);
-  give a number to fix it or `false` to skip seeding.
-- With `run=False` there are no subcommands: the CLI builds `cli.model`, `cli.datamodule` and
-  `cli.trainer`, and the script calls the Trainer itself.
+- `seed_everything` defaults to `true` (a recorded random seed); give a number or `false`.
+- `run=False` skips subcommands and builds `cli.model`, `cli.datamodule` and `cli.trainer`.
 
-It uses only the standard library (Lightning's uses `jsonargparse`), so nested `class_path`
-objects are supported but not Lightning's linking of arguments between sections.
+Unlike Lightning's, it does not use `jsonargparse` and cannot link arguments between sections.

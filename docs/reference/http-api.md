@@ -1,32 +1,31 @@
 # HTTP API
 
-The server speaks JSON over HTTP(S). Every request except `GET /v1/health` needs
-`Authorization: Bearer <token>` and `X-GpuLayer-Protocol: 1`. Errors look like
-`{"error": {"code": "...", "message": "..."}}` with codes `invalid_request` (400),
-`unauthorized` (401), `forbidden` (403), `not_found` (404), `conflict` (409),
-`rate_limited` (429) and `protocol_mismatch` (400).
+JSON over HTTP(S). Every request except `GET /v1/health` needs `Authorization: Bearer <token>`
+and `X-GpuLayer-Protocol: 1`. Errors are `{"error": {"code": "...", "message": "..."}}` with
+codes `invalid_request` (400), `unauthorized` (401), `forbidden` (403), `not_found` (404),
+`conflict` (409), `rate_limited` (429) and `protocol_mismatch` (400).
 
-Client endpoints accept `admin` and `submitter` tokens. Cancelling a job needs an admin token or
-the token that submitted it; revoking a worker needs an admin token. Workers can download only
-artifacts used by their current tasks.
+Client endpoints accept `admin` and `submitter` tokens. Cancelling needs an admin token or the
+submitting token; revoking a worker needs admin. Workers can download only artifacts of their
+current tasks. Models: `src/gpulayer/contracts/models.py`.
 
 ## Dashboard and metrics
 
 | Method and path | Token | Returns |
 |---|---|---|
-| `GET /ui/`, `GET /` | none (the page asks for a token) | the web dashboard |
-| `GET /metrics` | `metrics`, `submitter` or `admin`; no protocol header needed | Prometheus text format |
+| `GET /ui/`, `GET /` | none (the page asks for one) | web dashboard |
+| `GET /metrics` | `metrics`, `submitter` or `admin`; no protocol header | Prometheus text |
 | `GET /v1/whoami` | client | `{principal, role}` |
-| `GET /v1/metrics/history?minutes=` | client | worker resource samples and jobs running/waiting over time (max 24 h) |
+| `GET /v1/metrics/history?minutes=` | client | worker resource samples and running/waiting jobs over time (max 24 h) |
 
 ## Client endpoints (client token)
 
 | Method and path | Body / query | Returns |
 |---|---|---|
 | `POST /v1/jobs` | `JobSpec` | `JobStatus` |
-| `POST /v1/jobs/batch` | `{"jobs": [JobSpec, ...]}` (1 to 1000) | `{"job_ids": [...]}`; all stored in one transaction, or none |
+| `POST /v1/jobs/batch` | `{"jobs": [JobSpec, ...]}` (1 to 1000) | `{"job_ids": [...]}`; one transaction, all or none |
 | `GET /v1/jobs?limit=&state=` | | list of `JobStatus` |
-| `GET /v1/jobs/{id}?wait=` | optional `wait` (seconds, max 30): hold the request until the job is terminal | `JobStatus` |
+| `GET /v1/jobs/{id}?wait=` | `wait` (seconds, max 30): hold until terminal | `JobStatus` |
 | `POST /v1/jobs/{id}/cancel` | | `JobStatus` |
 | `GET /v1/jobs/{id}/result` | | `JobResult` |
 | `GET /v1/jobs/{id}/logs?after=` | | list of `LogLine` |
@@ -39,16 +38,15 @@ artifacts used by their current tasks.
 
 ## Worker endpoints
 
-| Method and path | Token | Purpose |
-|---|---|---|
-| `POST /v1/workers/register` | join token (or single-use instance token) | returns worker id and session token |
-| `POST /v1/worker/heartbeat` | session | `{draining, metrics?}`; renews leases, stores an optional `WorkerMetrics` sample; returns tasks to cancel and revocation |
-| `POST /v1/worker/acquire` | session | `{wait}` (seconds, max 30): long poll; returns the next assignment as soon as one exists, or `null` |
-| `POST /v1/worker/tasks/{id}/start` | session | mark running |
-| `POST /v1/worker/tasks/{id}/rendezvous` | session | node rank 0 publishes `{addr, port}` |
-| `POST /v1/worker/tasks/{id}/logs` | session | `{lines: [[stream, line], ...]}`; an entry may add a third element, the global rank |
-| `POST /v1/worker/tasks/{id}/finish` | session | `TaskOutcome` |
-| `POST /v1/worker/deregister` | session | graceful exit |
+All but `register` use the session token, which can also upload and download artifacts.
 
-Workers can also upload and download artifacts with their session token. The models are
-defined in `src/gpulayer/contracts/models.py`.
+| Method and path | Purpose |
+|---|---|
+| `POST /v1/workers/register` | join token (or single-use instance token); returns worker id and session token |
+| `POST /v1/worker/heartbeat` | `{draining, metrics?}`: renews leases, stores an optional `WorkerMetrics` sample; returns tasks to cancel and revocation |
+| `POST /v1/worker/acquire` | `{wait}` (seconds, max 30): long poll for the next assignment, or `null` |
+| `POST /v1/worker/tasks/{id}/start` | mark running |
+| `POST /v1/worker/tasks/{id}/rendezvous` | node rank 0 publishes `{addr, port}` |
+| `POST /v1/worker/tasks/{id}/logs` | `{lines: [[stream, line], ...]}`; optional third element: global rank |
+| `POST /v1/worker/tasks/{id}/finish` | `TaskOutcome` |
+| `POST /v1/worker/deregister` | graceful exit |

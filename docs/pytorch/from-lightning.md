@@ -1,8 +1,7 @@
 # Moving from PyTorch Lightning
 
-The GPUlayer Trainer uses Lightning's names for the Trainer, the `LightningModule` and
-`LightningDataModule` methods, hooks, callbacks, loggers and profilers
-([ADR-0024](../decisions/ADR-0024-lightning-feature-parity.md)). Most code moves by changing
+The GPUlayer Trainer uses Lightning's names
+([ADR-0024](../decisions/ADR-0024-lightning-feature-parity.md)), so most code moves by changing
 the imports.
 
 ## Side by side
@@ -43,9 +42,8 @@ trainer = glt.Trainer(max_epochs=10, accelerator="cuda", devices=4, num_nodes=2,
 trainer.fit(Model(), datamodule=dm)        # GPUlayer picks two machines and starts 8 processes
 ```
 
-With Lightning, you start the processes on each machine (torchrun, SLURM, or the
-cluster). With GPUlayer, `fit` submits the run to GPUlayer workers, which start them; the
-trained weights come back to the `model` in your process.
+Lightning needs torchrun, SLURM or a cluster to start processes on each machine. GPUlayer's
+`fit` starts them on its workers and returns the trained weights to `model`.
 
 ## Renamed or different
 
@@ -64,17 +62,13 @@ trained weights come back to the `model` in your process.
 
 - DeepSpeed and TPU (XLA) are implemented but not yet run on hardware; see
   [DeepSpeed and TPU](trainer.md#deepspeed-and-tpu).
-- `LightningCLI` is `glt.LightningCLI` ([Command line](cli.md)), without `jsonargparse`'s
-  linking of arguments between sections.
-- Cluster-environment plugins are not needed: GPUlayer starts every process itself.
-- Not available: Habana HPUs (a separate Lightning package) and several TPU cores in one run.
-  Keep Lightning for those and run it with [`launch()`](launch.md), which gives it the same
-  placement: GPUlayer picks the machines and starts torchrun's environment.
+- `glt.LightningCLI` ([Command line](cli.md)) cannot link arguments between sections.
+- Not available: Habana HPUs and multi-core TPU runs. Run Lightning itself for those with
+  [`launch()`](launch.md).
 
 ## Validated on GPUs
 
-`sync_batchnorm`, 16-mixed with manual optimization, `torch.compile` with Inductor and the
-CUDA tables of `PyTorchProfiler` were validated on Tesla T4s (2026-11-01), across up to 8
-machines over NCCL for `sync_batchnorm` and manual optimization. FSDP is experimental: it
-trained over NCCL on 2 and 8 T4 machines, but FSDP's speed and larger models are not measured.
-See [Project status](../project/status.md).
+`sync_batchnorm`, 16-mixed with manual optimization, `torch.compile` with Inductor and
+`PyTorchProfiler`'s CUDA tables were validated on Tesla T4s (2026-11-01), the first two across
+up to 8 machines over NCCL. FSDP is experimental: it trained over NCCL on 2 and 8 T4 machines; its
+speed and larger models are not measured. See [Project status](../project/status.md).

@@ -1,9 +1,7 @@
 # Distributed training
 
-GPUlayer runs distributed PyTorch with DistributedDataParallel. It finds a group of compatible
-workers, assigns ranks, publishes the rendezvous address and starts every process, with the
-same environment torchrun would give it.
-PyTorch does the gradient communication.
+GPUlayer runs DistributedDataParallel: it places a group of compatible workers, assigns ranks
+and starts every process with torchrun's environment. PyTorch does the communication.
 
 ## With the Trainer
 
@@ -15,60 +13,27 @@ trainer = glt.Trainer(max_epochs=10, accelerator="cuda", devices=8, num_nodes=4,
 trainer.fit(model, train_loader, val_loader)
 ```
 
-On each process the Trainer:
+Each process joins the process group (`gloo` for CPU, `nccl` for CUDA), wraps the model in
+`DistributedDataParallel` and gets a `DistributedSampler` shard. Metrics are averaged across
+ranks and rank 0 saves checkpoints. Your `Module` does not change.
 
-1. initialises the process group (`gloo` for CPU, `nccl` for CUDA);
-2. wraps the training step in `DistributedDataParallel`, so gradients are averaged across all
-   processes;
-3. replaces the sampler of your `DataLoader` with a `DistributedSampler`, so each process sees
-   its own shard (shuffled if your loader shuffled, in order otherwise) and reshuffles every
-   epoch;
-4. averages logged metrics across processes;
-5. saves checkpoints from global rank 0 only.
-
-Your `Module` stays the same as for single-device training.
-
-## What happens when you submit
-
-```mermaid
-sequenceDiagram
-    participant You as Your process
-    participant CP as Control plane
-    participant W0 as Worker A (node 0)
-    participant W1 as Worker B (node 1)
-    You->>CP: submit DistributedJob (2 nodes x 2 procs)
-    CP->>CP: pick 2 compatible, free workers together
-    W0->>CP: acquire task (node rank 0)
-    W0->>CP: publish rendezvous host:port
-    W1->>CP: acquire task (node rank 1, gets host:port)
-    par
-        W0->>W0: start ranks 0, 1
-    and
-        W1->>W1: start ranks 2, 3
-    end
-    W0-->>W1: gloo / nccl collectives
-    W0->>CP: logs, outputs, succeeded
-    W1->>CP: logs, succeeded
-    CP-->>You: job succeeded, checkpoint downloaded
-```
-
-Node rank `r` hosts global ranks `r * devices` to `(r + 1) * devices - 1`. If any node fails or
-loses its worker, the whole job fails and the other nodes are stopped; a partly finished group
-is never retried automatically.
+If any node fails, the job fails and the other nodes stop; a partly finished group is never
+retried. Ranks, rendezvous and launch are described in
+[Distributed execution](../architecture/distributed.md).
 
 ## Requirements
 
-- All nodes need the same torch version (the scheduler only groups matching workers) and the
-  requested backend (`gloo` or `nccl`).
-- With more than one node, each worker needs an address the others can reach:
-  `gpulayer worker start --advertise-address 10.0.0.21`. Firewalls must allow node-to-node
-  traffic on the rendezvous port and the ports gloo or NCCL open. Pick the network interface with
-  `GLOO_SOCKET_IFNAME` / `NCCL_SOCKET_IFNAME` through `launch_options={"env": {...}}`.
-- MPS is single-process only. Use CPU or CUDA for distributed training.
+- All nodes need the same torch version and the requested backend.
+- Across machines, start each worker with a reachable address
+  (`gpulayer worker start --advertise-address 10.0.0.21`) and open the rendezvous, gloo and
+  NCCL ports between them. Set `GLOO_SOCKET_IFNAME` / `NCCL_SOCKET_IFNAME` through
+  `launch_options={"env": {...}}`.
+- MPS is single-process only.
 
 ## Your own DDP code
 
-If you already have a DDP script, run it unchanged with [`launch()`](launch.md):
+Run an existing DDP script unchanged with [`launch()`](launch.md), as in
+[`examples/launch_ddp_script/train_ddp.py`](../../examples/launch_ddp_script/train_ddp.py):
 
 ```python
 import gpulayer.pytorch as glt
@@ -76,8 +41,6 @@ glt.launch(nodes=2, devices=4, accelerator="cuda", target="remote")
 
 # your existing script: dist.init_process_group(...), DDP(model), DistributedSampler, ...
 ```
-
-[`examples/launch_ddp_script/train_ddp.py`](../../examples/launch_ddp_script/train_ddp.py) is such a script.
 
 ## What has been tested
 
@@ -87,5 +50,5 @@ glt.launch(nodes=2, devices=4, accelerator="cuda", target="remote")
 | A failing rank fails the job and stops the other node | tested |
 | Nodes on different machines | validated with gloo on up to 16 GCP VMs |
 | NCCL on several GPUs in one machine | validated: all-reduce across 4× RTX 3070 and 2× A100 SXM4 as a GPUlayer job |
-| Trainer DDP on several GPUs | implemented; not run on GPUs yet |
+| Trainer DDP on several GPUs | validated: 1, 2 and 4 RTX 3070s in one machine, and 2 to 8 T4 machines (benchmarked against Lightning) |
 | NCCL across machines | validated on 2, 4 and 8 AWS machines with one Tesla T4 each (DDP, FSDP) |

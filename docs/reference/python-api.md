@@ -8,13 +8,13 @@ import gpulayer as gl
 
 | Name | Description |
 |---|---|
-| `gl.connect(url, token, *, fingerprint=None, ca_file=None) -> Client` | use a GPUlayer server for this process; checks the connection immediately |
-| `gl.default_client() -> Client` | the client set by `connect()`, else one from `$GPULAYER_URL`, else the embedded control plane |
-| `gl.remote(fn=None, **options)` | decorator returning a `RemoteFunction`; see [Python functions](../workloads/functions.md) |
-| `gl.Client(...)` | explicit client, described below |
+| `gl.connect(url, token, *, fingerprint=None, ca_file=None) -> Client` | use a server for this process; checks the connection now |
+| `gl.default_client() -> Client` | the `connect()` client, else one from `$GPULAYER_URL`, else embedded |
+| `gl.remote(fn=None, **options)` | decorator returning a `RemoteFunction` ([Python functions](../workloads/functions.md)) |
+| `gl.Client(...)` | explicit client, below |
 | `gl.command(argv, **kw)`, `gl.function(entrypoint, *args, **kw)`, `gl.distributed(entrypoint, *, source, num_workers, procs_per_worker, **kw)` | build a `JobSpec` |
-| `gl.JobSpec`, `gl.ResourceRequest`, `gl.PlacementPolicy`, `gl.Accelerator`, `gl.ExecutionTarget`, `gl.JobState` | contracts; see [JobSpec](job-spec.md) |
-| `gl.RemoteError` | raised when a remote run does not succeed; `.job` holds the `Job` |
+| `gl.JobSpec`, `gl.ResourceRequest`, `gl.PlacementPolicy`, `gl.Accelerator`, `gl.ExecutionTarget`, `gl.JobState` | contracts ([JobSpec](job-spec.md)) |
+| `gl.RemoteError` | a remote run failed; `.job` holds the `Job` |
 
 ### `Client`
 
@@ -23,18 +23,18 @@ gl.Client(url=None, token=None, *, home=None, ca_file=None, fingerprint=None,
           local_worker=True, worker_python=None)
 ```
 
-Without `url` (and without `$GPULAYER_URL`) the client runs an embedded control plane in
-`$GPULAYER_HOME` and starts in-process workers when jobs need them.
+With no `url` and no `$GPULAYER_URL`, it runs an embedded control plane in `$GPULAYER_HOME`
+and starts in-process workers on demand.
 
 | Method | Description |
 |---|---|
 | `submit(spec) -> Job` | submit a `JobSpec` |
-| `submit_batch(specs) -> list[Job]` | independent jobs, sent 500 per request and scheduled in one pass per request |
+| `submit_batch(specs) -> list[Job]` | independent jobs, 500 per request, one scheduling pass per request |
 | `run(spec, timeout=None) -> JobResult` | submit and wait |
 | `job(job_id) -> Job`, `jobs(limit=50)`, `workers()` | look up |
 | `package(directory) -> ArtifactReference` | upload a source bundle |
 | `upload(path_or_bytes, name="")`, `download(ref) -> bytes` | artifacts |
-| `ensure_local_workers(n)` | embedded mode: run at least `n` in-process workers |
+| `ensure_local_workers(n)` | embedded: at least `n` in-process workers |
 | `close()` | stop in-process workers (also on `with` exit) |
 
 ### `Job`
@@ -42,7 +42,7 @@ Without `url` (and without `$GPULAYER_URL`) the client runs an embedded control 
 | Method | Description |
 |---|---|
 | `status() -> JobStatus` | state, placement decision, tasks |
-| `wait(timeout=None) -> JobStatus` | block until the job is finished |
+| `wait(timeout=None) -> JobStatus` | block until finished |
 | `result() -> JobResult` | exit code, return value, outputs, costs |
 | `cancel()` | request cancellation (idempotent) |
 | `logs(after_seq=0)`, `logs_text()`, `follow_logs()` | output lines |
@@ -60,10 +60,10 @@ import gpulayer.pytorch as glt
 | `glt.DataModule` (`glt.LightningDataModule`) | `prepare_data`, `setup`, the four loaders | [Trainer and Module](../pytorch/trainer.md#datamodule) |
 | `glt.Trainer(...)` | `fit(model, train, val, datamodule=, ckpt_path=)`, `validate`, `test`, `predict`, `save_checkpoint` | [Trainer and Module](../pytorch/trainer.md) |
 | Callbacks, loggers, profilers, `glt.Tuner` | `ModelCheckpoint`, `EarlyStopping`, `EMAWeightAveraging`, `CSVLogger`, `SimpleProfiler`, ... | [Callbacks, loggers and profilers](../pytorch/callbacks.md) |
-| `glt.launch(...) -> LaunchResult or None` | run this script on GPUlayer workers | [launch()](../pytorch/launch.md) |
+| `glt.launch(...) -> LaunchResult or None` | run this script on workers | [launch()](../pytorch/launch.md) |
 | `glt.Runtime(accelerator, precision)` | device, DDP, sharding and precision helpers | [Runtime helpers](../pytorch/runtime.md) |
-| `glt.is_launcher_process()`, `glt.in_gpulayer_job()` | where the code is running | |
+| `glt.is_launcher_process()`, `glt.in_gpulayer_job()` | where the code runs | |
 | `glt.resolve_accelerator(name)`, `glt.seed_everything(seed)` | utilities | |
 
-Every class, method, property and hook with its signature: [PyTorch API reference](../pytorch/api.md).
-`gpulayer.pytorch` imports torch; `import gpulayer` does not.
+Full signatures: [PyTorch API reference](../pytorch/api.md). `gpulayer.pytorch` imports torch;
+`import gpulayer` does not.

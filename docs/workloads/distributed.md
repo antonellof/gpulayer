@@ -1,14 +1,13 @@
 # Distributed jobs
 
 A distributed job is one workload spread over several workers and processes. GPUlayer places the
-whole group at once, assigns ranks, publishes a rendezvous address, starts every node, collects
+group at once, assigns ranks, publishes a rendezvous address, starts every node, collects
 per-node logs and outputs, and stops the group if any node fails.
 
-Every process gets the standard torchrun variables `RANK`, `WORLD_SIZE`, `LOCAL_RANK`,
-`MASTER_ADDR` and `MASTER_PORT`. GPUlayer starts the processes itself by default
-(`launcher="direct"`, about 1 s faster per job); `launcher="torchrun"` (or `--launcher
-torchrun` on the CLI) starts them through torchrun instead. Any code that can use them works,
-including non-training workloads that only need a process group.
+Every process gets `RANK`, `WORLD_SIZE`, `LOCAL_RANK`, `MASTER_ADDR` and `MASTER_PORT`. By
+default GPUlayer starts the processes itself (`launcher="direct"`, about 1 s faster per job);
+`launcher="torchrun"` (CLI: `--launcher torchrun`) uses torchrun. Non-training code that only
+needs a process group works too.
 
 ## Three ways to start one
 
@@ -34,14 +33,13 @@ data sharding and checkpoints.
 
 ## Semantics
 
-- The group is placed all at once or not at all; a partly free cluster does not start a job.
-- All nodes must share the same torch version and the requested backend (`gloo` or `nccl`).
-- Across machines, workers need an address their peers can reach (`--advertise-address`) and
-  open ports between them.
-- The group is kept as close together as possible: one network group, else one zone, else
-  one region. `--group-locality zone` (or `network_group`, `region`) requires it; see
+- All or nothing: a partly free cluster does not start the job.
+- All nodes need the same torch version and the requested backend (`gloo` or `nccl`).
+- Across machines, workers need a peer-reachable address (`--advertise-address`) and open ports.
+- Placement prefers one network group, else one zone, else one region. `--group-locality zone`
+  (or `network_group`, `region`) requires it; see
   [Scheduling](../architecture/scheduling.md#distributed-groups-and-network-locality).
-- One failed or lost node fails the job; the others are stopped. Distributed jobs are never
-  retried automatically.
+- One failed or lost node fails the job and stops the others. Distributed jobs are never retried
+  automatically.
 
 Internals: [Distributed execution](../architecture/distributed.md).

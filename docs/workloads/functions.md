@@ -1,8 +1,7 @@
 # Python functions and sweeps
 
 `@gl.remote` turns a top-level Python function into a job that runs on any compatible worker,
-or many times in parallel. The function can use any library installed on the worker (PyTorch, NumPy, MLX,
-OpenCV or your own code.
+once or many times in parallel. It can use any library installed on the worker.
 
 ```python
 import os
@@ -29,26 +28,27 @@ if __name__ == "__main__":
 | Call | What it does |
 |---|---|
 | `train(*args)` | calls the function in your process, no GPUlayer involved |
-| `train.run(*args, stream_logs=True)` | submits a job, streams its logs, returns the return value, raises `gl.RemoteError` on failure |
-| `train.submit(*args)` | submits and returns a `Job` handle without waiting |
-| `train.map(iterable, parallelism=None)` | one job per argument (or argument tuple); results in input order |
+| `train.run(*args, stream_logs=True)` | submits, streams logs, returns the result, raises `gl.RemoteError` on failure |
+| `train.submit(*args)` | submits and returns a `Job` handle |
+| `train.map(iterable, parallelism=None)` | one job per argument (or tuple); results in input order |
 | `train.options(**overrides)` | a copy with other options |
 | `train.spec(*args)` | the `JobSpec` that would be submitted |
 
-With the embedded control plane, `map` starts up to four local workers so the jobs run in
-parallel. With a remote control plane, the jobs spread over all compatible workers.
+With the embedded control plane, `map` starts up to four local workers. With a remote control
+plane, jobs spread over all compatible workers.
 
 ## Options
 
 `@gl.remote(...)` and `.options(...)` accept: `accelerator`, `gpus`, `gpu_memory_gb`,
 `memory_gb`, `cpu_cores`, `frameworks`, `python`, `target`, `fallback_targets`,
-`worker_labels`, `on_unschedulable`, `group_locality`, `provisioning`, `env`, `secrets`, `requirements`, `requirements_file`, `timeout_seconds`,
-`retry`, `name`, `client`, `source`, `nodes`, `procs_per_node` and `comm_backend`.
+`worker_labels`, `on_unschedulable`, `group_locality`, `provisioning`, `env`, `secrets`,
+`requirements`, `requirements_file`, `timeout_seconds`, `retry`, `name`, `client`, `source`,
+`nodes`, `procs_per_node` and `comm_backend`.
 
 ## Distributed functions
 
-With `nodes` or `procs_per_node` above 1, the function becomes a distributed job. It is
-called on every process, and global rank 0's return value is the result:
+With `nodes` or `procs_per_node` above 1, the function runs on every process and global rank 0's
+return value is the result:
 
 ```python
 @gl.remote(nodes=2, procs_per_node=2)
@@ -64,15 +64,11 @@ all_reduce_check.run()   # {'world': 4, 'sum': 10.0}
 
 ## Rules
 
-- The function must be defined at module top level, in a file. GPUlayer uploads the file's
-  directory and calls the function by name on the worker; it does not pickle closures.
-- Arguments and return values must be JSON: numbers, strings, booleans, lists, dicts, `None`.
-  Save tensors and models to `$GPULAYER_OUTPUT_DIR` instead of returning them.
-- Imports used only by the function can live inside it, which keeps the submitting process
-  light.
+- Define the function at module top level, in a file. GPUlayer uploads the file's directory and
+  calls the function by name; it does not pickle closures.
+- Arguments and return values must be JSON. Save tensors and models to `$GPULAYER_OUTPUT_DIR`.
+- Imports inside the function keep the submitting process light.
 
-Examples:
-
-- [`examples/numpy_batch/estimate.py`](../../examples/numpy_batch/estimate.py): eight NumPy jobs with `.map()`
-- [`examples/mlx_metal/matmul.py`](../../examples/mlx_metal/matmul.py): MLX on the Apple GPU
-- [`examples/remote_sweep/sweep.py`](../../examples/remote_sweep/sweep.py): a PyTorch learning-rate sweep
+Examples: [`numpy_batch/estimate.py`](../../examples/numpy_batch/estimate.py) (eight NumPy jobs
+with `.map()`), [`mlx_metal/matmul.py`](../../examples/mlx_metal/matmul.py) (MLX on the Apple
+GPU), [`remote_sweep/sweep.py`](../../examples/remote_sweep/sweep.py) (PyTorch learning-rate sweep).

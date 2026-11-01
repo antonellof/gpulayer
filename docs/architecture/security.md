@@ -1,8 +1,8 @@
 # Security and trust model
 
-GPUlayer currently targets a single user or a team whose members trust each other. Running
-untrusted code for the public or for multiple tenants is out of scope until a dedicated threat
-model and isolation review exist (ADR-0009).
+GPUlayer targets a single user or a team whose members trust each other. Public or multi-tenant
+execution of untrusted code is out of scope until a dedicated threat model and isolation review
+exist (ADR-0009).
 
 ## Trust boundaries
 
@@ -16,31 +16,29 @@ model and isolation review exist (ADR-0009).
 | Workload → host | OS process group under the worker's user; this is not a sandbox |
 | Embedded mode | anyone who can write `$GPULAYER_HOME` (created 0700) controls it |
 
-Tokens are generated with `secrets.token_urlsafe(32)`, printed once by `server init`, and stored
-only as SHA-256. Revoking a worker (`gpulayer worker revoke`) invalidates its session and loses
-its active tasks.
+Tokens come from `secrets.token_urlsafe(32)`, are printed once by `server init` and stored only
+as SHA-256. `gpulayer worker revoke` invalidates a worker's session and loses its active tasks.
 
 ## Secrets
 
 - The worker resolves `SecretRef(name, source="env", key)` from its own environment. The value
-  never enters the job record or the database and is never sent over the network.
+  never enters the job record or database and is never sent over the network.
 - Secret values are redacted (`***`) from streamed logs and function error messages.
-- Workloads receive an allow-listed environment (`PATH`, `HOME`, `USER`, `LANG`, `LC_ALL`,
-  `TMPDIR`, `TERM`, the library and CUDA paths `LD_LIBRARY_PATH`, `LIBRARY_PATH`, `CUDA_HOME`,
-  `CUDA_PATH`, `NVIDIA_VISIBLE_DEVICES`, `NVIDIA_DRIVER_CAPABILITIES`, and the certificate
-  paths `SSL_CERT_FILE`, `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`) plus the job's `env` and
-  `secrets`. They do not inherit the worker's credentials. Proxy and package-index URLs are not
-  passed, because they can embed credentials.
-- `env` values are stored and transmitted in the job spec, so they are not secret.
+- Workloads get an allow-listed environment (`PATH`, `HOME`, `USER`, `LANG`, `LC_ALL`,
+  `TMPDIR`, `TERM`, `LD_LIBRARY_PATH`, `LIBRARY_PATH`, `CUDA_HOME`, `CUDA_PATH`,
+  `NVIDIA_VISIBLE_DEVICES`, `NVIDIA_DRIVER_CAPABILITIES`, `SSL_CERT_FILE`, `SSL_CERT_DIR`,
+  `REQUESTS_CA_BUNDLE`) plus the job's `env` and `secrets`, not the worker's credentials. Proxy
+  and package-index URLs are not passed, because they can embed credentials.
+- `env` values are stored and sent in the job spec, so they are not secret.
 
 ## Validation
 
 - Pydantic models reject unknown fields (`extra="forbid"`), reserved environment names and
   unsafe input or entrypoint paths.
-- Bundle extraction refuses absolute paths, `..` and symlinks, and every artifact is verified
+- Bundle extraction refuses absolute paths, `..` and symlinks; every artifact is verified
   against its SHA-256.
 - The API limits request sizes and requires the protocol-version header.
-- No telemetry. Logs from the HTTP server never include headers or tokens.
+- No telemetry. HTTP server logs never include headers or tokens.
 
 ## Tokens and roles
 
@@ -51,8 +49,6 @@ its active tasks.
 | `join` | register workers, nothing else |
 | `metrics` | read `GET /metrics`, nothing else (for Prometheus) |
 
-Tokens are named, can expire, and can be revoked:
-
 ```bash
 gpulayer token create alice --role submitter
 gpulayer token create ci-runner --role join --ttl 12h
@@ -60,12 +56,12 @@ gpulayer token list
 gpulayer token revoke alice
 ```
 
-These commands edit `$GPULAYER_HOME/server-credentials.json` on the server machine (hashes
-only). A running server picks up changes on its next request. After 20 failed authentications
-in a minute, an address gets HTTP 429 for the rest of that minute.
+These edit `$GPULAYER_HOME/server-credentials.json` on the server (hashes only); a running
+server picks up changes on its next request. After 20 failed authentications in a minute, an
+address gets HTTP 429 for the rest of that minute.
 
-Workers can only download artifacts that a task currently assigned to them uses (its source
-bundle and inputs). A revoked worker is rejected on its next heartbeat and its agent stops.
+Workers can download only artifacts used by a task currently assigned to them (source bundle and
+inputs). A revoked worker is rejected on its next heartbeat and its agent stops.
 
 ## Known gaps (tracked in the implementation plan)
 
@@ -76,13 +72,11 @@ bundle and inputs). A revoked worker is rejected on its next heartbeat and its a
 
 ## Reporting vulnerabilities
 
-Until a security policy is published, please report privately to the maintainers rather than
-opening a public issue.
+Until a security policy is published, report privately to the maintainers, not in a public issue.
 
 ## AI agents
 
-Agents use GPUlayer through `gpulayer mcp`, the CLI or the HTTP API, with the permissions of
-the token they hold (or of the local user in embedded mode). Give them `submitter` tokens with
-an expiry, or `gpulayer mcp --read-only` for monitoring; see
+Agents use `gpulayer mcp`, the CLI or the HTTP API with the permissions of their token (or the
+local user in embedded mode). Give them expiring `submitter` tokens, or
+`gpulayer mcp --read-only` for monitoring; see
 [AI and coding agents](../guides/ai-agents.md#security).
-

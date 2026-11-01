@@ -1,7 +1,6 @@
 # Run a server (gpulayer up)
 
-`gpulayer up` turns any machine into a GPUlayer server in one command. Other machines join it
-with `gpulayer join`, and your code connects with `gl.connect` or two environment variables.
+`gpulayer up` turns a machine into a GPUlayer server. Other machines join with `gpulayer join`.
 
 ```mermaid
 flowchart LR
@@ -16,8 +15,6 @@ flowchart LR
 ```
 
 ## 1. Start the server
-
-On the machine that will coordinate (it can also have a GPU):
 
 ```bash
 gpulayer up
@@ -38,37 +35,24 @@ Or from a shell:
   export GPULAYER_URL=https://192.168.1.56:8470 GPULAYER_TOKEN=glc_... GPULAYER_FINGERPRINT=sha256:b2dc...
 ```
 
-What `up` does:
+`up` listens on all interfaces, port 8470, creates a self-signed certificate that clients pin by
+fingerprint, stores a client and a join token in `$GPULAYER_HOME/up-tokens.json` (mode 0600,
+reused on restart), and registers this machine as a worker (`--no-worker` to skip).
 
-- starts the control plane on all interfaces, port 8470;
-- creates a self-signed TLS certificate the first time and prints its fingerprint. Clients
-  and workers pin that fingerprint, so there is no certificate file to copy and a
-  man-in-the-middle cannot pose as the server;
-- creates a client token and a join token, stored in `$GPULAYER_HOME/up-tokens.json`
-  (mode 0600), and reuses them on restart;
-- registers the machine itself as a worker (`--no-worker` to turn that off).
-
-Useful flags: `--port`, `--advertise-address` (the address printed for others, when
-auto-detection picks the wrong interface), `--python` (interpreter for jobs on this machine),
-`--label pool=a100`, `--tls-cert/--tls-key` (your own certificate), `--insecure-http`
-(plain HTTP, trusted networks only).
+Flags: `--port`, `--advertise-address` (if the printed address is wrong), `--python`,
+`--label pool=a100`, `--tls-cert/--tls-key`, `--insecure-http` (trusted networks only).
 
 ## 2. Add machines
 
-Paste the `join` line on each machine that should run jobs:
+Run the printed `join` line on each machine:
 
 ```bash
 gpulayer join https://192.168.1.56:8470 --token glj_... --fingerprint sha256:b2dc...
 ```
 
-The machine reports its hardware (GPUs, memory, torch version, distributed backends) and starts
-taking jobs that fit. Stop it with Ctrl+C; its running jobs are marked lost and handled by
-their retry policy.
-
-**Cloud VMs** work the same way: start a VM with a GPU image, install GPUlayer and PyTorch,
-and run the `join` line. The VM must reach the server, so run `gpulayer up` somewhere both can
-reach (a cloud VM with a public address, or a VPN). Automatic provisioning, where GPUlayer
-creates the VMs itself, is not available yet; see [Cloud and providers](cloud-providers.md).
+The machine reports its hardware and takes jobs that fit. On Ctrl+C its running jobs are marked
+lost and follow their retry policy. A cloud VM joins the same way if it can reach the server.
+To have GPUlayer create VMs, see [Cloud and providers](cloud-providers.md).
 
 ## 3. Use it
 
@@ -82,9 +66,8 @@ trainer = glt.Trainer(max_epochs=10, accelerator="cuda", devices=2)
 trainer.fit(model, train_loader, val_loader)       # runs on a worker with 2 GPUs
 ```
 
-Or set the three environment variables and run scripts unchanged; `Trainer`, `launch()`,
-`@gl.remote` and the CLI all pick them up. When connected to a server, jobs go to its workers
-by default (`target="remote"`).
+Or set the environment variables and run scripts unchanged. `Trainer`, `launch()`, `@gl.remote`
+and the CLI then send jobs to the server's workers (`target="remote"`).
 
 ```bash
 export GPULAYER_URL=... GPULAYER_TOKEN=... GPULAYER_FINGERPRINT=...
@@ -95,24 +78,21 @@ gpulayer job list
 
 ## Multi-node training across machines
 
-For `num_nodes > 1`, the nodes connect to each other directly for the collective operations.
-Each worker must be reachable by the others at its advertised address
-(`gpulayer join ... --advertise-address 10.0.0.21`), and firewalls must allow traffic between
-workers. See [Distributed training](../pytorch/distributed.md).
+With `num_nodes > 1`, workers connect to each other directly at their advertised addresses
+(`gpulayer join ... --advertise-address 10.0.0.21`); firewalls must allow it. See
+[Distributed training](../pytorch/distributed.md).
 
 ## Security notes
 
-- The token printed by `up` is an admin token. Give each person their own submitter token
-  instead: `gpulayer token create alice --role submitter` on the server machine. Submitters can
-  cancel only their own jobs and cannot revoke workers.
-- For machines that join later, a short-lived join token limits exposure:
-  `gpulayer token create vm-batch --role join --ttl 2h`. Revoke any token with
-  `gpulayer token revoke <name>`.
-- Workloads run as the user that started `gpulayer join`. Run workers under a dedicated user.
-- See [Security and trust](../architecture/security.md) for the full model.
+- The token printed by `up` is an admin token. Give people submitter tokens:
+  `gpulayer token create alice --role submitter`.
+- Use short-lived join tokens for new machines (`gpulayer token create vm-batch --role join --ttl 2h`)
+  and revoke with `gpulayer token revoke <name>`.
+- Jobs run as the user that started `gpulayer join`; use a dedicated user.
+
+See [Security and trust](../architecture/security.md).
 
 ## Lower-level alternative
 
-`gpulayer server init` + `gpulayer server start` + `gpulayer worker start --url ...` give the
-same result with more control (your own certificates, separate state directories). See
-[Remote workers](remote-workers.md).
+`gpulayer server init`, `server start` and `worker start --url ...` give more control (your own
+certificates, separate state directories). See [Remote workers](remote-workers.md).

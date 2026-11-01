@@ -1,30 +1,23 @@
 # Quickstart
 
-This walkthrough takes about ten minutes. You train one PyTorch model in several places: your
-current process, two processes with DDP, two nodes, a GPU through a job, a sweep, and a
-server that other machines join. Every
-command was run on an Apple Silicon Mac; the CPU steps work on any machine.
+Train one PyTorch model in your process, with DDP, on two nodes, on a GPU, as a sweep, and on a
+server other machines join. About ten minutes; every command was run on an Apple Silicon Mac,
+and the CPU steps work on any machine.
 
 ## 1. Install
 
-Install from PyPI with the `examples` extra (PyTorch and NumPy). The
-examples themselves live in the repository, so clone it too:
-
 ```bash
-pip install 'gpulayer[examples]'
+pip install 'gpulayer[examples]'          # GPUlayer plus PyTorch and NumPy for the examples
 git clone https://github.com/antonellof/gpulayer.git && cd gpulayer
 gpulayer resources detect
 ```
 
-Use a virtual environment if you prefer (`uv venv && source .venv/bin/activate`, then
-`uv pip install 'gpulayer[examples]'`). To use GPUlayer without the examples,
-`pip install gpulayer` is enough; see [Installation](installation.md) for the install script,
-Docker and installing from source.
+The install script, Docker and source installs are in [Installation](installation.md).
 
-## 2. Look at the training file
+## 2. The training file
 
 [`examples/trainer_regression/train.py`](../../examples/trainer_regression/train.py) is a small
-regression model written against `gpulayer.pytorch`:
+regression model:
 
 ```python
 import gpulayer.pytorch as glt
@@ -56,7 +49,7 @@ trainer = glt.Trainer(max_epochs=args.epochs, accelerator=args.accelerator,
 trainer.fit(model, train_loader, val_loader)
 ```
 
-The command-line flags only change the `Trainer` arguments.
+The command-line flags below only change the `Trainer` arguments.
 
 ## 3. Train in this process
 
@@ -69,15 +62,13 @@ python examples/trainer_regression/train.py
 epoch 0 done in 0.21s: train_loss=74.4570 val_loss=2.3970
 ...
 epoch 4 done in 0.057s: train_loss=0.1070 val_loss=0.0798
-final metrics: {'train_loss': 0.107, 'val_loss': 0.0798, 'epoch': 4, 'epoch_seconds': 0.057}
 checkpoint: gpulayer_runs/trainer_regression-train/checkpoints/last.ckpt
 ```
 
-`accelerator="auto"` picked MPS on a Mac. It picks CUDA on an NVIDIA machine and CPU otherwise.
-No job was submitted: with one device and no target, the Trainer runs in your process like any
-training loop.
+`accelerator="auto"` picked MPS (CUDA on an NVIDIA machine, else CPU). With one device and no
+target, no job is submitted.
 
-## 4. Same file, two processes with DDP
+## 4. Two processes with DDP
 
 ```bash
 python examples/trainer_regression/train.py --accelerator cpu --devices 2
@@ -85,16 +76,13 @@ python examples/trainer_regression/train.py --accelerator cpu --devices 2
 
 ```text
 [gpulayer] job-5cc477d4ffad: train.py on 1 node(s) x 2 cpu process(es), target local
-epoch 0 done in 0.05s: train_loss=... val_loss=...
 ...
 [gpulayer] job-5cc477d4ffad succeeded; 2 output file(s) in gpulayer_runs/job-5cc477d4ffad
-final metrics: {'train_loss': 0.5561, 'val_loss': 0.4698, 'epoch': 4, 'epoch_seconds': 0.047}
 checkpoint: gpulayer_runs/job-5cc477d4ffad/node0/checkpoints/last.ckpt
 ```
 
-This time the Trainer submitted a job. A local worker ran the script as two
-processes with the torchrun environment, the Trainer wrapped the model in DDP and sharded the data, and the checkpoint came
-back to `gpulayer_runs/`. Your local `model` object now holds the trained weights.
+Now the Trainer submitted a job: a local worker ran two processes with torchrun's environment,
+the model trained under DDP on sharded data, and the checkpoint and trained weights came back.
 
 ## 5. Two nodes
 
@@ -102,19 +90,17 @@ back to `gpulayer_runs/`. Your local `model` object now holds the trained weight
 python examples/trainer_regression/train.py --accelerator cpu --nodes 2 --devices 2
 ```
 
-GPUlayer starts two local workers, places one node on each, publishes a rendezvous address
-from node 0, and starts two processes on each. World size is 4. On real hardware the workers would
-be different machines; see [Remote workers](../guides/remote-workers.md).
+Two local workers each run one node of two processes (world size 4). On real hardware the
+workers are different machines ([Remote workers](../guides/remote-workers.md)).
 
-## 6. Use the GPU through a job
+## 6. A GPU through a job
 
 ```bash
 python examples/trainer_regression/train.py --accelerator mps --target local     # Apple Silicon
 python examples/trainer_regression/train.py --accelerator cuda --target local    # NVIDIA
 ```
 
-Ask for hardware that no worker has and the job is rejected before it starts, with a reason per
-worker:
+Hardware no worker has is rejected before the job starts, with a reason per worker:
 
 ```text
 [gpulayer] job-e8061b7e6ccc failed: unschedulable: no eligible worker
@@ -122,21 +108,19 @@ worker:
    worker has 0)
 ```
 
-## 7. A PyTorch sweep
+## 7. A sweep
 
-[`examples/remote_sweep/sweep.py`](../../examples/remote_sweep/sweep.py) decorates a training
-function with `@gl.remote` and runs four learning rates as four jobs:
+[`examples/remote_sweep/sweep.py`](../../examples/remote_sweep/sweep.py) runs a `@gl.remote`
+training function for four learning rates as four jobs:
 
 ```bash
 python examples/remote_sweep/sweep.py --accelerator mps
 ```
 
 ```text
-plain local call: {'lr': 0.1, 'loss': 0.06246, 'device': 'cpu'}
 {'lr': 0.3, 'loss': 12.91103, 'device': 'mps'}
 {'lr': 0.1, 'loss': 0.00383, 'device': 'mps'}
-{'lr': 0.03, 'loss': 0.02718, 'device': 'mps'}
-{'lr': 0.01, 'loss': 0.06529, 'device': 'mps'}
+...
 best: {'lr': 0.1, 'loss': 0.00383, 'device': 'mps'}
 ```
 
@@ -144,29 +128,18 @@ best: {'lr': 0.1, 'loss': 0.00383, 'device': 'mps'}
 
 ```bash
 gpulayer job list
-gpulayer job status <job-id>     # state, why it was placed where it was, per-node tasks
+gpulayer job status <job-id>     # state, why it was placed there, per-node tasks
 gpulayer job logs <job-id>
-gpulayer job events <job-id>
-gpulayer worker status
+gpulayer worker status           # --all includes the finished in-process workers
 ```
 
-If a job is rejected with `framework 'torch' not installed`, the Python
-that runs the job does not have that package. For local jobs that is the Python running your
-script, so install it there (`pip install 'gpulayer[examples]'` covers every example), then
-run the command again.
+`framework 'torch' not installed` means the Python running the job lacks the package; for
+local jobs that is your script's Python.
 
-`gpulayer worker status` lists workers that are online. Each script run starts in-process
-workers that go offline when it ends; `--all` shows those too, and `gpulayer gc --older-than 1d`
-removes old ones.
+## 9. A server and a second machine
 
-## 9. A server, a second machine and a client
-
-So far every job ran on workers inside your script. `gpulayer up` starts a server that keeps
-running: other machines join it as workers, and your laptop sends jobs to it. You can try all
-of it on one machine by running each step in its own terminal; the joined worker then counts as
-a second node.
-
-Start the server. It also runs jobs on its own hardware:
+`gpulayer up` starts a server that keeps running; other machines join it and your laptop sends
+it jobs. Each step can run in its own terminal on one machine.
 
 ```bash
 gpulayer up
@@ -174,39 +147,14 @@ gpulayer up
 
 ```text
 GPUlayer is up at https://192.168.1.56:8470  (TLS, self-signed certificate pinned by fingerprint)
-Worker on this machine: my-mac (mps, 10 CPU cores)
-
 Add a machine (GPU server, workstation, cloud VM) by running on it:
   gpulayer join https://192.168.1.56:8470 --token glj_... --fingerprint sha256:...
-...
 Or from a shell:
   export GPULAYER_URL=https://192.168.1.56:8470 GPULAYER_TOKEN=glc_... GPULAYER_FINGERPRINT=sha256:...
 ```
 
-Paste the join line on a second machine (a GPU box or a cloud VM), or in a second terminal:
-
-```bash
-gpulayer join https://192.168.1.56:8470 --token glj_... --fingerprint sha256:... --name gpu-box
-```
-
-```text
-worker wkr-3d3577f2b58c registered (existing; mps:Apple arm64 GPU (Metal))
-```
-
-On your laptop, or in a third terminal, paste the export line. The CLI, the SDK and the
-Trainer all read it:
-
-```bash
-export GPULAYER_URL=https://192.168.1.56:8470 GPULAYER_TOKEN=glc_... GPULAYER_FINGERPRINT=sha256:...
-gpulayer worker status
-```
-
-```text
-wkr-ed1b305e5b95   my-mac       idle   remote mps   tasks=0
-wkr-3d3577f2b58c   gpu-box      idle   remote mps   tasks=0
-```
-
-Run the same training file. With two nodes, each worker runs one:
+Run the join line on a second machine, and the export line where you submit from. Then the same
+file trains on both:
 
 ```bash
 python examples/trainer_regression/train.py --accelerator cpu --nodes 2
@@ -214,29 +162,14 @@ python examples/trainer_regression/train.py --accelerator cpu --nodes 2
 
 ```text
 [gpulayer] job-77b0944e7dba: train.py on 2 node(s) x 1 cpu process(es), target remote
-[rank0] [gpulayer] training on cpu, rank 0/2, precision 32-true, 5 epoch(s)
 ...
-[rank0] epoch 4 done in 0.047s: train_loss=0.5561 val_loss=0.4698
 [gpulayer] job-77b0944e7dba succeeded; 3 output file(s) in gpulayer_runs/job-77b0944e7dba
-checkpoint: gpulayer_runs/job-77b0944e7dba/node0/checkpoints/last.ckpt
 ```
 
-`gpulayer job status` shows where each node ran:
-
-```text
-scheduling: placed on worker group ['wkr-3d3577f2b58c', 'wkr-ed1b305e5b95'] (target remote, policy spread)
-task      task-ef750caafbd6 attempt=1 node=0 worker=wkr-3d3577f2b58c succeeded exit=0
-task      task-a54604d48aa6 attempt=1 node=1 worker=wkr-ed1b305e5b95 succeeded exit=0
-```
-
-The nodes reach each other directly for the PyTorch rendezvous, so every worker must be able to
-connect to the others' addresses (here 192.168.1.56). Stop the worker and the server with
-Ctrl+C. More in [Run a server](../guides/self-hosting.md) and
-[Remote workers](../guides/remote-workers.md).
+The nodes connect to each other for the PyTorch rendezvous, so each worker must reach the
+others' addresses. More in [Run a server](../guides/self-hosting.md).
 
 ## 10. Not only PyTorch
-
-The same engine runs any command or Python function as a job:
 
 ```bash
 gpulayer submit --source examples/shell_job \
@@ -248,7 +181,6 @@ See [Commands and scripts](../workloads/commands.md) and [Python functions](../w
 
 ## Next
 
-- [Trainer and Module](../pytorch/trainer.md) for the full training API
-- [Run any script with launch()](../pytorch/launch.md) if you already have a training script
-- [Performance and comparison](performance-and-comparison.md) for measured results
-- [Core concepts](concepts.md) for how placement works
+- [Trainer and Module](../pytorch/trainer.md)
+- [Run an existing DDP script with launch()](../pytorch/launch.md)
+- [Performance and comparison](performance-and-comparison.md)

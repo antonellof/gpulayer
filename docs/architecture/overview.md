@@ -1,8 +1,8 @@
 # Architecture overview
 
-GPUlayer is a modular monolith. The components below live in one Python package and can run
-in one process (embedded mode) or as a served control plane with remote workers.
-See [ADR-0001](../decisions/ADR-0001-control-plane-and-deployment-model.md).
+GPUlayer is a modular monolith: one Python package that runs in one process (embedded mode) or
+as a served control plane with remote workers. See
+[ADR-0001](../decisions/ADR-0001-control-plane-and-deployment-model.md).
 
 ```
 src/gpulayer/
@@ -28,68 +28,40 @@ src/gpulayer/
 └── cli/main.py              `gpulayer` CLI
 ```
 
-## Components
-
-```mermaid
-flowchart TB
-    subgraph Client["Your process"]
-        T["Trainer / launch() / @gl.remote"] --> SDK["SDK Client"]
-        CLI["gpulayer CLI"] --> SDK
-    end
-    SDK -- "in-process (embedded)<br/>or HTTPS (server)" --> API
-    subgraph CP["Control plane"]
-        API["API"] --> SVC["Job lifecycle<br/>leases, coordination"]
-        SVC --> SCH["Scheduler<br/>(pure function)"]
-        SVC --> PROV["Provisioning<br/>(provider adapters)"]
-        SVC --> DB[("SQLite metadata")]
-        SVC --> ART[("Artifact store<br/>sha256-addressed")]
-    end
-    subgraph W["Worker (any machine)"]
-        AG["Worker agent<br/>heartbeat, acquire, report"] --> RUN["Process group<br/>command / function / ranks"]
-    end
-    AG -- "poll over HTTPS<br/>or in-process" --> API
-```
-
-Workers always initiate connections, so they can sit behind NAT. The scheduler has no I/O,
-which keeps placement deterministic and testable.
+The Trainer, `launch()`, `@gl.remote` and the CLI all go through the SDK `Client`, which talks
+to the control plane in-process (embedded) or over HTTPS (server). Workers poll the control
+plane, so they can sit behind NAT. The scheduler is a pure function with no I/O, which keeps
+placement deterministic and testable.
 
 ## Data model
 
-A job is one logical submission (`JobSpec`). Its states are
-`queued → [provisioning] → scheduled → running → succeeded | failed | cancelled | timed_out`.
-Validation happens synchronously at submission, and a retry moves the job back to `queued`.
-The control plane rejects any transition not listed in `JOB_TRANSITIONS`
-(`contracts/models.py`).
-
-A task is one unit of work for one worker. An independent job has one task per attempt. A
-distributed job has one task per node, and all of them are created in the same transaction when
-the group is placed. Task states are `assigned → running → succeeded | failed | cancelled |
-timed_out | lost`.
-
-A worker record holds the reported `WorkerCapabilities`, a state derived from heartbeats
-(`idle`, `busy`, `draining`, `offline`) and a session credential that can be revoked.
-
-Events and log lines are append-only, numbered in sequence and queryable per job. Artifacts are
-immutable bytes addressed by SHA-256 (`artifact://sha256/<hex>`).
-
-Job state and worker state are tracked separately, so a worker can recover after its job has
-failed.
+- **Job**: one `JobSpec` submission. States:
+  `queued → [provisioning] → scheduled → running → succeeded | failed | cancelled | timed_out`.
+  Validation is synchronous at submission; a retry moves the job back to `queued`. Transitions
+  not in `JOB_TRANSITIONS` (`contracts/models.py`) are rejected.
+- **Task**: one unit of work for one worker. An independent job has one task per attempt; a
+  distributed job has one per node, all created in one transaction at placement. States:
+  `assigned → running → succeeded | failed | cancelled | timed_out | lost`.
+- **Worker**: reported `WorkerCapabilities`, a heartbeat-derived state (`idle`, `busy`,
+  `draining`, `offline`) and a revocable session credential. Worker state is separate from job
+  state, so a worker can recover after its job failed.
+- **Events and logs**: append-only, sequence-numbered, queryable per job.
+- **Artifacts**: immutable bytes addressed by SHA-256 (`artifact://sha256/<hex>`).
 
 ## Request flow (independent job)
 
-1. `submit` validates the spec, checks referenced artifacts exist, persists the job (`queued`).
+1. `submit` validates the spec, checks referenced artifacts exist and persists the job (`queued`).
 2. A scheduling pass builds `WorkerView`s (capabilities + running tasks) and calls
-   `scheduler.schedule()`. The decision (placed or not, with per-worker reasons) is stored.
+   `scheduler.schedule()`. The decision, with per-worker reasons, is stored.
 3. Placement creates a task with a lease; the worker's next `acquire` returns it.
 4. The worker calls `start`, stages the source bundle and inputs (verifying SHA-256), builds an
-   allow-listed environment, resolves secret references locally, and runs the process group.
-5. Logs are batched to the control plane with secret values redacted; heartbeats renew leases
-   and deliver cancellation.
-6. Output files are uploaded as artifacts; `finish` reports the outcome; the job resolves and a
-   `JobResult` is persisted.
+   allow-listed environment, resolves secret references locally and runs the process group.
+5. Logs are batched to the control plane with secrets redacted. Heartbeats renew leases and
+   deliver cancellation.
+6. Outputs are uploaded as artifacts, `finish` reports the outcome and a `JobResult` is persisted.
 
-`reconcile()` (run by the server every second and opportunistically in embedded mode) expires
-worker heartbeats and task leases, enforces a deadline backstop, and advances provisioning.
+`reconcile()` (every second on the server, opportunistically in embedded mode) expires worker
+heartbeats and task leases, enforces a deadline backstop and advances provisioning.
 
 ## Deployment shapes
 
@@ -100,7 +72,6 @@ worker heartbeats and task leases, enforces a deadline backstop, and advances pr
 | Kubernetes | the [Helm chart](../guides/kubernetes.md): server StatefulSet with a persistent volume | CPU and NVIDIA GPU worker Deployments | same as self-hosted; tokens and TLS certificate in Secrets |
 | Hosted | planned | | |
 
-In self-hosted mode the network carries job specs, logs, events, artifacts (source bundles,
-inputs and outputs) and worker capabilities. Job specs include `env` values, so pass secrets as
-secret references; secret values stay on the workers. Nothing is sent to a GPUlayer-operated
-service, and there is no telemetry.
+In self-hosted mode the network carries job specs, logs, events, artifacts and worker
+capabilities. Job specs include `env` values, so pass secrets as secret references; their values
+stay on the workers. Nothing goes to a GPUlayer-operated service, and there is no telemetry.

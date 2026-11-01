@@ -2,17 +2,13 @@
 
 ## Jobs, targets and workload types
 
-A job is one thing you asked GPUlayer to run. Two independent choices describe it:
-
-- The **target** says where it may run: `local`, `remote` or `cloud`.
-- The **workload type** says what runs: an `independent` job (one process tree on one worker)
-  or a `distributed` job (one coordinated workload spread over several workers).
+A job has a **target**, where it may run (`local`, `remote` or `cloud`), and a **workload
+type**: `independent` (one worker) or `distributed` (one workload over several workers).
 
 ![Targets (local, remote, cloud) by workload type (independent, distributed): every combination is valid](../assets/concepts-light.svg)
 
-Any combination is valid. A distributed job can run on local workers, and a cloud job can be a
-single process. A job runs on another target only when you list it in
-`placement.fallback_targets`; a `local` job never moves to a remote machine on its own.
+Every combination is valid. A job only moves to another target listed in
+`placement.fallback_targets`.
 
 ## Workload kinds
 
@@ -22,19 +18,15 @@ single process. A job runs on another target only when you list it in
 | `FunctionJob` | independent | `module:function(*args, **kwargs)` | source bundle on `PYTHONPATH`, or an installed module |
 | `DistributedJob` | distributed | one process per rank on every node, with the torchrun environment, running a script or `module:function` | source bundle |
 
-Code travels as source. GPUlayer zips the directory, uploads it once (addressed by its
-SHA-256), and the worker imports your module by name. Function arguments and return values must
-be JSON. Closures, lambdas and pickled objects are not supported, because they break across
-machines, Python versions and trust boundaries ([ADR-0002](../decisions/ADR-0002-job-contracts-and-packaging.md)).
-
-`@gl.remote` submits `FunctionJob`s for any Python library. The
-[PyTorch integration](../pytorch/trainer.md) builds on the same kinds: `Trainer` and `launch()`
-submit `CommandJob`s and `DistributedJob`s for you.
+Code travels as a zipped source directory, uploaded once. Function arguments and return values
+must be JSON; closures, lambdas and pickles are not supported
+([ADR-0002](../decisions/ADR-0002-job-contracts-and-packaging.md)). `@gl.remote` submits
+`FunctionJob`s; the [Trainer](../pytorch/trainer.md) and `launch()` submit `CommandJob`s and
+`DistributedJob`s.
 
 ## Workers
 
-A worker is a process that registers with a control plane, reports what it can do, and runs
-tasks. Its origin decides which target it serves:
+A worker registers with a control plane, reports its capabilities and runs tasks.
 
 | Origin | Target | How it joins |
 |---|---|---|
@@ -42,16 +34,12 @@ tasks. Its origin decides which target it serves:
 | `existing` | `remote` | `gpulayer --url URL worker start` with a join token |
 | `provider` | `cloud` | booted by a provider adapter with a single-use token |
 
-Workers report **capabilities**: OS, CPU, RAM, disk, Python version, installed GPU frameworks
-(PyTorch, MLX, NumPy, ...), accelerator
-devices with their memory and compute capability, distributed backends, and the address peers
-can reach. The scheduler also tracks **availability**: whether the worker is online and has a
-free task slot. A worker can be compatible but busy, or free but incompatible.
+Capabilities include OS, CPU, RAM, disk, Python, GPU frameworks, devices and their memory,
+distributed backends and a reachable address. A worker can be compatible but busy.
 
 ## Placement
 
-When a job is submitted, the scheduler checks every worker against the job's requirements and
-records the reasons for each rejection:
+The scheduler records why each worker was rejected:
 
 ```text
 scheduling: no eligible worker
@@ -59,14 +47,10 @@ scheduling: no eligible worker
   wkr-471ad43b2467: torch 2.1.0 does not satisfy >=2.2
 ```
 
-A job whose compatible workers are all busy waits in the queue. A job that no registered worker
-could ever run fails immediately when `on_unschedulable="fail"` (the default for the CLI,
-`Trainer`, `launch()` and `@gl.remote`).
-
-A distributed job is placed on a whole group of workers at once, kept as close together as the
-workers allow: one network group (a rack or LAN you label), else one zone, else one region.
-Inside a machine, a job that asks for several GPUs gets the free GPUs with the fastest links
-between them (NVLink, then one PCIe switch). See [Scheduling](../architecture/scheduling.md).
+A job waits while its compatible workers are busy. With `on_unschedulable="fail"` (the default
+for the CLI, `Trainer`, `launch()` and `@gl.remote`), a job no worker could run fails at once.
+Distributed groups are kept in one network group, zone or region when possible, and multi-GPU
+jobs get the best-connected GPUs. See [Scheduling](../architecture/scheduling.md).
 
 ## Job lifecycle
 
@@ -87,19 +71,12 @@ stateDiagram-v2
     queued --> failed: unschedulable
 ```
 
-Each job has one task per worker per attempt. Task states are `assigned`, `running`,
-`succeeded`, `failed`, `cancelled`, `timed_out` and `lost`. A task becomes `lost` when its
-worker stops sending heartbeats; the process may still be running, so GPUlayer never promises
-exactly-once execution.
+A job has one task per worker per attempt. A task is `lost` when its worker stops sending
+heartbeats; the process may still run, so execution is not guaranteed exactly once.
 
 ## Control plane
 
-The control plane holds the queue, the worker registry and the scheduler. It runs in one of two
-ways:
-
-- **Embedded:** inside your Python process, backed by SQLite in `$GPULAYER_HOME`. This is the
-  default and needs no server or account.
-- **Self-hosted:** `gpulayer server start`, reachable over HTTPS by clients and remote workers.
-
-The same SDK, CLI and PyTorch API work with both. Set `GPULAYER_URL` and `GPULAYER_TOKEN` to use
-a self-hosted control plane.
+The control plane holds the queue, the worker registry and the scheduler. By default it is
+embedded in your process with SQLite in `$GPULAYER_HOME`. `gpulayer server start` runs a
+self-hosted one over HTTPS; set `GPULAYER_URL` and `GPULAYER_TOKEN` to use it. The SDK, CLI
+and PyTorch API work the same with both.

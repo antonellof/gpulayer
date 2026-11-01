@@ -1,8 +1,7 @@
 # Long-running services
 
-A service is a command that keeps running, such as an inference server, a notebook or a small
-API next to a GPU. GPUlayer places it with the same capability matching as a job, keeps it
-running, and tells you where it listens. See ADR-0019 for the design.
+A service is a command that keeps running, such as an inference server. GPUlayer places it like
+a job, restarts it, and reports where it listens (design: ADR-0019).
 
 ## Start one
 
@@ -11,11 +10,8 @@ gpulayer submit --target remote --service --accelerator cuda --gpus 1 -- \
   sh -c 'exec python -m vllm.entrypoints.openai.api_server --model my-model --port "$PORT"'
 ```
 
-Against a server (`--url` or `$GPULAYER_URL`), `submit --service` waits until every replica
-accepts connections, prints the job id and one `host:port` per replica, and returns. The
-service keeps running on the workers.
-
-From Python:
+Against a server, this waits until every replica accepts connections, prints the job id and a
+`host:port` per replica, and returns.
 
 ```python
 import gpulayer as gl
@@ -30,40 +26,31 @@ job.cancel()                     # stops every replica
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `replicas` (`--replicas`) | 1 | copies of the command, each on a different worker, each with its own GPUs |
-| `port` (`--no-port` to turn off) | on | the worker picks a free port and sets `$PORT`; the service must listen on it |
-| `restart` (`--restart`) | `always` | restart when the process exits; `on_failure` restarts only after a non-zero exit |
+| `replicas` (`--replicas`) | 1 | copies, each on a different worker with its own GPUs |
+| `port` (`--no-port` to turn off) | on | the worker sets `$PORT` to a free port; the service must listen on it |
+| `restart` (`--restart`) | `always` | restart on exit; `on_failure` only after a non-zero exit |
 | `max_restarts` (`--max-restarts`) | no limit | restarts per replica before the service ends |
-| `retry.max_attempts` | 10 | times the whole service is placed again after a worker is lost |
-| `timeout_seconds` | none | a service runs until cancelled unless you set one |
+| `retry.max_attempts` | 10 | re-placements of the whole service after a worker is lost |
+| `timeout_seconds` | none | runs until cancelled unless set |
 
-- **Endpoints.** A replica's endpoint is `<worker advertise address>:<port>`. The worker
-  reports it once the port accepts a TCP connection, and clears it while the replica
-  restarts. `gpulayer job status JOB` shows `endpoint=` per task.
-- **Restarts.** The worker waits 1 s before the first restart and doubles the wait up to 30 s.
-  A replica that stayed up for more than a minute starts again from 1 s. Each restart gets a
-  new port, so the endpoint can change; read it again after a restart.
-- **Ending.** When one replica ends for good (its restarts are used up, or `on_failure` saw a
-  clean exit), the other replicas are stopped and the job takes that replica's outcome.
-- **Worker loss.** If a worker stops sending heartbeats, its replica is marked lost, the
-  others are stopped, and the service is queued to be placed again.
-- **Logs.** `gpulayer job logs JOB` has the output of every replica and a line for each
-  restart.
+- **Endpoints** are `<worker advertise address>:<port>`, reported once the port accepts TCP
+  connections (`gpulayer job status JOB` shows `endpoint=`). Each restart picks a new port.
+- **Restarts** back off from 1 s, doubling to 30 s, and reset after a minute of uptime.
+- **Ending:** when one replica ends for good, the others are stopped and the job takes its
+  outcome. If a worker is lost, all replicas stop and the service is placed again.
+- **Logs:** `gpulayer job logs JOB` has every replica's output and a line per restart.
 
 ## Limits
 
-- There is no load balancer or public entry point. Clients connect to the reported endpoints,
-  so they must reach the workers' advertise addresses (same cluster, VPN or private network).
-- Health checking is only "the port accepts connections". There are no HTTP health checks,
-  rolling updates or autoscaling yet.
-- After a worker loss the whole service moves, including healthy replicas.
-- The worker does not isolate the service from other jobs on the same machine beyond process
-  groups and the GPUs it reserved; see the security model.
+- No load balancer: clients must reach the workers' advertise addresses.
+- Health checking is only "the port accepts connections". No HTTP health checks, rolling
+  updates or autoscaling yet.
+- Isolation from other jobs is limited to process groups and reserved GPUs
+  ([Security](../architecture/security.md)).
 
 ## Tests
 
-`tests/integration/test_services.py` starts a real HTTP service on a local worker, makes it
-exit, checks it restarts on a new port, and cancels it. The control plane tests cover
-placement on distinct workers, endpoint reporting and re-placement after worker loss
-(simulated workers). The Kubernetes smoke test starts a service on a worker pod and requests
-it from the server pod.
+`tests/integration/test_services.py` runs a real HTTP service on a local worker and checks
+restart on a new port and cancel. Control plane tests cover distinct-worker placement, endpoints
+and re-placement after worker loss (simulated workers). The Kubernetes smoke test requests a
+service on a worker pod from the server pod.
