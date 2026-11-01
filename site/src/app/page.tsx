@@ -190,11 +190,10 @@ export default function Home() {
           <HeroLandscape />
           <div className="relative mx-auto max-w-6xl px-6 pb-16 pt-20 lg:pt-28">
             <Link
-              href="/docs/project/status/"
+              href="/docs/pytorch/from-lightning/"
               className="inline-flex items-center gap-2 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-              v{VERSION} · validated on NVIDIA CUDA, Apple Metal and CPU
+              PyTorch Lightning code moves over with one import change
               <ArrowRight className="h-3 w-3" />
             </Link>
             <h1 className="mt-6 max-w-4xl text-5xl font-semibold leading-[1.02] tracking-[-0.045em] sm:text-6xl lg:text-7xl">
