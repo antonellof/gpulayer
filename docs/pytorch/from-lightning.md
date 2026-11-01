@@ -70,10 +70,10 @@ with `scripts/compare_lightning_api.py` against Lightning's source). How far eac
 - DeepSpeed (ZeRO 1 to 3, CPU offload) and `BitsandbytesPrecision` were validated on Tesla
   T4s; TPU (XLA) is implemented but not yet run on a TPU. See
   [DeepSpeed and TPU](trainer.md#deepspeed-and-tpu).
-- `ModelParallelStrategy` (tensor parallelism with FSDP2) and the FSDP options (sharding
-  strategies, activation checkpointing, CPU offload, sharded checkpoints) are tested with two
-  CPU processes, not on GPUs.
-- `TransformerEnginePrecision`, `to_tensorrt`, `XLAProfiler`, and the
+- `ModelParallelStrategy` (tensor parallelism), the FSDP options (sharding strategies,
+  activation checkpointing, CPU offload, sharded checkpoints) and `to_tensorrt` were validated
+  on Tesla T4s across two machines ([results](../../benchmarks/results/2026-11-01-aws-2xt4-parallel/README.md)).
+- `TransformerEnginePrecision`, `XLAProfiler`, and the
   Comet, W&B, MLflow, TensorBoard and `LitLogger` loggers are tested against fake packages: the
   real ones need NVIDIA GPUs, TPUs or accounts.
 - `glt.LightningCLI` ([Command line](cli.md)) uses `argparse`, not `jsonargparse`.
@@ -96,7 +96,7 @@ Each of Lightning's performance mechanisms, found in its source, and GPUlayer's 
 | keeps every `DataLoader` setting when adding a `DistributedSampler` | same |
 | `benchmark=` for cuDNN autotuning | on by default for CUDA runs of 1,000 steps or more |
 | `torch.compile`, `AsyncCheckpointIO`, `MpDeviceLoader` on TPUs | same |
-| FSDP, activation checkpointing, tensor parallelism, 4-bit and FP8 plugins | same (4-bit validated on a T4; the others tested on CPU or with fakes, see above) |
+| FSDP, activation checkpointing, tensor parallelism, 4-bit and FP8 plugins | same (validated on T4s except FP8, which needs Hopper or Ada GPUs) |
 | SLURM auto-requeue on SIGUSR1 | not needed: GPUlayer retries tasks itself; SIGTERM saves a checkpoint |
 
 GPUlayer's own additions are in [Performance](../architecture/performance.md): one autocast

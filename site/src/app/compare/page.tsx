@@ -27,7 +27,7 @@ const MATRIX: { feature: string; marks: Mark[]; note?: string }[] = [
   {
     feature: "DDP, mixed precision, FSDP",
     marks: ["yes", "yes", "yes", "yes", "no", "no", "no", "partial"],
-    note: "GPUlayer's FSDP is experimental; Kubernetes through training operators",
+    note: "GPUlayer's FSDP options validated on T4s; Kubernetes through training operators",
   },
   {
     feature: "DeepSpeed",

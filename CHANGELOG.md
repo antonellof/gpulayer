@@ -5,6 +5,10 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Validated on 2 Tesla T4 machines over NCCL (`benchmarks/results/2026-11-01-aws-2xt4-parallel/`):
+  FSDP sharding strategies, activation checkpointing, CPU offload and sharded checkpoints
+  (merged across machines, resumed in a second job); tensor parallelism with
+  `ModelParallelStrategy`; `Module.to_tensorrt`.
 - Fix: a task whose outputs passed the worker's 512 MiB cap returned none of them (the loop
   stopped at the first file over the cap, so an 800 MB checkpoint also dropped the small
   files after it) and said nothing. A file over a limit is now skipped and named in the task's

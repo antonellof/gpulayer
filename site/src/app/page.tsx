@@ -35,56 +35,100 @@ const JSON_LD = {
   offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
 };
 
-// Output below is copied from real runs on an Apple Silicon Mac (see the quickstart).
+// Replays for the terminal: the commands and APIs are GPUlayer's, the output lines use the
+// formats it prints, and the runs (models, timings, metrics) are illustrative.
+const A100 = (host: string) =>
+  [0, 1, 2, 3].map((i) => ({ id: `${host}:${i}`, host, name: "4x A100 80GB (NVLink)" }));
+const RTX = [0, 1, 2, 3].map((i) => ({ id: `gpu-box:${i}`, host: "gpu-box", name: "4x RTX 4090" }));
+
 const TERMINAL_TABS: TerminalTab[] = [
   {
-    label: "PyTorch",
-    title: "train.py",
+    label: "Fine-tune on 8 GPUs",
+    title: "ResNet-50 on 2 machines x 4 A100s, from a laptop",
+    gpus: [...A100("a100-1"), ...A100("a100-2")],
     lines: [
       {
         t: "code",
-        s: `trainer = glt.Trainer(max_epochs=5, accelerator=args.accelerator,
-                      devices=args.devices, num_nodes=args.nodes)
-trainer.fit(model, train_loader, val_loader)`,
+        s: `model = ImageClassifier("resnet50", num_classes=100)
+trainer = glt.Trainer(accelerator="cuda", devices=4, num_nodes=2,
+                      precision="bf16-mixed", max_epochs=10)
+trainer.fit(model, datamodule=ImageNet100())`,
+        wait: 300,
       },
-      { t: "cmd", s: "python train.py --accelerator cpu --nodes 2 --devices 2" },
-      { t: "dim", s: "[gpulayer] job-4f5c1e1bc659: train.py on 2 node(s) x 2 cpu process(es)" },
-      { t: "out", s: "[node0] epoch 4 done: train_loss=1.6501 val_loss=1.3001" },
-      { t: "ok", s: "[gpulayer] job-4f5c1e1bc659 succeeded; checkpoint downloaded" },
+      { t: "cmd", s: "python finetune.py" },
+      { t: "dim", s: "[gpulayer] job-7c1e04b2a9f3: finetune.py on 2 node(s) x 4 cuda process(es), target remote", wait: 700 },
+      { t: "dim", s: "scheduling: placed on worker group [a100-1, a100-2] (same zone us-east-1b)", wait: 500 },
+      { t: "busy", gpus: "all", wait: 600 },
+      { t: "out", s: "[rank0] [gpulayer] training on cuda, rank 0/8, precision bf16-mixed, 10 epoch(s)", wait: 400 },
+      { t: "out", s: "[rank0] epoch 0 step 50 train_loss=2.9134", wait: 1100 },
+      { t: "out", s: "[rank0] epoch 0 step 100 train_loss=1.8420", wait: 900 },
+      { t: "out", s: "[rank0] epoch 0 done in 63.2s: train_loss=1.6102 val_loss=1.1873 val_acc=0.7124", wait: 900 },
+      { t: "out", s: "[rank0] epoch 1 done in 61.9s: train_loss=0.9877 val_loss=0.8215 val_acc=0.7981", wait: 1000 },
+      { t: "dim", s: "...", wait: 700 },
+      { t: "out", s: "[rank0] epoch 9 done in 61.8s: train_loss=0.3311 val_loss=0.5402 val_acc=0.8817", wait: 1100 },
+      { t: "busy", gpus: "none", wait: 300 },
+      { t: "ok", s: "[gpulayer] job-7c1e04b2a9f3 succeeded; 4 output file(s) in gpulayer_runs/job-7c1e04b2a9f3", wait: 500 },
+      { t: "out", s: "trained weights loaded into model; checkpoint: gpulayer_runs/job-7c1e04b2a9f3/node0/checkpoints/last.ckpt" },
     ],
   },
-  // Run on one Mac: `gpulayer up`, a second worker joined from another terminal, and a client
-  // in a third. The address is the one `gpulayer up` printed; tokens are elided.
   {
-    label: "Server + client",
-    title: "gpulayer up, a worker joins, your laptop trains on both",
+    label: "Your GPU fleet",
+    title: "gpulayer up, two machines join, a BERT fine-tune lands on the free GPUs",
+    gpus: [
+      { id: "my-mac", host: "my-mac", name: "Apple M2 Pro" },
+      ...RTX,
+      { id: "cloud-l4", host: "cloud-l4", name: "1x L4 (cloud VM)" },
+    ],
     lines: [
-      { t: "dim", s: "# machine 1: start the server; it runs jobs too" },
+      { t: "dim", s: "# the server: any machine, here a Mac" },
       { t: "cmd", s: "gpulayer up" },
-      { t: "ok", s: "GPUlayer is up at https://192.168.1.56:8470  (TLS, self-signed certificate pinned by fingerprint)" },
-      { t: "out", s: "  gpulayer join https://192.168.1.56:8470 --token glj_… --fingerprint sha256:…" },
-      { t: "dim", s: "# machine 2: a GPU box or cloud VM pastes the join line" },
-      { t: "cmd", s: "gpulayer join https://192.168.1.56:8470 --token glj_… --fingerprint sha256:…" },
-      { t: "ok", s: "worker wkr-3d3577f2b58c registered" },
-      { t: "dim", s: "# your laptop: the client" },
-      { t: "cmd", s: "export GPULAYER_URL=https://192.168.1.56:8470 GPULAYER_TOKEN=glc_… GPULAYER_FINGERPRINT=sha256:…" },
-      { t: "cmd", s: "python train.py --accelerator cpu --nodes 2" },
-      { t: "dim", s: "[gpulayer] job-77b0944e7dba: train.py on 2 node(s) x 1 cpu process(es), target remote" },
-      { t: "out", s: "[rank0] epoch 4 done in 0.047s: train_loss=0.5561 val_loss=0.4698" },
-      { t: "ok", s: "[gpulayer] job-77b0944e7dba succeeded; 3 output file(s) in gpulayer_runs/job-77b0944e7dba" },
+      { t: "ok", s: "GPUlayer is up at https://10.0.0.5:8470  (TLS, self-signed certificate pinned by fingerprint)", wait: 800 },
+      { t: "out", s: "  gpulayer join https://10.0.0.5:8470 --token glj_... --fingerprint sha256:..." },
+      { t: "dim", s: "# a workstation and a cloud VM paste the join line", wait: 600 },
+      { t: "cmd", s: "gpulayer join https://10.0.0.5:8470 --token glj_... --name gpu-box" },
+      { t: "ok", s: "worker wkr-3d3577f2b58c registered (cuda: 4x NVIDIA GeForce RTX 4090)", wait: 700 },
+      { t: "cmd", s: "gpulayer join https://10.0.0.5:8470 --token glj_... --name cloud-l4" },
+      { t: "ok", s: "worker wkr-91c0ae54d7e2 registered (cuda: NVIDIA L4)", wait: 700 },
+      { t: "cmd", s: "gpulayer worker status" },
+      { t: "out", s: "wkr-ed1b305e5b95   my-mac     idle   remote mps    tasks=0", wait: 300 },
+      { t: "out", s: "wkr-3d3577f2b58c   gpu-box    idle   remote cuda   tasks=0", wait: 120 },
+      { t: "out", s: "wkr-91c0ae54d7e2   cloud-l4   idle   remote cuda   tasks=0", wait: 120 },
+      { t: "cmd", s: "python finetune_bert.py --devices 4", wait: 700 },
+      { t: "dim", s: "[gpulayer] job-b42d9e17c0a6: finetune_bert.py on 1 node(s) x 4 cuda process(es), target remote", wait: 700 },
+      { t: "dim", s: "scheduling: placed on gpu-box (4 free GPUs; my-mac: no CUDA device; cloud-l4: has 1 GPU, needs 4)", wait: 500 },
+      { t: "busy", gpus: RTX.map((g) => g.id), wait: 600 },
+      { t: "out", s: "[rank0] [gpulayer] training on cuda, rank 0/4, precision 16-mixed, 3 epoch(s)", wait: 400 },
+      { t: "out", s: "[rank0] epoch 0 done in 88.4s: train_loss=0.3627 val_loss=0.2490 val_acc=0.9025", wait: 1300 },
+      { t: "out", s: "[rank0] epoch 2 done in 87.9s: train_loss=0.1218 val_loss=0.2311 val_acc=0.9243", wait: 1300 },
+      { t: "busy", gpus: "none", wait: 300 },
+      { t: "ok", s: "[gpulayer] job-b42d9e17c0a6 succeeded; 3 output file(s) in gpulayer_runs/job-b42d9e17c0a6", wait: 500 },
     ],
   },
   {
-    label: "Placement",
-    title: "asking for hardware this machine does not have",
+    label: "Sweep",
+    title: "a learning-rate sweep on every free GPU",
+    gpus: [...RTX, { id: "cloud-l4", host: "cloud-l4", name: "1x L4 (cloud VM)" }],
     lines: [
-      { t: "cmd", s: "python train.py --accelerator cuda --target local" },
-      { t: "dim", s: "[gpulayer] job-df9c63e7c4d8: train.py on 1 node(s) x 1 cuda process(es)" },
-      { t: "err", s: "[gpulayer] job-df9c63e7c4d8 failed: unschedulable: no eligible worker" },
       {
-        t: "err",
-        s: "  wkr-f50e620bfaef: torch on this worker cannot use CUDA, needs 1 usable cuda device(s), worker has 0",
+        t: "code",
+        s: `@gl.remote(accelerator="cuda", gpus=1)
+def train(lr: float) -> dict:
+    ...  # fine-tune for 2 epochs, return the validation accuracy
+
+results = train.map([1e-5, 2e-5, 3e-5, 5e-5, 1e-4])`,
+        wait: 300,
       },
+      { t: "cmd", s: "python sweep.py" },
+      { t: "dim", s: "[gpulayer] 5 jobs submitted; placed on gpu-box (GPUs 0-3) and cloud-l4", wait: 800 },
+      { t: "busy", gpus: "all", wait: 500 },
+      { t: "out", s: "{'lr': 3e-05, 'val_acc': 0.9243, 'worker': 'gpu-box'}", wait: 2200 },
+      { t: "out", s: "{'lr': 2e-05, 'val_acc': 0.9220, 'worker': 'gpu-box'}", wait: 300 },
+      { t: "out", s: "{'lr': 5e-05, 'val_acc': 0.9186, 'worker': 'gpu-box'}", wait: 400 },
+      { t: "out", s: "{'lr': 1e-05, 'val_acc': 0.9071, 'worker': 'gpu-box'}", wait: 300 },
+      { t: "busy", gpus: ["cloud-l4"], wait: 200 },
+      { t: "out", s: "{'lr': 0.0001, 'val_acc': 0.8794, 'worker': 'cloud-l4'}", wait: 1500 },
+      { t: "busy", gpus: "none", wait: 200 },
+      { t: "ok", s: "best: {'lr': 3e-05, 'val_acc': 0.9243}", wait: 400 },
     ],
   },
 ];

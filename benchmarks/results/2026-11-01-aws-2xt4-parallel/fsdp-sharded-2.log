@@ -1,0 +1,20 @@
+[gpulayer] job-e2fb82d349d0: validate_parallel.py on 2 node(s) x 1 cuda process(es), target remote
+[rank0] /home/ubuntu/venv/lib/python3.12/site-packages/gpulayer/pytorch/trainer.py:1033: UserWarning: the training DataLoader has num_workers=0; loading may limit speed. This machine can give each process up to num_workers=3
+[rank0]   self._run_fit(rt, model, train_dataloaders, val_dataloaders, ckpt_path)
+[rank0] [gpulayer] training on cuda, rank 0/2, precision 32-true, 1000 epoch(s)
+[rank0] epoch 0 done in 7.285s: train_loss=0.7148
+[rank0] epoch 1 done in 6.577s: train_loss=0.3039
+[rank0] /home/ubuntu/venv/lib/python3.12/site-packages/torch/distributed/checkpoint/state_dict_saver.py:472: UserWarning: Detected an existing checkpoint in /home/ubuntu/.gpulayer/workers/wkr-bbb053d5f78e/tasks/task-df8d93a9da63/outputs/checkpoints/last.ckpt, overwriting since self.overwrite=True. Past version 2.5 of PyTorch, `overwrite` will default to False. Set this variable to True to maintain this functionality or False to raise when an existing checkpoint is found.
+[rank0]   local_plan = storage_writer.prepare_local_plan(local_plan)
+[rank0] epoch 2 done in 6.717s: train_loss=0.0879
+[rank0] epoch 3 done in 6.773s: train_loss=0.0345
+[rank0] epoch 4 done in 6.752s: train_loss=0.0280
+[rank0] epoch 5 done in 6.826s: train_loss=0.0211
+[rank0] epoch 6 done in 1.685s: train_loss=0.0090
+[gpulayer] job-e2fb82d349d0 succeeded; 7 output file(s) in gpulayer_runs/job-e2fb82d349d0
+RESULT {"case": "fsdp-FULL_SHARD-sharded/2", "world": 2, "step": 100, "peak_mb_rank0": 671, "ms_per_step": 629.17, "losses": [0.785, 0.3028, 0.0169, 0.0214, 0.0144], "trained_steps": 100, "local_param_fraction": 0.5, "fc1_local_shape": [2048, 1024], "activation_checkpointing": false, "params_on_cpu": false, "checkpoint": "gpulayer_runs/job-e2fb82d349d0/last.ckpt", "checkpoint_is_folder": true}
+CHECK fsdp-FULL_SHARD-sharded/2 loss falls: PASS
+CHECK fsdp-FULL_SHARD-sharded/2 full weights load from the checkpoint: PASS
+CHECK fsdp-FULL_SHARD-sharded/2 trained weights came back: PASS
+CHECK fsdp-FULL_SHARD-sharded/2 parameters sharded: PASS
+CHECK fsdp-FULL_SHARD-sharded/2 checkpoint is a sharded folder: PASS

@@ -205,7 +205,7 @@ glt.FSDPStrategy(
 
 Sharded checkpoints are folders (`last.ckpt/`); `ckpt_path` and `load_from_checkpoint` read
 them, and a launched job ships them to its workers. After a job on several machines, each
-node's shard files are merged into one folder, so no shared filesystem is needed. The options above are tested with two CPU processes, not GPUs.
+node's shard files are merged into one folder, so no shared filesystem is needed. The options above were validated on two Tesla T4 machines over NCCL ([results](../../benchmarks/results/2026-11-01-aws-2xt4-parallel/README.md)).
 
 ## Tensor parallelism (experimental)
 
@@ -220,7 +220,10 @@ def configure_model(self):
     fully_shard(self, mesh=self.device_mesh["data_parallel"])
 ```
 
-Each data-parallel group reads its own shard of the data. Tested with two CPU processes.
+Each data-parallel group reads its own shard of the data. With tensor parallelism only, keep
+the `fully_shard` call: it makes every parameter a DTensor, which the optimizer's fused update
+needs. Validated on two T4 machines: each GPU held half of every split layer and half the
+memory of one GPU ([results](../../benchmarks/results/2026-11-01-aws-2xt4-parallel/README.md)).
 
 ## Large models: init, quantization, FP8
 
@@ -230,6 +233,8 @@ Each data-parallel group reads its own shard of the data. Tested with two CPU pr
   (needs `bitsandbytes` and CUDA).
 - `plugins=[glt.TransformerEnginePrecision()]` trains in FP8 on Hopper or Ada GPUs (needs
   `transformer_engine`).
+- `model.to_tensorrt("model.ep", input_sample=x)` compiles with Torch-TensorRT for inference
+  (validated on a T4: outputs within 1e-6 of PyTorch).
 
 `BitsandbytesPrecision` was validated on a Tesla T4 (nf4: 145 MB to 27 MB of GPU memory,
 outputs within 0.997 cosine of fp32; [results](../../benchmarks/results/2026-11-01-aws-2xt4-deepspeed/README.md)). `TransformerEnginePrecision` is tested

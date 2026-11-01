@@ -1,0 +1,19 @@
+[11/01/2026-16:10:45] [TRT] [W] Functionality provided through tensorrt.plugin module is experimental.
+Unable to import quantization op. Please install modelopt library (https://github.com/NVIDIA/TensorRT-Model-Optimizer?tab=readme-ov-file#installation) to add support for compiling quantized models
+Unable to import quantize op. Please install modelopt library (https://github.com/NVIDIA/TensorRT-Model-Optimizer?tab=readme-ov-file#installation) to add support for compiling quantized models
+W1101 16:10:57.286000 5798 torch/_opaque_base.py:6] torch._opaque_base is deprecated, use torch._custom_class_base instead
+W1101 16:10:57.288000 5798 torch/_library/opaque_object.py:288] register_opaque_type is deprecated, use register_custom_class instead
+W1101 16:10:57.289000 5798 torch/_library/opaque_object.py:207] typ='reference' is deprecated, use typ='symbolic' instead
+WARNING:py.warnings:<string>:6: UserWarning: RuntimeSettings is only honored on TRT-RTX builds; constructing it on regular TensorRT has no effect.
+
+WARNING:torch_tensorrt._compile:Provided model is a torch.fx.GraphModule and retrace is False, inputs or arg_inputs is not necessary during save.
+WARNING: [Torch-TensorRT] - RuntimeCacheHandle::serialize() invoked on a non-RTX build; returning empty bytes.
+WARNING:py.warnings:/home/ubuntu/trtvenv/lib/python3.12/site-packages/torch_tensorrt/dynamo/_exporter.py:921: UserWarning: Attempted to insert a get_attr Node with no underlying reference in the owning GraphModule! Call GraphModule.add_submodule to add the necessary submodule, GraphModule.add_parameter to add the necessary Parameter, or nn.Module.register_buffer to add the necessary buffer
+  engine_node = gm.graph.get_attr(engine_name)
+
+WARNING: [Torch-TensorRT] - RuntimeCacheHandle::serialize() invoked on a non-RTX build; returning empty bytes.
+W1101 16:11:18.584000 5798 torch/export/pt2_archive/_package.py:703] Expect archive file to be a file ending in .pt2, or is a buffer. Instead got {net.ep}
+RESULT {"case": "tensorrt", "max_abs_diff": 0.0, "ms_eager": 19.619, "ms_tensorrt": 19.287, "torch_tensorrt": "2.14.0"}
+CHECK tensorrt outputs match eager (max diff < 1e-2): PASS
+CHECK tensorrt file saved: PASS
+WARNING: [Torch-TensorRT] - RuntimeCacheHandle::serialize() invoked on a non-RTX build; returning empty bytes.

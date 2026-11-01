@@ -1,0 +1,23 @@
+[gpulayer] job-fb4d7d9cab00: validate_parallel.py on 2 node(s) x 1 cuda process(es), target remote
+[rank0] /home/ubuntu/venv/lib/python3.12/site-packages/gpulayer/pytorch/trainer.py:1033: UserWarning: the training DataLoader has num_workers=0; loading may limit speed. This machine can give each process up to num_workers=3
+[rank0]   self._run_fit(rt, model, train_dataloaders, val_dataloaders, ckpt_path)
+[rank0] [gpulayer] training on cuda, rank 0/2, precision 32-true, 1000 epoch(s)
+[rank0] epoch 0 done in 7.067s: train_loss=0.7148
+[rank0] epoch 1 done in 6.457s: train_loss=0.3039
+[rank0] epoch 2 done in 6.476s: train_loss=0.0879
+[rank0] epoch 3 done in 6.401s: train_loss=0.0345
+[rank0] epoch 4 done in 6.506s: train_loss=0.0280
+[rank0] epoch 5 done in 6.505s: train_loss=0.0211
+[rank0] epoch 6 done in 6.393s: train_loss=0.0115
+[rank0] epoch 7 done in 6.547s: train_loss=0.0053
+[rank0] epoch 8 done in 6.549s: train_loss=0.0047
+[rank0] epoch 9 done in 6.46s: train_loss=0.0044
+[rank0] epoch 10 done in 6.488s: train_loss=0.0042
+[rank0] epoch 11 done in 6.613s: train_loss=0.0079
+[rank0] epoch 12 done in 3.262s: train_loss=0.0133
+[gpulayer] job-fb4d7d9cab00 succeeded; 4 output file(s) in gpulayer_runs/job-fb4d7d9cab00
+RESULT {"case": "fsdp-FULL_SHARD/2", "world": 2, "step": 200, "peak_mb_rank0": 671, "ms_per_step": 840.83, "losses": [0.785, 0.3028, 0.0169, 0.0214, 0.0144, 0.001, 0.0029, 0.0079, 0.0162], "trained_steps": 200, "local_param_fraction": 0.5, "fc1_local_shape": [2048, 1024], "activation_checkpointing": false, "params_on_cpu": false, "checkpoint": "gpulayer_runs/job-fb4d7d9cab00/node0/checkpoints/last.ckpt", "checkpoint_is_folder": false}
+CHECK fsdp-FULL_SHARD/2 loss falls: PASS
+CHECK fsdp-FULL_SHARD/2 full weights load from the checkpoint: PASS
+CHECK fsdp-FULL_SHARD/2 trained weights came back: PASS
+CHECK fsdp-FULL_SHARD/2 parameters sharded: PASS

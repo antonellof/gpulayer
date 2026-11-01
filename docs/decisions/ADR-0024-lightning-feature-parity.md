@@ -176,6 +176,9 @@ TensorRT, torch_xla and the hosted loggers run against fake packages.
 **Hardware (2026-11-01).** DeepSpeed (ZeRO 1 to 3, CPU offload; one machine and two over
 NCCL) and `BitsandbytesPrecision` (nf4, int8) were validated on Tesla T4s, after three fixes
 the run found (a process group and `LOCAL_RANK` for single-process DeepSpeed, the job Python's
-`bin` on `PATH`). Results: `benchmarks/results/2026-11-01-aws-2xt4-deepspeed/`. FSDP options,
-tensor parallelism, Transformer Engine, TensorRT and TPUs have not run on that hardware yet.
+`bin` on `PATH`). Results: `benchmarks/results/2026-11-01-aws-2xt4-deepspeed/`. A second run on two
+T4 machines validated the FSDP options, sharded checkpoints merged across machines, tensor
+parallelism and `to_tensorrt` (`benchmarks/results/2026-11-01-aws-2xt4-parallel/`), and found
+that outputs over the worker's size cap were dropped silently (fixed). Transformer Engine (FP8
+needs Hopper or Ada GPUs) and TPUs have not run on hardware.
 

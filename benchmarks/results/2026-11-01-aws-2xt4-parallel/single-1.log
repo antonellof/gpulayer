@@ -1,0 +1,16 @@
+[gpulayer] job-b0f2a28f65d3: validate_parallel.py on 1 node(s) x 1 cuda process(es), target remote
+/home/ubuntu/venv/lib/python3.12/site-packages/gpulayer/pytorch/trainer.py:1033: UserWarning: the training DataLoader has num_workers=0; loading may limit speed. This machine can give each process up to num_workers=3
+  self._run_fit(rt, model, train_dataloaders, val_dataloaders, ckpt_path)
+[gpulayer] training on cuda, precision 32-true, 1000 epoch(s)
+epoch 0 done in 2.334s: train_loss=0.6413
+epoch 1 done in 2.178s: train_loss=0.1631
+epoch 2 done in 2.186s: train_loss=0.0774
+epoch 3 done in 2.189s: train_loss=0.0263
+epoch 4 done in 2.192s: train_loss=0.0277
+epoch 5 done in 2.19s: train_loss=0.0324
+epoch 6 done in 0.545s: train_loss=0.0119
+[gpulayer] job-b0f2a28f65d3 succeeded; 4 output file(s) in gpulayer_runs/job-b0f2a28f65d3
+RESULT {"case": "single/1", "world": 1, "step": 200, "peak_mb_rank0": 1283, "ms_per_step": 288.27, "losses": [0.7847, 0.4203, 0.163, 0.0762, 0.0147, 0.0263, 0.0165, 0.0421, 0.0075], "trained_steps": 200, "local_param_fraction": 1.0, "fc1_local_shape": [4096, 1024], "activation_checkpointing": false, "params_on_cpu": false, "checkpoint": "gpulayer_runs/job-b0f2a28f65d3/checkpoints/last.ckpt", "checkpoint_is_folder": false}
+CHECK single/1 loss falls: PASS
+CHECK single/1 full weights load from the checkpoint: PASS
+CHECK single/1 trained weights came back: PASS
