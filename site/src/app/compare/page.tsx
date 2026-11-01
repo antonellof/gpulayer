@@ -220,9 +220,9 @@ const NOTES: Note[] = [
   {
     name: "PyTorch Lightning and Hugging Face Accelerate",
     summary:
-      "Both decide how a PyTorch model trains inside the machines they are started on: device placement, precision, DDP, FSDP or DeepSpeed, callbacks, logging. They do not choose those machines, copy code to them, or start the processes on each node. GPUlayer works one level below: it decides where a workload runs and starts it there. Its own PyTorch Trainer is deliberately small: it has callbacks, early stopping, the best-N checkpoints, gradient accumulation and experimental FSDP, but no DeepSpeed or logger integrations.",
+      "Both decide how a PyTorch model trains inside the machines they are started on: device placement, precision, DDP, FSDP or DeepSpeed, callbacks, logging. They do not choose those machines, copy code to them, or start the processes on each node. GPUlayer works one level below: it decides where a workload runs and starts it there. Its own PyTorch Trainer uses Lightning's names: hooks, manual optimization, DataModule, callbacks, loggers, profilers and the tuner, with experimental FSDP and no DeepSpeed.",
     choose:
-      "Choose them for training features. Lightning has a far richer Trainer than GPUlayer's, and Accelerate makes an existing loop portable.",
+      "Choose Lightning for DeepSpeed, TPUs, plugins or LightningCLI, which the GPUlayer Trainer does not have; Accelerate makes an existing loop portable.",
     together:
       "Keep your training code and add `gpulayer.pytorch.launch(...)` at the top of the script. GPUlayer then places it on workers and starts the processes with the standard torchrun environment that both libraries read. This combination follows from the torchrun environment but has not been tested in this repository yet.",
   },
@@ -274,10 +274,10 @@ const PERF_ROWS: { case: string; gl: number; pl: number; glOver: number; plOver:
 const BEHIND = [
   "Cloud provisioning covers Google Cloud only, with no autoscaling of a standing pool; SkyPilot, dstack and Ray cover more clouds.",
   "Services have no load balancer, rolling updates or autoscaling; dstack, Ray Serve, Modal and Kubernetes have them.",
-  "A small PyTorch Trainer: FSDP is experimental (CPU-tested), and there is no DeepSpeed or logger integration, unlike PyTorch Lightning.",
+  "The PyTorch Trainer has Lightning's hooks, callbacks and loggers but no DeepSpeed, TPU support, plugins or LightningCLI; FSDP is experimental (CPU-tested).",
   "Multi-node speed against PyTorch Lightning is measured on CPUs with gloo only: 11.9% faster on 8 machines with two-level gradient sync, the same on one machine. NCCL on GPUs is not measured yet.",
   "Distributed jobs support PyTorch process groups only; no JAX multi-host or MPI launcher yet.",
-  "v0.7.1: validated on machines with up to 4 NVIDIA GPUs (NCCL) and on up to 30 machines; NCCL across machines is not validated yet. Not a sandbox for untrusted users.",
+  "v0.8.0: validated on machines with up to 4 NVIDIA GPUs (NCCL) and on up to 30 machines; NCCL across machines is not validated yet. Not a sandbox for untrusted users.",
 ];
 
 const FITS = [

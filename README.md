@@ -18,12 +18,14 @@
 The GPUlayer `Trainer` runs the same PyTorch script in your process, on every GPU of a
 machine, or across many machines: laptops, workstations, servers and cloud VMs. It picks
 machines and GPUs that can train the model, starts every process, and brings back logs,
-checkpoints and metrics.
+checkpoints and metrics. It uses PyTorch Lightning's names (`LightningModule` hooks, manual
+optimization, `DataModule`, callbacks, loggers, profilers, tuner), so most Lightning code moves
+with an import change.
 
 NVIDIA CUDA, Apple Metal (MPS) and CPU are validated on hardware. AMD ROCm is implemented and
 not yet validated. Docs: [gpulayer.dev/docs](https://www.gpulayer.dev/docs/).
 
-> **v0.7.1.** Validated on a Tesla T4, 4× RTX 3070, 2× A100 (NVLink), an Apple M2 Pro, and
+> **v0.8.0.** Validated on a Tesla T4, 4× RTX 3070, 2× A100 (NVLink), an Apple M2 Pro, and
 > distributed CPU training on up to 16 Google Cloud machines. NCCL across machines is
 > implemented but not validated. See
 > [Status](https://github.com/antonellof/gpulayer/blob/main/docs/project/status.md).
@@ -49,7 +51,7 @@ To train with PyTorch, install it too: `pip install "gpulayer[torch]"`.
 |---|---|
 | As a standalone CLI with [uv](https://docs.astral.sh/uv/) | `uv tool install gpulayer` |
 | Install script (own virtual environment, no sudo) | `curl -fsSL https://raw.githubusercontent.com/antonellof/gpulayer/main/install.sh \| sh` |
-| Docker | `docker pull ghcr.io/antonellof/gpulayer:0.7.1` (also `:0.7.1-torch`; see [deploy/docker](https://github.com/antonellof/gpulayer/tree/main/deploy/docker)) |
+| Docker | `docker pull ghcr.io/antonellof/gpulayer:0.8.0` (also `:0.8.0-torch`; see [deploy/docker](https://github.com/antonellof/gpulayer/tree/main/deploy/docker)) |
 | Kubernetes (Helm) | `helm install gpulayer deploy/kubernetes/helm/gpulayer -n gpulayer --create-namespace` (see [Kubernetes](https://github.com/antonellof/gpulayer/blob/main/docs/guides/kubernetes.md)) |
 | From source, to run the examples | `git clone https://github.com/antonellof/gpulayer && cd gpulayer && pip install -e ".[dev,examples]"` |
 

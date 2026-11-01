@@ -1,28 +1,113 @@
-"""``Module``: an ``nn.Module`` with training hooks used by ``Trainer``."""
+"""``Module``: an ``nn.Module`` with training hooks used by ``Trainer``; ``DataModule`` for data.
+
+Names and semantics follow PyTorch Lightning's ``LightningModule`` and ``LightningDataModule``,
+so a model written for one mostly runs on the other.
+"""
 
 from __future__ import annotations
 
+import copy
+import inspect
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 import torch
 from torch import nn
 
+from gpulayer.errors import ValidationFailed
 
-class Module(nn.Module):
+REDUCE_FX = ("mean", "sum", "max", "min")
+_FX_ALIASES = {"amax": "max", "amin": "min"}
+
+
+class AttributeDict(dict):
+    """A dict whose keys are also attributes: ``hparams.lr``."""
+
+    def __getattr__(self, key: str) -> Any:
+        try:
+            return self[key]
+        except KeyError as e:
+            raise AttributeError(key) from e
+
+    def __setattr__(self, key: str, value: Any) -> None:
+        self[key] = value
+
+
+def _init_args(frame: Any) -> dict[str, Any]:
+    """The arguments of the ``__init__`` that called ``save_hyperparameters``."""
+    info = inspect.getargvalues(frame)
+    args = {k: info.locals[k] for k in info.args if k != "self"}
+    if info.varargs and info.locals.get(info.varargs):
+        args[info.varargs] = info.locals[info.varargs]
+    if info.keywords:
+        args.update(info.locals.get(info.keywords) or {})
+    return args
+
+
+class HyperparametersMixin:
+    """``save_hyperparameters()`` and ``hparams``, shared by Module and DataModule."""
+
+    def save_hyperparameters(
+        self, *args: Any, ignore: str | list[str] | None = None, frame: Any = None
+    ) -> None:
+        """Record the ``__init__`` arguments (all of them, or the names in ``args``) as
+        ``self.hparams``. They are saved in checkpoints, and ``load_from_checkpoint`` uses
+        them to rebuild the model without passing the arguments again."""
+        if frame is None:
+            current = inspect.currentframe()
+            frame = current.f_back if current is not None else None
+        values = _init_args(frame) if frame is not None else {}
+        if args and len(args) == 1 and isinstance(args[0], dict):
+            values = dict(args[0])
+        elif args:
+            missing = [a for a in args if a not in values]
+            if missing:
+                raise ValidationFailed(f"save_hyperparameters: unknown argument(s) {missing}")
+            values = {a: values[a] for a in args}
+        ignored = [ignore] if isinstance(ignore, str) else list(ignore or [])
+        values = {
+            k: v
+            for k, v in values.items()
+            if k not in ignored and not isinstance(v, nn.Module)  # modules are not hparams
+        }
+        hp = self.__dict__.setdefault("_gl_hparams", AttributeDict())
+        hp.update(values)
+
+    @property
+    def hparams(self) -> AttributeDict:
+        return self.__dict__.setdefault("_gl_hparams", AttributeDict())
+
+
+class Module(HyperparametersMixin, nn.Module):
     """Subclass and implement ``training_step`` and ``configure_optimizers``.
 
     ``validation_step``, ``test_step`` and ``predict_step`` are optional. Call
     ``self.log(name, value)`` in any step; the Trainer averages logged values per epoch across
-    steps and ranks.
+    steps and ranks. Override any of the ``on_*`` hooks to run code at that point of the loop.
     """
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
         self._gl_step_logs: dict[str, Any] = {}
+        self._gl_log_options: dict[str, tuple[str, bool, bool, float | None]] = {}
         self.trainer: Any = None
+        self._gl_automatic_optimization = True
+        self.example_input_array: Any = None
 
-    def training_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
+    def __getstate__(self) -> dict[str, Any]:
+        # Copies and pickles leave the Trainer behind (deepcopy for weight averaging, SWA).
+        state = dict(super().__getstate__())
+        state["trainer"] = None
+        state.pop("_gl_manual", None)
+        return state
+
+    # ------------------------------------------------------------------ steps
+
+    def training_step(self, batch: Any, batch_idx: int) -> Any:
+        """Return the loss tensor, or a dict with ``"loss"``. With manual optimization,
+        return nothing."""
         raise NotImplementedError("implement training_step(batch, batch_idx) -> loss")
 
     def validation_step(self, batch: Any, batch_idx: int) -> Any:
@@ -38,30 +123,453 @@ class Module(nn.Module):
         return self(batch)
 
     def configure_optimizers(self) -> Any:
-        """Return an optimizer, ``(optimizer, scheduler)`` or
-        ``{"optimizer": ..., "lr_scheduler": ..., "interval": "epoch" | "step"}``."""
+        """Return an optimizer; a list of optimizers; ``([optimizers], [schedulers])``;
+        ``(optimizer, scheduler)``; or ``{"optimizer": ..., "lr_scheduler": ...}``, where the
+        scheduler may be a dict ``{"scheduler": ..., "interval": "epoch" | "step",
+        "frequency": 1, "monitor": "val_loss"}``. Several optimizers need manual
+        optimization (``self.automatic_optimization = False``), as in Lightning."""
         raise NotImplementedError("implement configure_optimizers()")
 
-    def log(self, name: str, value: Any) -> None:
+    def configure_callbacks(self) -> Any:
+        """Callbacks this model always needs; they are added to the Trainer's."""
+        return []
+
+    def configure_model(self) -> None:
+        """Create layers here to build them on the training device (called once per fit)."""
+
+    def configure_gradient_clipping(
+        self,
+        optimizer: torch.optim.Optimizer,
+        gradient_clip_val: float | None = None,
+        gradient_clip_algorithm: str | None = None,
+    ) -> None:
+        """Clip gradients before each optimizer step; by default with the Trainer's values."""
+        self.clip_gradients(optimizer, gradient_clip_val, gradient_clip_algorithm)
+
+    # ------------------------------------------------------------------ hooks
+    # Overridden hooks are called by the Trainer; the ones left as they are cost nothing.
+
+    def setup(self, stage: str) -> None: ...
+    def teardown(self, stage: str) -> None: ...
+    def prepare_data(self) -> None: ...
+    def on_fit_start(self) -> None: ...
+    def on_fit_end(self) -> None: ...
+    def on_train_start(self) -> None: ...
+    def on_train_end(self) -> None: ...
+    def on_train_epoch_start(self) -> None: ...
+    def on_train_epoch_end(self) -> None: ...
+    def on_train_batch_start(self, batch: Any, batch_idx: int) -> Any: ...
+    def on_train_batch_end(self, outputs: Any, batch: Any, batch_idx: int) -> None: ...
+    def on_validation_start(self) -> None: ...
+    def on_validation_end(self) -> None: ...
+    def on_validation_epoch_start(self) -> None: ...
+    def on_validation_epoch_end(self) -> None: ...
+    def on_validation_batch_start(self, batch: Any, batch_idx: int) -> None: ...
+    def on_validation_batch_end(self, outputs: Any, batch: Any, batch_idx: int) -> None: ...
+    def on_test_start(self) -> None: ...
+    def on_test_end(self) -> None: ...
+    def on_test_epoch_start(self) -> None: ...
+    def on_test_epoch_end(self) -> None: ...
+    def on_test_batch_start(self, batch: Any, batch_idx: int) -> None: ...
+    def on_test_batch_end(self, outputs: Any, batch: Any, batch_idx: int) -> None: ...
+    def on_predict_start(self) -> None: ...
+    def on_predict_end(self) -> None: ...
+    def on_predict_epoch_start(self) -> None: ...
+    def on_predict_epoch_end(self) -> None: ...
+    def on_predict_batch_start(self, batch: Any, batch_idx: int) -> None: ...
+    def on_predict_batch_end(self, outputs: Any, batch: Any, batch_idx: int) -> None: ...
+    def on_before_backward(self, loss: torch.Tensor) -> None: ...
+    def on_after_backward(self) -> None: ...
+    def on_before_optimizer_step(self, optimizer: torch.optim.Optimizer) -> None: ...
+    def on_before_zero_grad(self, optimizer: torch.optim.Optimizer) -> None: ...
+    def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None: ...
+    def on_load_checkpoint(self, checkpoint: dict[str, Any]) -> None: ...
+    def on_exception(self, exception: BaseException) -> None: ...
+
+    def on_before_batch_transfer(self, batch: Any, dataloader_idx: int) -> Any:
+        return batch
+
+    def transfer_batch_to_device(
+        self, batch: Any, device: torch.device, dataloader_idx: int
+    ) -> Any:
+        """Move a batch to ``device``. Override for custom batch types."""
+        from gpulayer.pytorch.runtime import move_to_device
+
+        return move_to_device(batch, device)
+
+    def on_after_batch_transfer(self, batch: Any, dataloader_idx: int) -> Any:
+        return batch
+
+    def lr_scheduler_step(self, scheduler: Any, metric: Any) -> None:
+        """Step a scheduler; ``metric`` is the monitored value for ReduceLROnPlateau."""
+        if metric is None:
+            scheduler.step()
+        else:
+            scheduler.step(metric)
+
+    def optimizer_step(
+        self, epoch: int, batch_idx: int, optimizer: torch.optim.Optimizer, closure: Any = None
+    ) -> None:
+        """Run the optimizer step (override to change it, e.g. learning-rate warm-up)."""
+        optimizer.step(closure=closure) if closure is not None else optimizer.step()
+
+    def optimizer_zero_grad(
+        self, epoch: int, batch_idx: int, optimizer: torch.optim.Optimizer
+    ) -> None:
+        optimizer.zero_grad(set_to_none=True)
+
+    # ------------------------------------------------------------------ logging
+
+    def log(
+        self,
+        name: str,
+        value: Any,
+        prog_bar: bool = False,
+        logger: bool | None = None,
+        on_step: bool | None = None,
+        on_epoch: bool | None = None,
+        reduce_fx: str | Callable[..., Any] = "mean",
+        enable_graph: bool = False,
+        sync_dist: bool = False,
+        sync_dist_group: Any = None,
+        add_dataloader_idx: bool = True,
+        batch_size: int | None = None,
+        metric_attribute: str | None = None,
+        rank_zero_only: bool = False,
+    ) -> None:
+        """Record a scalar for this step. The Trainer aggregates it over the epoch with
+        ``reduce_fx`` ("mean", "sum", "max" or "min"; a mean is weighted by ``batch_size``
+        when given) and averages it across processes. ``prog_bar`` shows it in the progress
+        bar. ``sync_dist`` is accepted for compatibility: epoch values are always combined
+        across processes."""
+        if reduce_fx == "mean" and not prog_bar and batch_size is None and on_step is not False:
+            # The common call, kept short: it runs every step.
+            if isinstance(value, torch.Tensor):
+                value = value.detach()
+                if value.ndim or value.dtype != torch.float32:  # a scalar loss needs no op
+                    value = value.float().mean()
+                self._gl_step_logs[name] = value
+            else:
+                self._gl_step_logs[name] = float(value)
+            return
+        fx = reduce_fx if isinstance(reduce_fx, str) else getattr(reduce_fx, "__name__", "")
+        fx = _FX_ALIASES.get(fx, fx)
+        if fx not in REDUCE_FX:
+            raise ValidationFailed(f"reduce_fx must be one of {REDUCE_FX}, got {reduce_fx!r}")
         # Tensors stay on the device: reading them (.item()) would make the CPU wait for the
         # GPU on every step. The Trainer reads them only when it prints or ends an epoch.
         if isinstance(value, torch.Tensor):
             value = value.detach()
-            if value.ndim or value.dtype != torch.float32:  # a scalar loss needs no op
+            if value.ndim or value.dtype != torch.float32:
                 value = value.float().mean()
             self._gl_step_logs[name] = value
         else:
             self._gl_step_logs[name] = float(value)
+        self._gl_log_options[name] = (
+            fx,
+            prog_bar,
+            on_step is not False,
+            float(batch_size) if batch_size is not None else None,
+        )
+
+    def log_dict(self, dictionary: dict[str, Any], **kwargs: Any) -> None:
+        for k, v in dictionary.items():
+            self.log(k, v, **kwargs)
+
+    def print(self, *args: Any, **kwargs: Any) -> None:
+        """``print`` on rank 0 only."""
+        if self.trainer is None or self.trainer.is_global_zero:
+            print(*args, **kwargs)
+
+    # ------------------------------------------------------------- optimization
+
+    @property
+    def automatic_optimization(self) -> bool:
+        return self._gl_automatic_optimization
+
+    @automatic_optimization.setter
+    def automatic_optimization(self, value: bool) -> None:
+        self._gl_automatic_optimization = value
+
+    def _trainer(self) -> Any:
+        if self.trainer is None:
+            raise ValidationFailed(f"{type(self).__name__} is not attached to a Trainer")
+        return self.trainer
+
+    def optimizers(self, use_pl_optimizer: bool = True) -> Any:
+        """The optimizer(s) from ``configure_optimizers``: one, or a list."""
+        t = self._trainer()
+        opts = t._manual_opts if (use_pl_optimizer and t._manual_opts) else t.optimizers
+        return opts[0] if len(opts) == 1 else opts
+
+    def lr_schedulers(self) -> Any:
+        scheds = [c.scheduler for c in self._trainer().lr_scheduler_configs]
+        if not scheds:
+            return None
+        return scheds[0] if len(scheds) == 1 else scheds
+
+    def manual_backward(self, loss: torch.Tensor, *args: Any, **kwargs: Any) -> None:
+        """``loss.backward()`` for manual optimization, with the Trainer's gradient scaling."""
+        self._trainer()._manual_backward(loss, *args, **kwargs)
+
+    def backward(self, loss: torch.Tensor, *args: Any, **kwargs: Any) -> None:
+        loss.backward(*args, **kwargs)
+
+    def clip_gradients(
+        self,
+        optimizer: torch.optim.Optimizer,
+        gradient_clip_val: float | None = None,
+        gradient_clip_algorithm: str | None = None,
+    ) -> None:
+        """Clip the gradients of ``optimizer``'s parameters (unscaled first with 16-mixed)."""
+        if not gradient_clip_val:
+            return
+        self._trainer()._clip(optimizer, gradient_clip_val, gradient_clip_algorithm or "norm")
+
+    def toggle_optimizer(self, optimizer: torch.optim.Optimizer) -> None:
+        """Only ``optimizer``'s parameters require gradients until ``untoggle_optimizer``."""
+        own = {id(p) for g in optimizer.param_groups for p in g["params"]}
+        self._gl_toggled = {id(p): p.requires_grad for p in self.parameters() if id(p) not in own}
+        for p in self.parameters():
+            if id(p) not in own:
+                p.requires_grad = False
+
+    def untoggle_optimizer(self, optimizer: torch.optim.Optimizer) -> None:
+        saved = getattr(self, "_gl_toggled", {})
+        for p in self.parameters():
+            if id(p) in saved:
+                p.requires_grad = saved[id(p)]
+        self._gl_toggled = {}
+
+    @contextmanager
+    def toggled_optimizer(self, optimizer: torch.optim.Optimizer) -> Iterator[None]:
+        self.toggle_optimizer(optimizer)
+        try:
+            yield
+        finally:
+            self.untoggle_optimizer(optimizer)
+
+    # ------------------------------------------------------------------ state
+
+    @property
+    def current_epoch(self) -> int:
+        return self.trainer.current_epoch if self.trainer is not None else 0
+
+    @property
+    def global_step(self) -> int:
+        return self.trainer.global_step if self.trainer is not None else 0
+
+    @property
+    def global_rank(self) -> int:
+        return self.trainer.global_rank if self.trainer is not None else 0
+
+    @property
+    def local_rank(self) -> int:
+        return self.trainer.local_rank if self.trainer is not None else 0
+
+    @property
+    def device(self) -> torch.device:
+        for p in self.parameters():
+            return p.device
+        for b in self.buffers():
+            return b.device
+        return torch.device("cpu")
+
+    @property
+    def dtype(self) -> torch.dtype:
+        for p in self.parameters():
+            return p.dtype
+        return torch.get_default_dtype()
+
+    @property
+    def on_gpu(self) -> bool:
+        return self.device.type == "cuda"
+
+    @property
+    def logger(self) -> Any:
+        return self.trainer.logger if self.trainer is not None else None
+
+    @property
+    def loggers(self) -> list[Any]:
+        return self.trainer.loggers if self.trainer is not None else []
+
+    def all_gather(self, data: Any, sync_grads: bool = False) -> Any:
+        """Gather tensors from every process: each tensor gets a leading world-size
+        dimension (unchanged in a single process)."""
+        import torch.distributed as dist
+
+        if not (dist.is_available() and dist.is_initialized()):
+            return data
+        if isinstance(data, dict):
+            return {k: self.all_gather(v, sync_grads) for k, v in data.items()}
+        if isinstance(data, (list, tuple)):
+            return type(data)(self.all_gather(v, sync_grads) for v in data)
+        t = data if isinstance(data, torch.Tensor) else torch.tensor(data, device=self.device)
+        if sync_grads:
+            from torch.distributed.nn.functional import all_gather as ag
+
+            return torch.stack(ag(t))
+        out = [torch.empty_like(t) for _ in range(dist.get_world_size())]
+        dist.all_gather(out, t.contiguous())
+        return torch.stack(out)
+
+    def freeze(self) -> None:
+        """No gradients for any parameter, and evaluation mode."""
+        for p in self.parameters():
+            p.requires_grad = False
+        self.eval()
+
+    def unfreeze(self) -> None:
+        for p in self.parameters():
+            p.requires_grad = True
+        self.train()
+
+    # ------------------------------------------------------------------ export
+
+    def to_torchscript(
+        self,
+        file_path: str | Path | None = None,
+        method: str = "script",
+        example_inputs: Any = None,
+    ) -> Any:
+        """TorchScript of this model (``method="script"`` or ``"trace"``), saved when
+        ``file_path`` is given."""
+        mode = self.training
+        self.eval()
+        try:
+            if method == "script":
+                scripted = torch.jit.script(self)
+            elif method == "trace":
+                inputs = example_inputs if example_inputs is not None else self.example_input_array
+                if inputs is None:
+                    raise ValidationFailed("method='trace' needs example_inputs")
+                scripted = torch.jit.trace(self, inputs)
+            else:
+                raise ValidationFailed("method must be 'script' or 'trace'")
+        finally:
+            self.train(mode)
+        if file_path is not None:
+            torch.jit.save(scripted, str(file_path))
+        return scripted
+
+    def to_onnx(self, file_path: str | Path, input_sample: Any = None, **kwargs: Any) -> None:
+        """Export to ONNX (needs the ``onnx`` package)."""
+        inputs = input_sample if input_sample is not None else self.example_input_array
+        if inputs is None:
+            raise ValidationFailed("to_onnx needs input_sample or self.example_input_array")
+        mode = self.training
+        self.eval()
+        try:
+            torch.onnx.export(self, inputs, str(file_path), **kwargs)
+        finally:
+            self.train(mode)
+
+    # ------------------------------------------------------------- checkpoints
 
     @classmethod
     def load_from_checkpoint(
-        cls, path: str | Path, *args: Any, map_location: Any = "cpu", **kwargs: Any
-    ) -> Module:
-        """Build ``cls(*args, **kwargs)`` and load the weights saved by the Trainer."""
-        model = cls(*args, **kwargs)
-        ckpt = torch.load(path, map_location=map_location, weights_only=False)
-        model.load_state_dict(ckpt["state_dict"])
+        cls,
+        checkpoint_path: str | Path,
+        *args: Any,
+        map_location: Any = "cpu",
+        strict: bool = True,
+        **kwargs: Any,
+    ) -> Any:
+        """Build the model and load the weights saved by the Trainer. Arguments recorded with
+        ``save_hyperparameters`` are used unless given again here."""
+        ckpt = torch.load(checkpoint_path, map_location=map_location, weights_only=False)
+        hparams = dict(ckpt.get("hyper_parameters") or {})
+        if args:
+            model = cls(*args, **kwargs)
+        else:
+            accepted = inspect.signature(cls.__init__).parameters
+            if not any(p.kind == p.VAR_KEYWORD for p in accepted.values()):
+                hparams = {k: v for k, v in hparams.items() if k in accepted}
+            model = cls(**{**hparams, **kwargs})
+        model.on_load_checkpoint(ckpt)
+        model.load_state_dict(ckpt["state_dict"], strict=strict)
         return model
+
+
+class DataModule(HyperparametersMixin):
+    """All the data of a project in one place, as in Lightning's ``LightningDataModule``.
+
+    ``prepare_data`` runs once per machine (download here); ``setup(stage)`` runs in every
+    process ("fit", "validate", "test" or "predict"); the ``*_dataloader`` methods return
+    loaders. The Trainer calls them only in the processes that train, so a launched job does
+    not build its data in the launching process.
+    """
+
+    def __init__(self) -> None:
+        self.trainer: Any = None
+
+    def prepare_data(self) -> None: ...
+    def setup(self, stage: str) -> None: ...
+    def teardown(self, stage: str) -> None: ...
+
+    def train_dataloader(self) -> Any:
+        raise NotImplementedError("implement train_dataloader() to use this DataModule for fit")
+
+    def val_dataloader(self) -> Any:
+        return None
+
+    def test_dataloader(self) -> Any:
+        raise NotImplementedError("implement test_dataloader() to use Trainer.test")
+
+    def predict_dataloader(self) -> Any:
+        raise NotImplementedError("implement predict_dataloader() to use Trainer.predict")
+
+    def state_dict(self) -> dict[str, Any]:
+        return {}
+
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None: ...
+
+    def on_before_batch_transfer(self, batch: Any, dataloader_idx: int) -> Any:
+        return batch
+
+    def on_after_batch_transfer(self, batch: Any, dataloader_idx: int) -> Any:
+        return batch
+
+    @classmethod
+    def from_datasets(
+        cls,
+        train_dataset: Any = None,
+        val_dataset: Any = None,
+        test_dataset: Any = None,
+        predict_dataset: Any = None,
+        batch_size: int = 1,
+        num_workers: int = 0,
+        **loader_kwargs: Any,
+    ) -> DataModule:
+        """A DataModule from datasets, with a shuffled training loader."""
+        from torch.utils.data import DataLoader
+
+        def make(ds: Any, shuffle: bool) -> Any:
+            if ds is None:
+                return None
+            return DataLoader(
+                ds, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, **loader_kwargs
+            )
+
+        dm = cls.__new__(cls)
+        DataModule.__init__(dm)
+        dm.train_dataloader = lambda: make(train_dataset, True)  # type: ignore[method-assign]
+        dm.val_dataloader = lambda: make(val_dataset, False)  # type: ignore[method-assign]
+        dm.test_dataloader = lambda: make(test_dataset, False)  # type: ignore[method-assign]
+        dm.predict_dataloader = lambda: make(predict_dataset, False)  # type: ignore[method-assign]
+        return dm
+
+
+def overridden(obj: Any, name: str, base: type) -> bool:
+    """True when ``obj``'s class overrides ``base.name`` (or the instance replaced it)."""
+    if name in getattr(obj, "__dict__", {}):
+        return True
+    fn = getattr(type(obj), name, None)
+    return fn is not None and fn is not getattr(base, name, None)
+
+
+def deepcopy_module(model: nn.Module) -> nn.Module:
+    return copy.deepcopy(model)
 
 
 class _TrainingStep(nn.Module):
@@ -71,5 +579,5 @@ class _TrainingStep(nn.Module):
         super().__init__()
         self.module = module
 
-    def forward(self, batch: Any, batch_idx: int) -> torch.Tensor:
+    def forward(self, batch: Any, batch_idx: int) -> Any:
         return self.module.training_step(batch, batch_idx)

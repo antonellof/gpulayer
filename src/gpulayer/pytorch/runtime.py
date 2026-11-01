@@ -25,7 +25,29 @@ from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, Sequ
 
 from gpulayer.errors import ValidationFailed
 
-PRECISIONS = ("32-true", "bf16-mixed", "16-mixed")
+PRECISIONS = ("32-true", "bf16-mixed", "16-mixed", "bf16-true", "16-true", "64-true")
+# Lightning's short forms, accepted with the same meaning.
+_PRECISION_ALIASES = {
+    "32": "32-true",
+    "16": "16-mixed",
+    "bf16": "bf16-mixed",
+    "64": "64-true",
+    "transformer-engine": None,
+}
+_TRUE_DTYPES = {"bf16-true": "bfloat16", "16-true": "float16", "64-true": "float64"}
+
+
+def normalize_precision(precision: Any) -> str:
+    """'32-true', or a Lightning short form such as 32, "16" or "bf16", to its full name."""
+    name = str(precision)
+    if name in _PRECISION_ALIASES:
+        full = _PRECISION_ALIASES[name]
+        if full is None:
+            raise ValidationFailed(f"precision {name!r} is not supported by the GPUlayer Trainer")
+        return full
+    if name not in PRECISIONS:
+        raise ValidationFailed(f"precision must be one of {PRECISIONS}, got {precision!r}")
+    return name
 
 
 def _mps_available() -> bool:
@@ -105,15 +127,35 @@ def _record_stream(batch: Any, stream: Any) -> None:
             _record_stream(b, stream)
 
 
-def seed_everything(seed: int) -> None:
+def seed_everything(seed: int | None = None, workers: bool = False) -> int:
+    """Seed Python, NumPy and torch (every device) and return the seed. Without ``seed``,
+    ``$PL_GLOBAL_SEED`` or 0. ``workers`` is accepted for Lightning compatibility: torch
+    already derives each DataLoader worker's seed from the base seed."""
     import random
 
+    if seed is None:
+        seed = int(os.environ.get("PL_GLOBAL_SEED", "0"))
+    os.environ["PL_GLOBAL_SEED"] = str(seed)
     random.seed(seed)
     torch.manual_seed(seed)
     with contextlib.suppress(ImportError):
         import numpy as np
 
-        np.random.seed(seed)
+        np.random.seed(seed % 2**32)
+    return seed
+
+
+def move_to_device(batch: Any, device: torch.device) -> Any:
+    """Tensors in a batch (and in lists, tuples and dicts of them) moved to ``device``."""
+    if isinstance(batch, torch.Tensor):
+        return batch.to(device, non_blocking=True)
+    if isinstance(batch, (list, tuple)):
+        return type(batch)(move_to_device(b, device) for b in batch)
+    if isinstance(batch, dict):
+        return {k: move_to_device(v, device) for k, v in batch.items()}
+    if hasattr(batch, "to"):
+        return batch.to(device)
+    return batch
 
 
 _NOOP = contextlib.nullcontext()
@@ -143,10 +185,16 @@ GRADIENT_SYNC = ("auto", "flat", "two_level")
 
 class Runtime:
     def __init__(
-        self, accelerator: str = "auto", precision: str = "32-true", gradient_sync: str = "auto"
+        self,
+        accelerator: str = "auto",
+        precision: str = "32-true",
+        gradient_sync: str = "auto",
+        ddp_kwargs: dict[str, Any] | None = None,
     ) -> None:
-        if precision not in PRECISIONS:
-            raise ValidationFailed(f"precision must be one of {PRECISIONS}, got {precision!r}")
+        precision = normalize_precision(precision)
+        # Options passed to DistributedDataParallel (find_unused_parameters, static_graph,
+        # gradient_as_bucket_view, bucket_cap_mb, ...).
+        self.ddp_kwargs = dict(ddp_kwargs or {})
         if gradient_sync not in GRADIENT_SYNC:
             raise ValidationFailed(
                 f"gradient_sync must be one of {GRADIENT_SYNC}, got {gradient_sync!r}"
@@ -170,6 +218,12 @@ class Runtime:
             raise ValidationFailed("precision '16-mixed' is only supported on CUDA and ROCm")
         if precision == "bf16-mixed" and self.accelerator == "mps":
             raise ValidationFailed("precision 'bf16-mixed' is not supported on MPS yet")
+        if precision == "64-true" and self.accelerator == "mps":
+            raise ValidationFailed("precision '64-true' is not supported on MPS (no float64)")
+        # "-true" precisions keep the weights and the inputs in that dtype (no autocast).
+        self.param_dtype: torch.dtype | None = (
+            getattr(torch, _TRUE_DTYPES[precision]) if precision in _TRUE_DTYPES else None
+        )
         if self.gpu:
             self.device = torch.device("cuda", self.local_rank)
         else:
@@ -214,7 +268,7 @@ class Runtime:
             return model
         from torch.nn.parallel import DistributedDataParallel as DDP
 
-        ddp = DDP(model, device_ids=[self.local_rank] if self.gpu else None)
+        ddp = DDP(model, device_ids=[self.local_rank] if self.gpu else None, **self.ddp_kwargs)
         if self.uses_two_level_sync():
             from gpulayer.pytorch.hierarchical import HierarchicalAllReduce
 
@@ -350,7 +404,15 @@ class Runtime:
         set_model_state_dict(model, model_state, options=opts)
         set_optimizer_state_dict(model, optimizer, optim_state, options=opts)
 
+    def convert_module(self, model: nn.Module) -> nn.Module:
+        """With a "-true" precision, cast the weights to that dtype (a no-op otherwise)."""
+        if self.param_dtype is not None:
+            model.to(self.param_dtype)
+        return model
+
     def to_device(self, batch: Any) -> Any:
+        if self.param_dtype is not None:
+            return self._to_device(batch)
         if self.device.type == "cpu":
             return batch  # DataLoader batches are already on the CPU
         return self._to_device(batch)
@@ -417,6 +479,9 @@ class Runtime:
         if isinstance(batch, torch.Tensor):
             if pin and batch.device.type == "cpu" and not batch.is_pinned():
                 batch = batch.pin_memory()
+            if self.param_dtype is not None and batch.is_floating_point():
+                # "-true" precision: float inputs in the weights' dtype, as Lightning does.
+                return batch.to(self.device, self.param_dtype, non_blocking=True)
             return batch.to(self.device, non_blocking=True)
         if isinstance(batch, (list, tuple)):
             return type(batch)(self._to_device(b, pin) for b in batch)
@@ -427,7 +492,7 @@ class Runtime:
     # ------------------------------------------------------------- precision
 
     def autocast(self) -> contextlib.AbstractContextManager[Any]:
-        if self.precision == "32-true":
+        if self.precision == "32-true" or self.param_dtype is not None:
             return _NOOP
         if self._autocast is None:
             dtype = torch.bfloat16 if self.precision == "bf16-mixed" else torch.float16
@@ -470,6 +535,18 @@ class Runtime:
         t = torch.tensor([1.0 if flag else 0.0], device=self.device if self.gpu else "cpu")
         dist.all_reduce(t, op=dist.ReduceOp.MAX)
         return bool(t.item() > 0)
+
+    def mean_dict(self, values: dict[str, float]) -> dict[str, float]:
+        """Average every value across ranks in one all-reduce (keys sorted, so ranks agree)."""
+        if not (self.distributed and dist.is_initialized()) or not values:
+            return {k: float(v) for k, v in values.items()}
+        keys = sorted(values)
+        t = torch.tensor(
+            [float(values[k]) for k in keys], device=self.device if self.gpu else "cpu"
+        )
+        dist.all_reduce(t)
+        t /= self.world_size
+        return dict(zip(keys, t.tolist(), strict=True))
 
     def mean(self, value: float) -> float:
         if not (self.distributed and dist.is_initialized()):

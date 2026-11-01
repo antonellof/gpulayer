@@ -1,32 +1,103 @@
-"""PyTorch integration (requires ``torch``). See ADR-0014.
+"""PyTorch integration (requires ``torch``). See ADR-0014, ADR-0018 and ADR-0024.
 
 Three layers, each usable alone:
 
 * ``launch()``  -- run any PyTorch script, whatever framework it uses, on GPUlayer workers
 * ``Runtime``   -- device, DDP, data sharding and precision helpers
-* ``Module`` + ``Trainer`` -- a small training API that also picks where training runs
+* ``Module`` + ``Trainer`` -- a training API with PyTorch Lightning's names (hooks, callbacks,
+  loggers, profilers, tuner) that also picks where training runs
 """
 
 from gpulayer.pytorch.callbacks import (
+    BackboneFinetuning,
+    BaseFinetuning,
+    BasePredictionWriter,
     Callback,
+    DeviceStatsMonitor,
     EarlyStopping,
+    EMAWeightAveraging,
+    GradientAccumulationScheduler,
+    LambdaCallback,
     LearningRateMonitor,
     ModelCheckpoint,
+    ModelPruning,
+    ModelSummary,
+    OnExceptionCheckpoint,
+    ProgressBar,
+    SpikeDetection,
+    StochasticWeightAveraging,
+    ThroughputMonitor,
+    Timer,
+    TQDMProgressBar,
+    TrainingSpikeException,
+    WeightAveraging,
 )
 from gpulayer.pytorch.launch import LaunchResult, in_gpulayer_job, is_launcher_process, launch
-from gpulayer.pytorch.module import Module
+from gpulayer.pytorch.loggers import CSVLogger, Logger, MLFlowLogger, TensorBoardLogger, WandbLogger
+from gpulayer.pytorch.module import AttributeDict, DataModule, Module
+from gpulayer.pytorch.profilers import (
+    AdvancedProfiler,
+    PassThroughProfiler,
+    Profiler,
+    PyTorchProfiler,
+    SimpleProfiler,
+)
 from gpulayer.pytorch.runtime import Runtime, resolve_accelerator, seed_everything
-from gpulayer.pytorch.trainer import Trainer
+from gpulayer.pytorch.strategies import DDPStrategy, FSDPStrategy
+from gpulayer.pytorch.trainer import LRSchedulerConfig, Trainer
+from gpulayer.pytorch.tuner import BatchSizeFinder, LearningRateFinder, Tuner
+
+# Lightning's names, for code moving over.
+LightningModule = Module
+LightningDataModule = DataModule
 
 __all__ = [
+    "AdvancedProfiler",
+    "AttributeDict",
+    "BackboneFinetuning",
+    "BaseFinetuning",
+    "BasePredictionWriter",
+    "BatchSizeFinder",
+    "CSVLogger",
     "Callback",
+    "DDPStrategy",
+    "DataModule",
+    "DeviceStatsMonitor",
+    "EMAWeightAveraging",
     "EarlyStopping",
+    "FSDPStrategy",
+    "GradientAccumulationScheduler",
+    "LRSchedulerConfig",
+    "LambdaCallback",
     "LaunchResult",
+    "LearningRateFinder",
     "LearningRateMonitor",
+    "LightningDataModule",
+    "LightningModule",
+    "Logger",
+    "MLFlowLogger",
     "ModelCheckpoint",
+    "ModelPruning",
+    "ModelSummary",
     "Module",
+    "OnExceptionCheckpoint",
+    "PassThroughProfiler",
+    "Profiler",
+    "ProgressBar",
+    "PyTorchProfiler",
     "Runtime",
+    "SimpleProfiler",
+    "SpikeDetection",
+    "StochasticWeightAveraging",
+    "TQDMProgressBar",
+    "TensorBoardLogger",
+    "ThroughputMonitor",
+    "Timer",
     "Trainer",
+    "TrainingSpikeException",
+    "Tuner",
+    "WandbLogger",
+    "WeightAveraging",
     "in_gpulayer_job",
     "is_launcher_process",
     "launch",

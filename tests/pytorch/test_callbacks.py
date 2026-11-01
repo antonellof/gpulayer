@@ -174,7 +174,7 @@ def test_model_checkpoint_save_top_k_keeps_the_k_best(tmp_path):
     assert on_disk == kept  # worse ones were deleted
     assert best.best_model_path.name == "best-epoch=1.ckpt"
     with pytest.raises(ValidationFailed, match="save_top_k"):
-        glt.ModelCheckpoint(save_top_k=0)
+        glt.ModelCheckpoint(save_top_k=-2)  # 0 (none) and -1 (all) are valid, as in Lightning
 
 
 def test_learning_rate_monitor_records_each_epochs_rate(tmp_path):

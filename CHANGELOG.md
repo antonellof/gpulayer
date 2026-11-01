@@ -3,7 +3,50 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
-## Unreleased
+## 0.8.0 (2026-11-01)
+
+Lightning feature parity for the GPUlayer Trainer ([ADR-0024](docs/decisions/ADR-0024-lightning-feature-parity.md)).
+
+- Module: every Lightning hook, manual optimization (`automatic_optimization = False`,
+  `optimizers()`, `manual_backward`, `clip_gradients`, `toggle_optimizer`; also with DDP),
+  several optimizers, all `configure_optimizers` forms including scheduler dicts with
+  `interval`, `frequency` and `monitor` (ReduceLROnPlateau), `save_hyperparameters`/`hparams`
+  (used by `load_from_checkpoint`), `self.log` options (`reduce_fx`, `batch_size`,
+  `prog_bar`, `on_step`), `log_dict`, `all_gather`, `freeze`, `to_onnx`, `to_torchscript`,
+  model-defined dataloaders, `LightningModule` alias.
+- `DataModule` (`LightningDataModule`): `prepare_data` once per machine, `setup(stage)`,
+  loaders, transfer hooks; `fit/validate/test/predict(datamodule=...)`.
+- Trainer arguments: `min_epochs`, `min_steps`, `limit_test_batches`,
+  `limit_predict_batches`, fractional limits, `overfit_batches`,
+  `reload_dataloaders_every_n_epochs`, `use_distributed_sampler`, `inference_mode` (on for
+  validate/test/predict), `detect_anomaly`, `sync_batchnorm` (CUDA/ROCm), `barebones`,
+  `logger`, `profiler`, `enable_progress_bar`, `enable_model_summary`,
+  `deterministic="warn"`, `devices="auto"`, `max_time` as a duration; precisions
+  `bf16-true`, `16-true`, `64-true` and Lightning's short forms; strategy strings and
+  `DDPStrategy(find_unused_parameters, static_graph, gradient_as_bucket_view, ...)`;
+  `torch.compile`d models train compiled with their own options.
+- Callbacks: `ModelCheckpoint` with Lightning's arguments (templates, `every_n_train_steps`,
+  `train_time_interval`, `save_last`, `save_top_k=-1/0`, `monitor=None`), `EarlyStopping`
+  thresholds, `Timer`, `LambdaCallback`, `GradientAccumulationScheduler`,
+  `ThroughputMonitor`, `DeviceStatsMonitor`, `SpikeDetection`, `ModelSummary`,
+  `ProgressBar`, `BasePredictionWriter`, `OnExceptionCheckpoint`,
+  `StochasticWeightAveraging`, `WeightAveraging`, `EMAWeightAveraging`, `BaseFinetuning`,
+  `BackboneFinetuning`, `ModelPruning`, `LearningRateFinder`, `BatchSizeFinder`.
+- Loggers `CSVLogger`, `TensorBoardLogger`, `WandbLogger`, `MLFlowLogger`; profilers
+  `SimpleProfiler`, `AdvancedProfiler`, `PyTorchProfiler`; `Tuner.lr_find` and
+  `Tuner.scale_batch_size`.
+- Checkpoints use Lightning's layout (`optimizer_states`, `lr_schedulers`, `callbacks`,
+  `hyper_parameters`, scaler; `optimizer` is still written) and resume within an epoch from
+  step checkpoints. Ctrl+C ends `fit` gracefully after `on_exception` hooks.
+- Speed: only overridden hooks are called, `self.log` has a fast path, epoch metrics are
+  averaged across ranks in one all-reduce. Step time measured within 1.4% of 0.7.1 on an
+  Apple M2 Pro CPU (A/B, `benchmarks/results/2026-11-01-m2pro-parity/`).
+- Migration: `ModelCheckpoint`'s first positional argument is now `dirpath`, as in
+  Lightning (pass `monitor=` by name). `save_top_k=0` is now valid (keeps none).
+  `validate`/`test` print their results (`verbose=False` to silence). Callbacks with the 0.7
+  `on_train_batch_end(trainer, model, loss, batch_idx)` signature keep working.
+- Not validated on GPUs yet: `sync_batchnorm`, Inductor `torch.compile`, 16-mixed with manual
+  optimization. TensorBoard, W&B and MLflow loggers are untested (optional packages).
 
 - Deprecated the `jax-cuda` and `cupy-cuda` runtime profiles (never run on a GPU). They still
   work and warn; they are removed in 0.9.0. Migration: replace `profile="jax-cuda"` with

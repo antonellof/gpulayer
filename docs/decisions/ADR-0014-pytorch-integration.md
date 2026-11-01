@@ -1,6 +1,6 @@
 # ADR-0014: PyTorch integration and a training API
 
-- Status: Accepted (milestone 2, first slice)
+- Status: Accepted (milestone 2, first slice); the Trainer's scope is now set by [ADR-0018](ADR-0018-trainer-scope.md) and [ADR-0024](ADR-0024-lightning-feature-parity.md)
 - Date: 2026-10-29
 
 ## Context
@@ -58,7 +58,8 @@ works, and it keeps ADR-0002: code travels as source and nothing is pickled.
   execution on workers. Rejected by ADR-0002.
 - Build a large trainer with callbacks, logger integrations, many strategies and dozens of
   flags. That is a big surface to maintain. The GPUlayer Trainer stays small; users who need
-  more can run their framework of choice through the launcher.
+  more can run their framework of choice through the launcher. (Revisited in ADR-0024: the
+  Trainer now adopts Lightning's hooks, callbacks and loggers, without DeepSpeed or plugins.)
 
 ## Consequences
 
@@ -82,7 +83,6 @@ any `CommandJob` does (ADR-0009).
 ## Follow-up
 
 - Interop tests with third-party training frameworks, skipped when they are not installed.
-- Learning-rate monitoring and logger integrations (callbacks, early stopping, best
-  checkpoints and gradient accumulation are done).
+- Learning-rate monitoring and logger integrations: done (ADR-0024).
 - FSDP and other strategies after DDP is hardware-validated on CUDA.
 - Resuming from a checkpoint artifact after worker loss, with explicit user opt-in.

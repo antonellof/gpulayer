@@ -1,94 +1,245 @@
-"""A small Trainer that runs the training loop and also decides WHERE training runs.
+"""``Trainer``: runs a ``Module``'s training loop here, or launches it on GPUlayer workers.
 
-    trainer = Trainer(max_epochs=5, accelerator="auto")                    # this process
-    trainer = Trainer(max_epochs=5, accelerator="cpu", devices=2)          # 2-process DDP
-    trainer = Trainer(max_epochs=5, accelerator="cuda", devices=4, num_nodes=2,
-                      target="remote")                                     # 8 GPUs elsewhere
-    trainer.fit(model, train_loader, val_loader)
-
-When the run cannot happen in this process (``target`` given, or more than one process),
-``fit`` re-executes this script on GPUlayer workers through ``launch``; on the workers the
-same ``fit`` call runs the training loop. Afterwards the final weights are loaded into the
-local ``model`` and ``callback_metrics`` / ``history`` hold the remote metrics.
+Arguments, hooks and callbacks follow PyTorch Lightning's names and meaning (ADR-0018,
+ADR-0024). The per-step path stays lean: hooks a model or callback does not override are not
+called, logged values stay on the device until a log step, and nothing is profiled, logged
+or synchronised per step unless a feature that needs it is turned on.
 """
 
 from __future__ import annotations
 
+import contextlib
 import csv
 import json
+import math
 import os
 import time
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
 import torch
-from torch.utils.data import DataLoader, DistributedSampler
+from torch.utils.data import DataLoader, DistributedSampler, SequentialSampler
 
 from gpulayer.errors import ValidationFailed
-from gpulayer.pytorch.callbacks import Callback, _call
+from gpulayer.pytorch.callbacks import Callback
+from gpulayer.pytorch.callbacks.base import legacy_batch_end, overrides
+from gpulayer.pytorch.callbacks.monitor import EarlyStopping, ModelCheckpoint
+from gpulayer.pytorch.callbacks.utility import ModelSummary, ProgressBar, _parse_duration
 from gpulayer.pytorch.launch import LaunchResult, is_launcher_process, launch
-from gpulayer.pytorch.module import Module, _TrainingStep
-from gpulayer.pytorch.runtime import GRADIENT_SYNC, Runtime, resolve_accelerator
+from gpulayer.pytorch.loggers import Logger
+from gpulayer.pytorch.module import DataModule, Module, _TrainingStep, overridden
+from gpulayer.pytorch.profilers import Profiler, resolve_profiler
+from gpulayer.pytorch.runtime import (
+    GRADIENT_SYNC,
+    Runtime,
+    normalize_precision,
+    resolve_accelerator,
+)
+from gpulayer.pytorch.strategies import DDPStrategy, FSDPStrategy, resolve_strategy
 from gpulayer.sdk.remote import RemoteError, default_client, default_target, explain_failure
 
 CHECKPOINT = "checkpoints/last.ckpt"
-
-
-# cuDNN autotuning (benchmark=None) turns on for runs planning at least this many steps.
+# cuDNN autotuning pays off from about this many optimizer steps (see Trainer.fit).
 AUTOTUNE_MIN_STEPS = 1000
+RESUME_INPUT = "gpulayer-resume.ckpt"
+
+
+@dataclass
+class LRSchedulerConfig:
+    """A learning-rate scheduler and when to step it, as in Lightning."""
+
+    scheduler: Any
+    name: str | None = None
+    interval: str = "epoch"
+    frequency: int = 1
+    reduce_on_plateau: bool = False
+    monitor: str | None = None
+    strict: bool = True
+
+
+@dataclass
+class TrainerState:
+    fn: str | None = None  # "fit", "validate", "test", "predict"
+    stage: str | None = None  # "train", "sanity_check", "validate", "test", "predict"
+    status: str = "initializing"  # "running", "finished", "interrupted"
+
+
+class _Results(dict):
+    """``validate``/``test`` results: a dict, and also ``results[0]`` like Lightning's list."""
+
+    def __getitem__(self, key: Any) -> Any:
+        if key == 0 and 0 not in self.keys():
+            return self
+        return super().__getitem__(key)
+
+    def __len__(self) -> int:
+        return super().__len__()
+
+
+class _ManualOptimizer:
+    """What ``Module.optimizers()`` returns with manual optimization: the optimizer, with
+    ``step`` going through the gradient scaler (16-mixed) and counting ``global_step``."""
+
+    def __init__(self, optimizer: torch.optim.Optimizer, trainer: Trainer) -> None:
+        self.__dict__["_opt"] = optimizer
+        self.__dict__["_trainer"] = trainer
+
+    def __getattr__(self, name: str) -> Any:
+        if name == "_opt":
+            raise AttributeError(name)
+        return getattr(self._opt, name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        setattr(self._opt, name, value)
+
+    @property
+    def optimizer(self) -> torch.optim.Optimizer:
+        return self._opt
+
+    def step(self, closure: Callable[[], Any] | None = None, **kwargs: Any) -> Any:
+        t = self._trainer
+        t._call_hook("on_before_optimizer_step", self._opt)
+        scaler = t.runtime.scaler if t.runtime is not None else None
+        if scaler is not None:
+            out = scaler.step(self._opt, closure, **kwargs) if closure else scaler.step(self._opt)
+            scaler.update()
+        else:
+            out = self._opt.step(closure, **kwargs) if closure else self._opt.step()
+        t.global_step += 1
+        t._stepped = True
+        return out
+
+    def zero_grad(self, set_to_none: bool = True) -> None:
+        self._trainer._call_hook("on_before_zero_grad", self._opt)
+        self._opt.zero_grad(set_to_none=set_to_none)
+
+
+def _limit(value: int | float | None, n: int | None, name: str) -> int | None:
+    """``limit_*_batches``: a number of batches, or a fraction of the loader."""
+    if value is None:
+        return None
+    if isinstance(value, float):
+        if not 0.0 <= value <= 1.0:
+            raise ValidationFailed(f"{name} as a float must be between 0 and 1")
+        if value == 1.0:
+            return None
+        if n is None:
+            raise ValidationFailed(f"a fractional {name} needs a loader with a length")
+        return max(1, int(n * value)) if value > 0 else 0
+    if value < 0:
+        raise ValidationFailed(f"{name} must be >= 0")
+    return int(value)
+
+
+def _len(loader: Any) -> int | None:
+    try:
+        return len(loader)
+    except TypeError:
+        return None
 
 
 class Trainer:
+    """Train a ``Module``: ``Trainer(max_epochs=5).fit(model, train_loader, val_loader)``.
+
+    With one device and no ``target`` the loop runs in this process. With ``devices`` > 1,
+    ``num_nodes`` > 1 or a ``target``, ``fit`` submits a job and the same script runs on
+    GPUlayer workers, one process per rank; the trained weights come back to ``model``.
+    """
+
     def __init__(
         self,
         *,
-        max_epochs: int = 1,
-        max_steps: int | None = None,
-        check_val_every_n_epoch: int = 1,
-        val_check_interval: int | float | None = None,
         accelerator: str = "auto",
-        devices: int = 1,
+        strategy: str | DDPStrategy | FSDPStrategy = "ddp",
+        devices: int | str = 1,
         num_nodes: int = 1,
-        strategy: str = "ddp",
-        precision: str = "32-true",
-        gradient_sync: str = "auto",
-        target: str | None = None,
+        precision: str | int = "32-true",
+        logger: Logger | list[Logger] | bool | None = None,
+        callbacks: Callback | list[Callback] | None = None,
+        fast_dev_run: bool | int = False,
+        max_epochs: int | None = 1,
+        min_epochs: int | None = None,
+        max_steps: int | None = None,
+        min_steps: int | None = None,
+        max_time: float | timedelta | dict[str, int] | str | None = None,
+        limit_train_batches: int | float | None = None,
+        limit_val_batches: int | float | None = None,
+        limit_test_batches: int | float | None = None,
+        limit_predict_batches: int | float | None = None,
+        overfit_batches: int | float = 0.0,
+        val_check_interval: int | float | None = None,
+        check_val_every_n_epoch: int | None = 1,
+        num_sanity_val_steps: int = 2,
+        log_every_n_steps: int = 50,
+        enable_checkpointing: bool = True,
+        enable_progress_bar: bool = False,
+        enable_model_summary: bool = False,
+        accumulate_grad_batches: int = 1,
         gradient_clip_val: float | None = None,
         gradient_clip_algorithm: str = "norm",
-        accumulate_grad_batches: int = 1,
-        log_every_n_steps: int = 50,
-        limit_train_batches: int | None = None,
-        limit_val_batches: int | None = None,
-        num_sanity_val_steps: int = 2,
-        fast_dev_run: bool | int = False,
-        max_time: float | None = None,
-        deterministic: bool = False,
+        deterministic: bool | str = False,
         benchmark: bool | None = None,
-        prefetch: bool = False,
-        enable_checkpointing: bool = True,
+        inference_mode: bool = True,
+        use_distributed_sampler: bool = True,
+        profiler: str | Profiler | None = None,
+        detect_anomaly: bool = False,
+        barebones: bool = False,
+        plugins: Any = None,
+        sync_batchnorm: bool = False,
+        reload_dataloaders_every_n_epochs: int = 0,
         default_root_dir: str | Path = "gpulayer_runs",
+        # GPUlayer's own arguments
+        target: str | None = None,
+        gradient_sync: str = "auto",
+        prefetch: bool = False,
         launch_options: dict[str, Any] | None = None,
-        callbacks: list[Callback] | None = None,
     ) -> None:
-        if (
-            min(devices, num_nodes, max_epochs, accumulate_grad_batches, check_val_every_n_epoch)
-            < 1
+        if plugins is not None:
+            raise ValidationFailed(
+                "plugins are not supported by the GPUlayer Trainer; use precision=, "
+                "strategy= and sync_batchnorm= for the built-in ones"
+            )
+        if max_epochs is None or max_epochs == -1:
+            max_epochs = 1000 if max_steps in (None, -1) else 10**9
+        if max_steps == -1:
+            max_steps = None
+        if devices in ("auto", -1):
+            devices = max(1, torch.cuda.device_count())
+        if not isinstance(devices, int):
+            raise ValidationFailed(
+                "devices must be a number of processes per node, 'auto' or -1; to pick GPU "
+                "indices, set CUDA_VISIBLE_DEVICES or use launch_options={'gpus': [...]}"
+            )
+        if min(devices, num_nodes, max_epochs, accumulate_grad_batches) < 1 or (
+            check_val_every_n_epoch is not None and check_val_every_n_epoch < 1
         ):
             raise ValidationFailed(
                 "devices, num_nodes, max_epochs, accumulate_grad_batches and "
                 "check_val_every_n_epoch must be >= 1"
             )
         if max_steps is not None and max_steps < 1:
-            raise ValidationFailed("max_steps must be >= 1 (or None for no limit)")
+            raise ValidationFailed("max_steps must be >= 1 (or None/-1 for no limit)")
         if gradient_clip_algorithm not in ("norm", "value"):
             raise ValidationFailed(
                 "gradient_clip_algorithm must be 'norm' or 'value', "
                 f"got {gradient_clip_algorithm!r}"
             )
-        if num_sanity_val_steps < 0 or (max_time is not None and max_time <= 0):
-            raise ValidationFailed("num_sanity_val_steps must be >= 0 and max_time > 0")
+        if isinstance(max_time, (timedelta, dict, str)):
+            parsed = _parse_duration(max_time)
+            max_time = parsed.total_seconds() if parsed is not None else None
+        if num_sanity_val_steps < -1 or (max_time is not None and max_time <= 0):
+            raise ValidationFailed("num_sanity_val_steps must be >= -1 and max_time > 0")
+        if barebones:
+            # Everything that may cost speed is off: checkpoints, logging, summaries, bars.
+            enable_checkpointing = enable_progress_bar = enable_model_summary = False
+            logger = False
+            log_every_n_steps = 0
+            num_sanity_val_steps = 0
+        self.barebones = barebones
         if fast_dev_run:
             # A quick end-to-end check: n training and n validation batches, one epoch, no
             # checkpoints. True means 1.
@@ -97,11 +248,17 @@ class Trainer:
                 raise ValidationFailed("fast_dev_run must be True or a number of batches >= 1")
             max_epochs, max_steps, enable_checkpointing = 1, None, False
             limit_train_batches, limit_val_batches, num_sanity_val_steps = n, n, 0
+            limit_test_batches = limit_predict_batches = n
             log_every_n_steps = 1
+        if overfit_batches:
+            limit_train_batches = limit_val_batches = overfit_batches
+        self.overfit_batches = overfit_batches
         self.gradient_clip_algorithm = gradient_clip_algorithm
         self.num_sanity_val_steps = num_sanity_val_steps
         self.fast_dev_run = bool(fast_dev_run)
         self.max_time = max_time
+        if deterministic not in (True, False, "warn"):
+            raise ValidationFailed("deterministic must be True, False or 'warn'")
         self.deterministic = deterministic
         if benchmark and deterministic:
             raise ValidationFailed(
@@ -114,16 +271,17 @@ class Trainer:
                 f"gradient_sync must be one of {GRADIENT_SYNC}, got {gradient_sync!r}"
             )
         self.gradient_sync = gradient_sync
-        if strategy not in ("ddp", "fsdp"):
-            raise ValidationFailed(f"strategy must be 'ddp' or 'fsdp', got {strategy!r}")
-        if strategy == "fsdp" and precision == "16-mixed":
+        self._strategy = resolve_strategy(strategy)
+        precision = normalize_precision(precision)
+        if isinstance(self._strategy, FSDPStrategy) and precision == "16-mixed":
             raise ValidationFailed(
                 "strategy='fsdp' supports precision '32-true' and 'bf16-mixed' (16-mixed needs a "
                 "sharded gradient scaler that has not been validated yet)"
             )
-        self.strategy = strategy
         self.max_epochs = max_epochs
+        self.min_epochs = min_epochs
         self.max_steps = max_steps
+        self.min_steps = min_steps
         self.check_val_every_n_epoch = check_val_every_n_epoch
         if val_check_interval is not None and (
             val_check_interval <= 0
@@ -144,10 +302,43 @@ class Trainer:
         self.log_every_n_steps = log_every_n_steps
         self.limit_train_batches = limit_train_batches
         self.limit_val_batches = limit_val_batches
+        self.limit_test_batches = limit_test_batches
+        self.limit_predict_batches = limit_predict_batches
         self.enable_checkpointing = enable_checkpointing
+        self.inference_mode = inference_mode
+        self.use_distributed_sampler = use_distributed_sampler
+        self.detect_anomaly = detect_anomaly
+        self.sync_batchnorm = sync_batchnorm
+        if reload_dataloaders_every_n_epochs < 0:
+            raise ValidationFailed("reload_dataloaders_every_n_epochs must be >= 0")
+        self.reload_dataloaders_every_n_epochs = reload_dataloaders_every_n_epochs
         self.default_root_dir = Path(default_root_dir)
         self.launch_options = launch_options or {}
+        self.profiler: Profiler | None = resolve_profiler(profiler)
+
+        # Loggers: None/True keep the built-in metrics.csv; False turns it off.
+        self._csv = logger is not False
+        if isinstance(logger, Logger):
+            self.loggers: list[Logger] = [logger]
+        elif isinstance(logger, (list, tuple)):
+            self.loggers = list(logger)
+        else:
+            self.loggers = []
+
+        if isinstance(callbacks, Callback):
+            callbacks = [callbacks]
+        self.callbacks: list[Callback] = list(callbacks or [])
+        if enable_progress_bar and not any(isinstance(c, ProgressBar) for c in self.callbacks):
+            self.callbacks.append(ProgressBar())
+        if enable_model_summary and not any(isinstance(c, ModelSummary) for c in self.callbacks):
+            self.callbacks.insert(0, ModelSummary())
+        self.enable_progress_bar = enable_progress_bar
+        self.enable_model_summary = enable_model_summary
+
+        self.state = TrainerState()
         self.callback_metrics: dict[str, float] = {}
+        self.logged_metrics: dict[str, float] = {}
+        self.progress_bar_metrics: dict[str, float] = {}
         self.history: list[dict[str, float]] = []
         # Validation results within epochs (val_check_interval), with their step and epoch.
         self.val_history: list[dict[str, float]] = []
@@ -158,11 +349,129 @@ class Trainer:
         self.launch_result: LaunchResult | None = None
         self.runtime: Runtime | None = None
         self.checkpoint_path: Path | None = None
-        self.callbacks: list[Callback] = list(callbacks or [])
         self.should_stop = False  # set by a callback (e.g. EarlyStopping) to end training
+        self.interrupted = False
+        self.ckpt_path: str | Path | None = None
+        self.num_training_batches: int | float = math.inf
+        self.num_val_batches: int | float = 0
+        self.is_last_batch = False
+        self.datamodule: DataModule | None = None
+        self.train_dataloader: Any = None
+        self.val_dataloaders: Any = None
+        self.test_dataloaders: Any = None
+        self.predict_dataloaders: Any = None
+        self.optimizers: list[torch.optim.Optimizer] = []
+        self.lr_scheduler_configs: list[LRSchedulerConfig] = []
         self._out_dir: Path | None = None
         self._model: Module | None = None
-        self._optimizer: torch.optim.Optimizer | None = None
+        self._ddp: Any = None
+        self._is_log_step = False
+        self._stepped = False
+        self._step_logs_read: dict[str, float] = {}
+        self._weights_changed_at_end = False
+        self._predictions: list[Any] = []
+        self._predict_indices: list[Any] | None = None
+        self._unscaled: set[int] = set()
+        self._hook_cache: dict[str, list[Callable[..., Any]]] = {}
+        self._batch_counter = 0
+        self._custom_opt = (False, False, False)
+        self._step_scheds = False
+        self._manual_opts: list[_ManualOptimizer] = []
+        self._pending_monitors: list[Callback] = []
+        self._train_src: Any = None
+        self._reloaded_train: Any = None
+
+    # ---------------------------------------------------------------- properties
+
+    @property
+    def strategy(self) -> DDPStrategy | FSDPStrategy:
+        return self._strategy
+
+    @property
+    def lightning_module(self) -> Module | None:
+        return self._model
+
+    @property
+    def model(self) -> Any:
+        return self._ddp if self._ddp is not None else self._model
+
+    @property
+    def logger(self) -> Logger | None:
+        return self.loggers[0] if self.loggers else None
+
+    @property
+    def log_dir(self) -> str | None:
+        if self.loggers and self.loggers[0].log_dir:
+            return self.loggers[0].log_dir
+        return str(self._out_dir) if self._out_dir is not None else None
+
+    @property
+    def is_global_zero(self) -> bool:
+        return self.runtime.is_global_zero if self.runtime else True
+
+    @property
+    def global_rank(self) -> int:
+        return self.runtime.global_rank if self.runtime else 0
+
+    @property
+    def local_rank(self) -> int:
+        return self.runtime.local_rank if self.runtime else 0
+
+    @property
+    def node_rank(self) -> int:
+        return self.runtime.node_rank if self.runtime else 0
+
+    @property
+    def world_size(self) -> int:
+        return self.runtime.world_size if self.runtime else 1
+
+    @property
+    def num_devices(self) -> int:
+        return int(self.devices)
+
+    @property
+    def training(self) -> bool:
+        return self.state.stage == "train"
+
+    @property
+    def validating(self) -> bool:
+        return self.state.stage == "validate"
+
+    @property
+    def testing(self) -> bool:
+        return self.state.stage == "test"
+
+    @property
+    def predicting(self) -> bool:
+        return self.state.stage == "predict"
+
+    @property
+    def sanity_checking(self) -> bool:
+        return self.state.stage == "sanity_check"
+
+    @property
+    def checkpoint_callbacks(self) -> list[ModelCheckpoint]:
+        return [c for c in self.callbacks if isinstance(c, ModelCheckpoint)]
+
+    @property
+    def checkpoint_callback(self) -> ModelCheckpoint | None:
+        found = self.checkpoint_callbacks
+        return found[0] if found else None
+
+    @property
+    def early_stopping_callbacks(self) -> list[EarlyStopping]:
+        return [c for c in self.callbacks if isinstance(c, EarlyStopping)]
+
+    @property
+    def early_stopping_callback(self) -> EarlyStopping | None:
+        found = self.early_stopping_callbacks
+        return found[0] if found else None
+
+    @property
+    def estimated_stepping_batches(self) -> int | float:
+        """Optimizer steps this fit plans (``inf`` when the loader's length is unknown)."""
+        n = self._planned_steps(self.train_dataloader)
+        return n if n else math.inf
 
     # --------------------------------------------------------------- placement
 
@@ -172,10 +481,6 @@ class Trainer:
         return is_launcher_process() and (
             self.target is not None or self.devices * self.num_nodes > 1
         )
-
-    @property
-    def is_global_zero(self) -> bool:
-        return self.runtime.is_global_zero if self.runtime else True
 
     def _launch(self, model: Module, ckpt_path: str | Path | None = None) -> None:
         options = dict(self.launch_options)
@@ -231,37 +536,383 @@ class Trainer:
                 if self.history:
                     self.current_epoch = int(self.history[-1].get("epoch", 0))
 
+    # ------------------------------------------------------------------ hooks
+
+    def _build_hooks(self, model: Module) -> None:
+        """Which hooks are overridden, decided once per run (nothing is called per step for a
+        hook nobody overrides)."""
+        cache: dict[str, list[Callable[..., Any]]] = {}
+        names = [n for n in dir(Callback) if n.startswith("on_") or n in ("setup", "teardown")]
+        for name in names:
+            fns: list[Callable[..., Any]] = []
+            for cb in self.callbacks:
+                if overrides(cb, name):
+                    fn = getattr(cb, name)
+                    if name == "on_train_batch_end" and legacy_batch_end(cb):
+                        fns.append(_legacy_batch_end(fn, self, model))
+                    else:
+                        fns.append(_with_trainer(fn, self, model))
+            if overridden(model, name, Module):
+                fns.append(getattr(model, name))
+            cache[name] = fns
+        self._hook_cache = cache
+        self._custom_opt = (
+            overridden(model, "configure_gradient_clipping", Module),
+            overridden(model, "optimizer_step", Module),
+            overridden(model, "optimizer_zero_grad", Module),
+        )
+
+    def _call_hook(self, name: str, *args: Any) -> None:
+        for fn in self._hook_cache.get(name, ()):
+            fn(*args)
+
+    def _call_epoch_end(self, name: str, model: Module) -> dict[str, float]:
+        """``on_*_epoch_end``: other callbacks, then the model (whose ``self.log`` calls are
+        kept), then the monitoring callbacks, which see what the model logged (as in
+        Lightning)."""
+        model._gl_step_logs = {}
+        monitors = (EarlyStopping, ModelCheckpoint)
+        for cb in self.callbacks:
+            if not isinstance(cb, monitors) and overrides(cb, name):
+                getattr(cb, name)(self, model)
+        if overridden(model, name, Module):
+            getattr(model, name)()
+        extra = {k: float(v) for k, v in model._gl_step_logs.items()}
+        model._gl_step_logs = {}
+        if extra:
+            self.callback_metrics.update(extra)
+        self._pending_monitors = [
+            cb for cb in self.callbacks if isinstance(cb, monitors) and overrides(cb, name)
+        ]
+        return extra
+
+    def _call_monitors(self, name: str, model: Module) -> None:
+        for cb in getattr(self, "_pending_monitors", []):
+            getattr(cb, name)(self, model)
+        self._pending_monitors = []
+
+    def _merge_model_callbacks(self, model: Module) -> None:
+        extra = model.configure_callbacks()
+        if isinstance(extra, Callback):
+            extra = [extra]
+        extra = list(extra or [])
+        if not extra:
+            return
+        kinds = {type(c) for c in extra}
+        kept = [c for c in self.callbacks if type(c) not in kinds]
+        # Checkpoint callbacks go last, as in Lightning, so they save the final state.
+        merged = kept + extra
+        self.callbacks = [c for c in merged if not isinstance(c, ModelCheckpoint)] + [
+            c for c in merged if isinstance(c, ModelCheckpoint)
+        ]
+
+    # ---------------------------------------------------------------- loaders
+
+    def _source(self, given: Any, name: str, model: Module | None) -> Any:
+        """A loader given to fit/validate/test/predict, or the DataModule's or model's."""
+        if given is not None:
+            return given
+        dm = self.datamodule
+        hook = f"{name}_dataloader"
+        if dm is not None and overridden(dm, hook, DataModule):
+            return getattr(dm, hook)
+        if (
+            model is not None
+            and hook in type(model).__dict__
+            or (model is not None and any(hook in c.__dict__ for c in type(model).__mro__[:-3]))
+        ):
+            fn = getattr(model, hook, None)
+            if callable(fn):
+                return fn
+        return None
+
+    def _prepare_loader(self, rt: Runtime, loader: Any, shuffle: bool | None = None) -> Any:
+        if loader is None:
+            return None
+        loader = _materialize(loader)
+        if isinstance(loader, (list, tuple)):
+            if len(loader) != 1:
+                raise ValidationFailed(
+                    "several dataloaders for one stage are not supported; pass one loader"
+                )
+            loader = loader[0]
+        if self.overfit_batches and isinstance(loader, DataLoader) and shuffle is not False:
+            loader = _without_shuffle(loader)
+        if self.use_distributed_sampler and isinstance(loader, DataLoader):
+            loader = rt.dataloader(loader, shuffle=shuffle)
+        return loader
+
+    def _device_batches(
+        self, rt: Runtime, model: Module, loader: Any, prefetch: bool
+    ) -> Iterator[Any]:
+        """Batches on the device, through the model's and DataModule's transfer hooks when
+        they are overridden (then without prefetch)."""
+        dm = self.datamodule
+        custom = (
+            overridden(model, "transfer_batch_to_device", Module)
+            or overridden(model, "on_before_batch_transfer", Module)
+            or overridden(model, "on_after_batch_transfer", Module)
+            or (dm is not None and overridden(dm, "on_before_batch_transfer", DataModule))
+            or (dm is not None and overridden(dm, "on_after_batch_transfer", DataModule))
+        )
+        if not custom:
+            yield from rt.batches(loader, prefetch=prefetch)
+            return
+        for batch in loader:
+            if dm is not None:
+                batch = dm.on_before_batch_transfer(batch, 0)
+            batch = model.on_before_batch_transfer(batch, 0)
+            batch = model.transfer_batch_to_device(batch, rt.device, 0)
+            if rt.param_dtype is not None:
+                batch = rt._to_device(batch)
+            if dm is not None:
+                batch = dm.on_after_batch_transfer(batch, 0)
+            yield model.on_after_batch_transfer(batch, 0)
+
     # --------------------------------------------------------------- fitting
 
     def fit(
         self,
         model: Module,
-        train_dataloaders: DataLoader | Callable[[], DataLoader],
-        val_dataloaders: DataLoader | Callable[[], DataLoader] | None = None,
+        train_dataloaders: Any = None,
+        val_dataloaders: Any = None,
+        datamodule: DataModule | None = None,
         ckpt_path: str | Path | None = None,
     ) -> None:
-        """Train ``model``. The loaders may be given as functions that return them: then they
-        are built only in the processes that train. When the Trainer launches a job, the
+        """Train ``model``. The loaders may be given as functions that return them, or come
+        from a ``DataModule`` or the model's ``train_dataloader``/``val_dataloader``: then
+        they are built only in the processes that train. When the Trainer launches a job, the
         launching process only waits, so data it built would be thrown away (measured: a 6 s
         dataset built for nothing made a 2-GPU run look 25% slower per step)."""
-        if not isinstance(model, Module):
-            raise ValidationFailed("Trainer.fit expects a gpulayer.pytorch.Module")
+        model = self._unwrap(model)
+        if isinstance(train_dataloaders, DataModule):
+            datamodule, train_dataloaders = train_dataloaders, None
+        if datamodule is not None and (
+            train_dataloaders is not None or val_dataloaders is not None
+        ):
+            raise ValidationFailed("pass either dataloaders or a datamodule, not both")
+        self.datamodule = datamodule
+        self.ckpt_path = ckpt_path
         if self.will_launch:
             # Training runs on workers (the callbacks run there); here only on_fit_end runs,
             # so callbacks can pick up what came back (e.g. ModelCheckpoint's best file).
+            self._merge_model_callbacks(model)
             self._launch(model, ckpt_path)
-            _call(self.callbacks, "on_fit_end", self, model)
+            for cb in self.callbacks:
+                if overrides(cb, "on_fit_end"):
+                    cb.on_fit_end(self, model)
             return
-        train: DataLoader = _materialize(train_dataloaders)
-        val: DataLoader | None = _materialize(val_dataloaders)
-        if self.deterministic:
+        self.state = TrainerState("fit", None, "running")
+        self._merge_model_callbacks(model)
+        if self.deterministic is True:
             # Same results on every run (with seed_everything), at some speed cost. cuBLAS
             # reads its setting when CUDA starts, so set it first.
             os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
             torch.use_deterministic_algorithms(True)
             torch.backends.cudnn.benchmark = False
-        rt = Runtime(self.accelerator, self.precision, self.gradient_sync).setup()
+        elif self.deterministic == "warn":
+            os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+            torch.use_deterministic_algorithms(True, warn_only=True)
+        rt = Runtime(
+            self.accelerator, self.precision, self.gradient_sync, self._strategy.ddp_kwargs()
+        ).setup()
         self.runtime = rt
+        anomaly = torch.autograd.set_detect_anomaly(True) if self.detect_anomaly else _NOOP
+        try:
+            with anomaly:
+                self._run_fit(rt, model, train_dataloaders, val_dataloaders, ckpt_path)
+            self.state.status = "finished"
+        except KeyboardInterrupt as e:
+            # As in Lightning: Ctrl+C ends training gracefully (callbacks see it first).
+            self.interrupted = True
+            self.state.status = "interrupted"
+            self._on_exception(model, e)
+            self._say("[gpulayer] training interrupted")
+        except BaseException as e:
+            self.state.status = "interrupted"
+            self._on_exception(model, e)
+            raise
+        finally:
+            self._finalize_loggers("success" if self.state.status == "finished" else "failed")
+            rt.teardown()
+        if is_launcher_process():
+            # Same result as a submitted run: the trained model comes back on the CPU.
+            model.cpu()
+
+    def _on_exception(self, model: Module, e: BaseException) -> None:
+        for cb in self.callbacks:
+            if overrides(cb, "on_exception"):
+                with contextlib.suppress(Exception):
+                    cb.on_exception(self, model, e)
+        if overridden(model, "on_exception", Module):
+            with contextlib.suppress(Exception):
+                model.on_exception(e)
+
+    def _finalize_loggers(self, status: str) -> None:
+        if self.runtime is not None and not self.runtime.is_global_zero:
+            return
+        for lg in self.loggers:
+            lg.finalize(status)
+
+    @staticmethod
+    def _unwrap(model: Any) -> Module:
+        """A ``torch.compile``d Module is trained compiled, with the options it was compiled
+        with: the Module's call is compiled in place (as ``nn.Module.compile`` does), so
+        ``self(x)`` in the steps runs the compiled graph and the hooks see the Module."""
+        orig = getattr(model, "_orig_mod", None)
+        if isinstance(orig, Module):
+            ctx = getattr(model, "dynamo_ctx", None)
+            if ctx is not None:
+                orig._compiled_call_impl = ctx(orig._call_impl)
+            else:
+                orig.compile()
+            return orig
+        if not isinstance(model, Module):
+            raise ValidationFailed("Trainer expects a gpulayer.pytorch.Module")
+        return model
+
+    def _planned_steps(self, train: Any) -> int:
+        """Optimizer steps this fit plans (0 when the loader's length is unknown)."""
+        if self.max_steps is not None:
+            return self.max_steps
+        n = _len(train) if train is not None else None
+        if n is None:
+            return 0
+        limit = _limit(self.limit_train_batches, n, "limit_train_batches")
+        if limit is not None:
+            n = min(n, limit)
+        return self.max_epochs * n // max(1, self.accumulate_grad_batches)
+
+    def _optimizers(
+        self, model: Module
+    ) -> tuple[list[torch.optim.Optimizer], list[LRSchedulerConfig]]:
+        cfg = model.configure_optimizers()
+        monitor = None
+        if isinstance(cfg, torch.optim.Optimizer):
+            opts, scheds = [cfg], []
+        elif isinstance(cfg, dict):
+            if "optimizer" not in cfg:
+                raise ValidationFailed("the dict from configure_optimizers needs 'optimizer'")
+            opts = [cfg["optimizer"]]
+            monitor = cfg.get("monitor")
+            sched = cfg.get("lr_scheduler")
+            scheds = [sched] if sched is not None else []
+            if sched is not None and not isinstance(sched, dict) and "interval" in cfg:
+                # GPUlayer 0.7 form: {"optimizer", "lr_scheduler", "interval"}
+                scheds = [{"scheduler": sched, "interval": cfg["interval"]}]
+        elif (
+            isinstance(cfg, (list, tuple))
+            and len(cfg) == 2
+            and isinstance(cfg[0], (list, tuple))
+            and all(isinstance(o, torch.optim.Optimizer) for o in cfg[0])
+        ):
+            opts = list(cfg[0])
+            scheds = list(cfg[1]) if isinstance(cfg[1], (list, tuple)) else [cfg[1]]
+        elif (
+            isinstance(cfg, (list, tuple))
+            and len(cfg) == 2
+            and isinstance(cfg[0], torch.optim.Optimizer)
+            and not isinstance(cfg[1], torch.optim.Optimizer)
+        ):
+            opts, scheds = [cfg[0]], [cfg[1]]  # (optimizer, scheduler)
+        elif isinstance(cfg, (list, tuple)) and cfg and all(isinstance(d, dict) for d in cfg):
+            opts = [d["optimizer"] for d in cfg]
+            scheds = [d["lr_scheduler"] for d in cfg if d.get("lr_scheduler") is not None]
+        elif (
+            isinstance(cfg, (list, tuple))
+            and cfg
+            and all(isinstance(o, torch.optim.Optimizer) for o in cfg)
+        ):
+            opts, scheds = list(cfg), []
+        else:
+            raise ValidationFailed(
+                "configure_optimizers must return an optimizer, a list of optimizers, "
+                "([optimizers], [schedulers]), (optimizer, scheduler) or a dict with "
+                "'optimizer' (and optionally 'lr_scheduler')"
+            )
+        configs = []
+        for s in scheds:
+            if isinstance(s, dict):
+                if "scheduler" not in s:
+                    raise ValidationFailed("a scheduler dict needs the key 'scheduler'")
+                known = {f for f in LRSchedulerConfig.__dataclass_fields__}
+                c = LRSchedulerConfig(**{k: v for k, v in s.items() if k in known})
+            else:
+                c = LRSchedulerConfig(s)
+            if c.interval not in ("step", "epoch"):
+                raise ValidationFailed("a scheduler's interval must be 'step' or 'epoch'")
+            c.reduce_on_plateau = c.reduce_on_plateau or isinstance(
+                c.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau
+            )
+            if c.reduce_on_plateau:
+                c.monitor = c.monitor or monitor
+                if c.monitor is None:
+                    raise ValidationFailed(
+                        "ReduceLROnPlateau needs a metric: add 'monitor': 'val_loss' to the "
+                        "scheduler dict or to the dict returned by configure_optimizers"
+                    )
+            configs.append(c)
+        if len(opts) > 1 and model.automatic_optimization:
+            raise ValidationFailed(
+                "several optimizers need manual optimization, as in Lightning: set "
+                "self.automatic_optimization = False and call opt.step() in training_step"
+            )
+        return opts, configs
+
+    def _say(self, msg: str) -> None:
+        if self.is_global_zero:
+            print(msg, flush=True)
+
+    def _setup_model(self, rt: Runtime, model: Module, stage: str) -> None:
+        """prepare_data (once per machine), then setup in the DataModule, callbacks and model."""
+        model.trainer = self
+        dm = self.datamodule
+        if dm is not None:
+            dm.trainer = self
+        if rt.local_rank == 0:
+            if dm is not None:
+                dm.prepare_data()
+            if overridden(model, "prepare_data", Module):
+                model.prepare_data()
+        rt.barrier()
+        if dm is not None:
+            dm.setup(stage)
+        for cb in self.callbacks:
+            if overrides(cb, "setup"):
+                cb.setup(self, model, stage)
+        model.setup(stage)
+
+    def _teardown_model(self, model: Module, stage: str) -> None:
+        if self.datamodule is not None:
+            self.datamodule.teardown(stage)
+        for cb in self.callbacks:
+            if overrides(cb, "teardown"):
+                cb.teardown(self, model, stage)
+        model.teardown(stage)
+
+    def _run_fit(
+        self,
+        rt: Runtime,
+        model: Module,
+        train_src: Any,
+        val_src: Any,
+        ckpt_path: str | Path | None,
+    ) -> None:
+        self._setup_model(rt, model, "fit")
+        if overridden(model, "configure_model", Module):
+            with rt.device:
+                model.configure_model()
+        train_src = self._source(train_src, "train", model)
+        if train_src is None:
+            raise ValidationFailed(
+                "fit needs training data: pass train_dataloaders, a datamodule, or define "
+                "train_dataloader() on the model"
+            )
+        val_src = self._source(val_src, "val", model)
+        self._train_src = train_src
+        train = self._prepare_loader(rt, train_src)
+        val = self._prepare_loader(rt, val_src, shuffle=False)
+        self.train_dataloader, self.val_dataloaders = train, val
         if rt.device.type == "cuda" and not self.deterministic:
             # cuDNN times its algorithms for each new input shape and keeps the fastest: 5 to
             # 9% faster CNN steps measured, for 1 to 3 s of timing at the start. Worth it only
@@ -271,54 +922,27 @@ class Trainer:
                 if self.benchmark is not None
                 else self._planned_steps(train) >= AUTOTUNE_MIN_STEPS
             )
-        try:
-            self._fit_loop(rt, model, train, val, _resume_path(ckpt_path))
-        finally:
-            rt.teardown()
-        if is_launcher_process():
-            # Same result as a submitted run: the trained model comes back on the CPU.
-            model.cpu()
-
-    def _planned_steps(self, train: Any) -> int:
-        """Optimizer steps this fit plans (0 when the loader's length is unknown)."""
-        if self.max_steps is not None:
-            return self.max_steps
-        try:
-            n = len(train)
-        except TypeError:
-            return 0
-        if self.limit_train_batches is not None:
-            n = min(n, self.limit_train_batches)
-        return self.max_epochs * n // max(1, self.accumulate_grad_batches)
-
-    def _optimizers(self, model: Module) -> tuple[torch.optim.Optimizer, Any, str]:
-        cfg = model.configure_optimizers()
-        if isinstance(cfg, torch.optim.Optimizer):
-            return cfg, None, "epoch"
-        if isinstance(cfg, (tuple, list)) and len(cfg) == 2:
-            return cfg[0], cfg[1], "epoch"
-        if isinstance(cfg, dict) and "optimizer" in cfg:
-            return cfg["optimizer"], cfg.get("lr_scheduler"), cfg.get("interval", "epoch")
-        raise ValidationFailed(
-            "configure_optimizers must return an optimizer, "
-            "(optimizer, scheduler) or a dict with 'optimizer'"
-        )
-
-    def _say(self, msg: str) -> None:
-        if self.is_global_zero:
-            print(msg, flush=True)
+        self._fit_loop(rt, model, train, val, _resume_path(ckpt_path))
 
     def _fit_loop(
         self,
         rt: Runtime,
         model: Module,
-        train: DataLoader,
-        val: DataLoader | None,
+        train: Any,
+        val: Any,
         ckpt_path: str | Path | None,
     ) -> None:
         model.trainer = self
         model.to(rt.device)
-        fsdp = self.strategy == "fsdp" and rt.distributed
+        rt.convert_module(model)
+        fsdp = isinstance(self._strategy, FSDPStrategy) and rt.distributed
+        if self.sync_batchnorm and rt.distributed and not fsdp:
+            if not rt.gpu:
+                raise ValidationFailed(
+                    "sync_batchnorm needs CUDA or ROCm GPUs (PyTorch's SyncBatchNorm does not "
+                    "run on CPU processes)"
+                )
+            model = _convert_sync_batchnorm(model)
         sharded: torch.nn.Module | None = None
         if fsdp:
             # Shard before the optimizer, which must see the sharded parameters. The wrapper
@@ -329,31 +953,40 @@ class Trainer:
                     "directly (nn.Parameter attributes) into a submodule such as nn.Linear"
                 )
             sharded = rt.shard(_TrainingStep(model))
-        optimizer, scheduler, interval = self._optimizers(model)
-        self._model, self._optimizer, self.should_stop = model, optimizer, False
-        start_epoch = 0
-        if ckpt_path:
-            state = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-            rt.load_full_state(model, optimizer, state["state_dict"], state["optimizer"])
-            start_epoch = state["epoch"] + 1
-            self.global_step = state.get("global_step", 0)
-            self.history = state.get("history", [])
+        optimizers, sched_configs = self._optimizers(model)
+        if fsdp and len(optimizers) > 1:
+            raise ValidationFailed("strategy='fsdp' supports one optimizer")
+        self.optimizers, self.lr_scheduler_configs = optimizers, sched_configs
+        self._model, self.should_stop = model, False
+        automatic = model.automatic_optimization
+        self._manual_opts = [_ManualOptimizer(o, self) for o in optimizers]
+
         # DDP only syncs gradients for calls to its forward, so wrap training_step for DDP;
         # FSDP hooks into each sharded submodule instead, and a single process needs neither
-        # (one module call fewer per step).
+        # (one module call fewer per step). With manual optimization the step runs outside
+        # DDP's forward and manual_backward prepares DDP's reducer itself (as Lightning does).
         step_fn: Any
         if sharded is not None:
             ddp, step_fn = sharded, sharded
         elif rt.distributed:
-            ddp = step_fn = rt.module(_TrainingStep(model))
+            ddp = rt.module(_TrainingStep(model))
+            step_fn = ddp if automatic else model.training_step
         else:
             ddp, step_fn = model, model.training_step
+        self._ddp = ddp if rt.distributed else None
         if not rt.distributed:
             model.to(rt.device)
-        train = rt.dataloader(train)
-        val = rt.dataloader(val, shuffle=False) if val is not None else None
         out_dir = rt.output_dir(self.default_root_dir / _run_name())
         self._out_dir = out_dir
+        self._build_hooks(model)
+        if self.profiler is not None:
+            self.profiler.setup("fit", rt.local_rank, str(out_dir))
+
+        # Resume.
+        start_epoch, skip_batches = 0, 0
+        if ckpt_path:
+            start_epoch, skip_batches = self._restore(rt, model, ckpt_path)
+
         where = f"{rt.accelerator}" + (
             f", rank {rt.global_rank}/{rt.world_size}" if rt.distributed else ""
         )
@@ -362,115 +995,61 @@ class Trainer:
         self._say(
             f"[gpulayer] training on {where}, precision {rt.precision}, {self.max_epochs} epoch(s)"
         )
+        if rt.is_global_zero and self.loggers:
+            hp = {
+                **dict(model.hparams),
+                **(dict(self.datamodule.hparams) if self.datamodule else {}),
+            }
+            for lg in self.loggers:
+                lg.log_hyperparams(hp)
 
-        _call(self.callbacks, "on_fit_start", self, model)
+        self._call_hook("on_fit_start")
         fit_t0 = time.perf_counter()
-        if val is not None and self.num_sanity_val_steps and not ckpt_path:
+        n_sanity = self.num_sanity_val_steps
+        if val is not None and n_sanity and not ckpt_path:
             # Run a few validation batches first, so a broken validation_step fails now and
             # not after the first training epoch. Results are discarded.
-            limit, self.limit_val_batches = (
-                self.limit_val_batches,
-                min(self.limit_val_batches or self.num_sanity_val_steps, self.num_sanity_val_steps),
+            self.state.stage = "sanity_check"
+            self._call_hook("on_sanity_check_start")
+            self._evaluate(
+                rt, model, val, "validation_step", limit=None if n_sanity == -1 else n_sanity
             )
-            try:
-                self._evaluate(rt, model, val)
-            finally:
-                self.limit_val_batches = limit
+            self._call_hook("on_sanity_check_end")
+            self.callback_metrics = {}
+        self.state.stage = "train"
+        self._call_hook("on_train_start")
         for epoch in range(start_epoch, self.max_epochs):
             self.current_epoch = epoch
-            _call(self.callbacks, "on_train_epoch_start", self, model)
-            if isinstance(train.sampler, DistributedSampler):
+            n = self.reload_dataloaders_every_n_epochs
+            if n and epoch > start_epoch and epoch % n == 0 and callable(self._train_src):
+                train = self._prepare_loader(rt, self._train_src)
+                self.train_dataloader = train
+            if self._reloaded_train is not None:
+                train, self._reloaded_train = self._reloaded_train, None
+            if isinstance(getattr(train, "sampler", None), DistributedSampler):
                 train.sampler.set_epoch(epoch)
             model.train()
-            # Logged values stay on the device (see Module.log) and are added up once per
-            # epoch, not with one tensor operation per step.
-            logged: dict[str, list[Any]] = defaultdict(list)
-            count = 0
+            self._call_hook("on_train_epoch_start")
+            self.state.stage = "train"
             t0 = time.perf_counter()
-            accumulate = self.accumulate_grad_batches
-            n_batches = len(train) if hasattr(train, "__len__") else None
-            if self.limit_train_batches is not None:
-                n_batches = min(n_batches or self.limit_train_batches, self.limit_train_batches)
-            val_every = self._val_every(n_batches) if val is not None else None
-            for batch_idx, batch in enumerate(rt.batches(train, prefetch=self.prefetch)):
-                if self.limit_train_batches is not None and batch_idx >= self.limit_train_batches:
-                    break
-                model._gl_step_logs = {}
-                # Apply the optimizer every `accumulate` batches (and on the last one). On the
-                # other batches DDP skips its gradient all-reduce.
-                apply = (batch_idx + 1) % accumulate == 0 or batch_idx + 1 == n_batches
-                with rt.no_sync(ddp, enabled=not apply):
-                    with rt.autocast():
-                        loss = step_fn(batch, batch_idx)
-                    if not isinstance(loss, torch.Tensor):
-                        raise ValidationFailed("training_step must return the loss tensor")
-                    rt.backward(loss / accumulate if accumulate > 1 else loss)
-                if apply:
-                    rt.step(
-                        optimizer,
-                        model.parameters(),
-                        self.gradient_clip_val,
-                        self.gradient_clip_algorithm,
-                    )
-                    optimizer.zero_grad(set_to_none=True)
-                    if scheduler is not None and interval == "step":
-                        scheduler.step()
-                    self.global_step += 1
-                    if self.max_steps is not None and self.global_step >= self.max_steps:
-                        self.should_stop = True
-                    if (
-                        self.max_time is not None
-                        and not rt.distributed  # ranks agree on stopping at the epoch end
-                        and time.perf_counter() - fit_t0 >= self.max_time
-                    ):
-                        self.should_stop = True
-                        break
-                logs = model._gl_step_logs or {"train_loss": loss.detach().float()}
-                for k, v in logs.items():
-                    logged[k].append(v)
-                count += 1
-                if self.callbacks:
-                    _call(
-                        self.callbacks, "on_train_batch_end", self, model, loss.detach(), batch_idx
-                    )
-                if (
-                    apply
-                    and self.log_every_n_steps
-                    and self.global_step % self.log_every_n_steps == 0
-                ):
-                    values = {k: float(v) for k, v in logs.items()}
-                    shown = " ".join(f"{k}={v:.4f}" for k, v in values.items())
-                    self._say(f"epoch {epoch} step {self.global_step} {shown}")
-                    self._step_rows.append({"epoch": epoch, "step": self.global_step, **values})
-                if (
-                    val_every
-                    and (batch_idx + 1) % val_every == 0
-                    and (n_batches is None or batch_idx + 1 < n_batches)
-                ):
-                    # Same batch index on every rank, so the collectives inside line up.
-                    assert val is not None
-                    mid = self._evaluate(rt, model, val)
-                    self.val_history.append({"epoch": epoch, "step": self.global_step, **mid})
-                    self.callback_metrics.update(mid)
-                if self.max_steps is not None and self.global_step >= self.max_steps:
-                    break  # same step count on every rank, so no extra synchronisation
-            if scheduler is not None and interval == "epoch":
-                scheduler.step()
-            metrics = {k: rt.mean(_total(v) / max(count, 1)) for k, v in logged.items()}
-            last = epoch + 1 == self.max_epochs or (
-                self.max_steps is not None and self.global_step >= self.max_steps
+            metrics = self._train_epoch(
+                rt, model, train, val, step_fn, ddp, automatic, fit_t0, skip_batches
             )
-            if val is not None and ((epoch + 1) % self.check_val_every_n_epoch == 0 or last):
-                metrics.update(self._evaluate(rt, model, val))
+            skip_batches = 0
             metrics["epoch"] = epoch
             metrics["epoch_seconds"] = round(time.perf_counter() - t0, 3)
             self.history.append(metrics)
-            self.callback_metrics = dict(metrics)
+            self.callback_metrics = {**self.callback_metrics, **metrics}
+            extra = self._call_epoch_end("on_train_epoch_end", model)
+            metrics.update(extra)
             shown = " ".join(
                 f"{k}={v:.4f}" for k, v in metrics.items() if k not in ("epoch", "epoch_seconds")
             )
             self._say(f"epoch {epoch} done in {metrics['epoch_seconds']}s: {shown}")
-            _call(self.callbacks, "on_train_epoch_end", self, model)
+            self._log_to_loggers(metrics, self.global_step)
+            self._call_monitors("on_train_epoch_end", model)
+            # ReduceLROnPlateau steps after validation, on the monitored value.
+            self._step_schedulers("epoch", plateau=True)
             if self.enable_checkpointing:
                 # Every rank calls it: with FSDP, gathering the full state is a collective.
                 saved = self.save_checkpoint(Path(CHECKPOINT).name)
@@ -482,114 +1061,749 @@ class Trainer:
             if self.max_time is not None and time.perf_counter() - fit_t0 >= self.max_time:
                 self.should_stop = True
                 self._say(f"[gpulayer] max_time of {self.max_time:g}s reached")
+            if self.max_steps is not None and self.global_step >= self.max_steps:
+                self.should_stop = True
             # Every rank must leave the loop together, or the next collective would hang.
             self.should_stop = rt.any(self.should_stop)
             rt.barrier()
-            if self.should_stop:
+            if self.should_stop and self._mins_met():
                 break
-        _call(self.callbacks, "on_fit_end", self, model)
+        self.state.stage = None
+        self._call_hook("on_train_end")
+        if self._weights_changed_at_end and self.enable_checkpointing:
+            # SWA, weight averaging or pruning replaced the weights after the last epoch.
+            saved = self.save_checkpoint(Path(CHECKPOINT).name)
+            if saved is not None:
+                self.checkpoint_path = saved
+        self._call_hook("on_fit_end")
+        self._teardown_model(model, "fit")
+        if self.profiler is not None:
+            self.profiler.teardown("fit")
+            if rt.is_global_zero:
+                report = self.profiler.describe()
+                if report:
+                    print(report, flush=True)
+
+    def _reconfigure_optimizers(self, model: Module) -> None:
+        """Build the optimizers again (after a callback changed the learning rate)."""
+        self.optimizers, self.lr_scheduler_configs = self._optimizers(model)
+        self._manual_opts = [_ManualOptimizer(o, self) for o in self.optimizers]
+
+    def _reload_train_loader(self) -> None:
+        """Build the training loader again (after a callback changed the batch size)."""
+        if self.runtime is not None and callable(self._train_src) or self.datamodule is not None:
+            src = self._source(None if self.datamodule else self._train_src, "train", self._model)
+            assert self.runtime is not None
+            self.train_dataloader = self._prepare_loader(self.runtime, src)
+            self._reloaded_train = self.train_dataloader
+
+    def _mins_met(self) -> bool:
+        if self.min_epochs is not None and self.current_epoch + 1 < self.min_epochs:
+            return False
+        return not (self.min_steps is not None and self.global_step < self.min_steps)
+
+    def _train_epoch(
+        self,
+        rt: Runtime,
+        model: Module,
+        train: Any,
+        val: Any,
+        step_fn: Any,
+        ddp: Any,
+        automatic: bool,
+        fit_t0: float,
+        skip_batches: int,
+    ) -> dict[str, float]:
+        epoch = self.current_epoch
+        # Logged values stay on the device (see Module.log) and are added up once per epoch,
+        # not with one tensor operation per step.
+        logged: dict[str, list[Any]] = defaultdict(list)
+        weights: dict[str, list[float]] = defaultdict(list)
+        count = 0
+        accumulate = self.accumulate_grad_batches
+        n_total = _len(train)
+        limit = _limit(self.limit_train_batches, n_total, "limit_train_batches")
+        n_batches = n_total if limit is None else (min(n_total, limit) if n_total else limit)
+        self.num_training_batches = n_batches if n_batches is not None else math.inf
+        val_every = self._val_every(n_batches) if val is not None else None
+        log_every = self.log_every_n_steps
+        prof = self.profiler
+        hooks = self._hook_cache
+        batch_start = hooks.get("on_train_batch_start", [])
+        batch_end = hooks.get("on_train_batch_end", [])
+        before_backward = hooks.get("on_before_backward", [])
+        after_backward = hooks.get("on_after_backward", [])
+        single = not rt.distributed
+        self._step_scheds = any(c.interval == "step" for c in self.lr_scheduler_configs)
+        if not automatic:
+            model.__dict__["_gl_manual"] = self._manual_opts
+        batches: Any = self._device_batches(rt, model, train, self.prefetch)
+        if prof is not None:
+            batches = _profiled(batches, prof, "train_dataloader_next")
+        loss: Any = None
+        out: Any = None
+        self._batch_counter = 0
+        for batch_idx, batch in enumerate(batches):
+            if limit is not None and batch_idx >= limit:
+                break
+            if batch_idx < skip_batches:
+                continue  # resuming within an epoch: these batches were trained already
+            self.is_last_batch = n_batches is not None and batch_idx + 1 == n_batches
+            if batch_start:
+                ended = False
+                for fn in batch_start:
+                    if fn(batch, batch_idx) == -1:
+                        ended = True
+                if ended:
+                    break  # on_train_batch_start returned -1: end the epoch (as in Lightning)
+            self._batch_counter = batch_idx + 1
+            model._gl_step_logs = {}
+            self._stepped = False
+            if prof is not None:
+                prof.start("run_training_batch")
+            if automatic:
+                # Apply the optimizer every `accumulate` batches (and on the last one). On the
+                # other batches DDP skips its gradient all-reduce.
+                apply = (batch_idx + 1) % accumulate == 0 or batch_idx + 1 == n_batches
+                with rt.no_sync(ddp, enabled=not apply):
+                    with rt.autocast():
+                        out = step_fn(batch, batch_idx)
+                    loss = out["loss"] if isinstance(out, dict) else out
+                    if loss is None:
+                        # Lightning: returning None skips this batch's optimization.
+                        if prof is not None:
+                            prof.stop("run_training_batch")
+                        continue
+                    if not isinstance(loss, torch.Tensor):
+                        raise ValidationFailed(
+                            "training_step must return the loss tensor (or a dict with 'loss')"
+                        )
+                    for fn in before_backward:
+                        fn(loss)
+                    if prof is not None:
+                        prof.start("backward")
+                    rt.backward(loss / accumulate if accumulate > 1 else loss)
+                    if prof is not None:
+                        prof.stop("backward")
+                    for fn in after_backward:
+                        fn()
+                if apply:
+                    if prof is not None:
+                        prof.start("optimizer_step")
+                    self._optimizer_step(rt, model, self.optimizers[0], batch_idx)
+                    if prof is not None:
+                        prof.stop("optimizer_step")
+                    self._stepped = True
+                    self.global_step += 1
+            else:
+                with rt.autocast():
+                    out = step_fn(batch, batch_idx)
+                loss = out["loss"] if isinstance(out, dict) else out
+                if self._stepped and self._step_scheds:
+                    self._step_schedulers("step")
+            if prof is not None:
+                prof.stop("run_training_batch")
+            logs = model._gl_step_logs or (
+                {"train_loss": loss.detach().float()} if isinstance(loss, torch.Tensor) else {}
+            )
+            opts = model._gl_log_options
+            for k, v in logs.items():
+                logged[k].append(v)
+                o = opts.get(k)
+                if o is not None and o[3] is not None:
+                    weights[k].append(o[3])
+            count += 1
+            self._is_log_step = bool(
+                self._stepped and log_every and self.global_step % log_every == 0
+            )
+            if self._is_log_step:
+                values = {k: float(v) for k, v in logs.items() if opts.get(k, (0, 0, True))[2]}
+                self._step_logs_read = values
+                shown = " ".join(f"{k}={v:.4f}" for k, v in values.items())
+                self._say(f"epoch {epoch} step {self.global_step} {shown}")
+                self._step_rows.append({"epoch": epoch, "step": self.global_step, **values})
+                self.logged_metrics.update(values)
+                self._update_progress(values, opts)
+                self._log_to_loggers(values, self.global_step)
+            if batch_end:
+                outputs = (
+                    out
+                    if isinstance(out, dict)
+                    else {"loss": loss.detach() if isinstance(loss, torch.Tensor) else loss}
+                )
+                for fn in batch_end:
+                    fn(outputs, batch, batch_idx)
+            if (
+                val_every
+                and (batch_idx + 1) % val_every == 0
+                and (n_batches is None or batch_idx + 1 < n_batches)
+            ):
+                # Same batch index on every rank, so the collectives inside line up.
+                mid = self._run_validation(rt, model, val)
+                self.val_history.append({"epoch": epoch, "step": self.global_step, **mid})
+                self.callback_metrics.update(mid)
+                self._log_to_loggers(mid, self.global_step)
+                self.state.stage = "train"
+                model.train()
+            if self.max_steps is not None and self.global_step >= self.max_steps:
+                break  # same step count on every rank, so no extra synchronisation
+            if single and (
+                self.max_time is not None and time.perf_counter() - fit_t0 >= self.max_time
+            ):
+                self.should_stop = True
+            if single and self.should_stop and self._mins_met():
+                break  # one process: stop now (several processes stop at the epoch end)
+        self._batch_counter = 0
+        self._step_schedulers("epoch")
+        metrics = self._aggregate(rt, logged, weights, model._gl_log_options, count)
+        last = epoch + 1 == self.max_epochs or (
+            self.max_steps is not None and self.global_step >= self.max_steps
+        )
+        every = self.check_val_every_n_epoch
+        if val is not None and ((every is not None and (epoch + 1) % every == 0) or last):
+            metrics.update(self._run_validation(rt, model, val))
+        return metrics
+
+    def _update_progress(self, values: dict[str, float], opts: dict[str, Any]) -> None:
+        shown = {k: v for k, v in values.items() if k in opts and opts[k][1]}
+        if shown:
+            self.progress_bar_metrics.update(shown)
+
+    def _aggregate(
+        self,
+        rt: Runtime,
+        logged: dict[str, list[Any]],
+        weights: dict[str, list[float]],
+        opts: dict[str, Any],
+        count: int,
+    ) -> dict[str, float]:
+        """Epoch values: each name reduced with its reduce_fx over the steps, then averaged
+        across processes in one collective."""
+        local: dict[str, float] = {}
+        for k, values in logged.items():
+            fx = opts[k][0] if k in opts else "mean"
+            if fx == "mean":
+                w = weights.get(k)
+                if w and len(w) == len(values):
+                    local[k] = _weighted(values, w)
+                else:
+                    local[k] = _total(values) / max(len(values), 1)
+            elif fx == "sum":
+                local[k] = _total(values)
+            else:
+                local[k] = _extreme(values, fx)
+        return rt.mean_dict(local)
+
+    def _optimizer_step(
+        self, rt: Runtime, model: Module, optimizer: torch.optim.Optimizer, batch_idx: int
+    ) -> None:
+        hooks = self._hook_cache
+        before = hooks.get("on_before_optimizer_step", [])
+        custom_clip, custom_step, custom_zero = self._custom_opt
+        if not (before or custom_clip or custom_step):
+            rt.step(
+                optimizer, model.parameters(), self.gradient_clip_val, self.gradient_clip_algorithm
+            )
+        else:
+            scaler = rt.scaler
+            self._unscaled.clear()
+            if scaler is not None:
+                scaler.unscale_(optimizer)  # hooks and clipping see the real gradients
+                self._unscaled.add(id(optimizer))
+            for fn in before:
+                fn(optimizer)
+            model.configure_gradient_clipping(
+                optimizer, self.gradient_clip_val, self.gradient_clip_algorithm
+            )
+            if custom_step:
+                model.optimizer_step(
+                    self.current_epoch,
+                    batch_idx,
+                    _StepThrough(optimizer, scaler),  # type: ignore[arg-type]
+                )
+            elif scaler is not None:
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                optimizer.step()
+        for fn in hooks.get("on_before_zero_grad", ()):
+            fn(optimizer)
+        if custom_zero:
+            model.optimizer_zero_grad(self.current_epoch, batch_idx, optimizer)
+        else:
+            optimizer.zero_grad(set_to_none=True)
+        if self._step_scheds:
+            self._step_schedulers("step")
+
+    def _clip(self, optimizer: torch.optim.Optimizer, value: float, algorithm: str) -> None:
+        rt = self.runtime
+        if rt is not None and rt.scaler is not None and id(optimizer) not in self._unscaled:
+            rt.scaler.unscale_(optimizer)
+            self._unscaled.add(id(optimizer))
+        params = [p for g in optimizer.param_groups for p in g["params"]]
+        if algorithm == "value":
+            torch.nn.utils.clip_grad_value_(params, value)
+        else:
+            torch.nn.utils.clip_grad_norm_(params, value)
+
+    def _manual_backward(self, loss: torch.Tensor, *args: Any, **kwargs: Any) -> None:
+        rt = self.runtime
+        assert rt is not None and self._model is not None
+        self._call_hook("on_before_backward", loss)
+        ddp = self._ddp
+        if ddp is not None:
+            from torch.nn.parallel import DistributedDataParallel as DDP
+
+            if isinstance(ddp, DDP):
+                _prepare_for_backward(ddp, loss)
+        self._unscaled.clear()
+        if rt.scaler is not None:
+            loss = rt.scaler.scale(loss)
+        self._model.backward(loss, *args, **kwargs)
+        self._call_hook("on_after_backward")
+
+    def _step_schedulers(self, interval: str, plateau: bool = False) -> None:
+        for c in self.lr_scheduler_configs:
+            if c.interval != interval or c.reduce_on_plateau != plateau:
+                continue
+            count = self.global_step if interval == "step" else self.current_epoch + 1
+            if count % c.frequency:
+                continue
+            metric = None
+            if c.reduce_on_plateau:
+                if c.monitor not in self.callback_metrics:
+                    if c.strict:
+                        known = ", ".join(sorted(self.callback_metrics)) or "none"
+                        raise ValidationFailed(
+                            f"ReduceLROnPlateau monitors {c.monitor!r}, which was not logged "
+                            f"(logged: {known})"
+                        )
+                    continue
+                metric = self.callback_metrics[c.monitor]
+            if self._model is not None and overridden(self._model, "lr_scheduler_step", Module):
+                self._model.lr_scheduler_step(c.scheduler, metric)
+            elif metric is None:
+                c.scheduler.step()
+            else:
+                c.scheduler.step(metric)
+
+    def _read_step_metrics(self) -> None:
+        """Put this step's logged values into callback_metrics (reads them from the device;
+        only for callbacks that act on step values)."""
+        model = self._model
+        if model is None:
+            return
+        values = {k: float(v) for k, v in model._gl_step_logs.items()}
+        self.callback_metrics.update(values)
+
+    def _broadcast_flag(self, flag: bool) -> bool:
+        rt = self.runtime
+        if rt is None or not rt.distributed:
+            return flag
+        import torch.distributed as dist
+
+        t = torch.tensor([1.0 if flag else 0.0], device=rt.device if rt.gpu else "cpu")
+        dist.broadcast(t, 0)
+        return bool(t.item() > 0)
+
+    def log_metrics(self, metrics: dict[str, float], step: int | None = None) -> None:
+        """Record extra values for the current step (used by monitoring callbacks): they go to
+        metrics.csv and the loggers, from rank 0."""
+        step = self.global_step if step is None else step
+        if self._step_rows and self._step_rows[-1].get("step") == step:
+            self._step_rows[-1].update(metrics)
+        else:
+            self._step_rows.append({"epoch": self.current_epoch, "step": step, **metrics})
+        self.logged_metrics.update(metrics)
+        self._log_to_loggers(metrics, step)
+
+    def _log_to_loggers(self, metrics: dict[str, float], step: int) -> None:
+        if not self.loggers or not self.is_global_zero:
+            return
+        for lg in self.loggers:
+            lg.log_metrics(dict(metrics), step)
+
+    # ------------------------------------------------------------- evaluation
+
+    def _run_validation(self, rt: Runtime, model: Module, val: Any) -> dict[str, float]:
+        self.state.stage = "validate"
+        out = self._evaluate(rt, model, val, "validation_step")
+        self.state.stage = "train"
+        return out
 
     def _evaluate(
-        self, rt: Runtime, model: Module, loader: DataLoader, step: str = "validation_step"
+        self,
+        rt: Runtime,
+        model: Module,
+        loader: Any,
+        step: str = "validation_step",
+        limit: int | None = None,
+        grad_context: Any = None,
     ) -> dict[str, float]:
+        stage = {"validation_step": "validation", "test_step": "test"}[step]
+        hooks = self._hook_cache
+        batch_start = hooks.get(f"on_{stage}_batch_start", [])
+        batch_end = hooks.get(f"on_{stage}_batch_end", [])
+        self._call_hook(f"on_{stage}_start")
+        was_training = model.training
         model.eval()
+        self._call_hook(f"on_{stage}_epoch_start")
         step_fn = getattr(model, step)
-        sums: dict[str, Any] = defaultdict(float)
+        logged: dict[str, list[Any]] = defaultdict(list)
+        weights: dict[str, list[float]] = defaultdict(list)
         count = 0
-        with torch.no_grad(), rt.autocast():
-            for batch_idx, batch in enumerate(rt.batches(loader, prefetch=self.prefetch)):
-                if self.limit_val_batches is not None and batch_idx >= self.limit_val_batches:
+        lim_name = "limit_val_batches" if stage == "validation" else "limit_test_batches"
+        configured = _limit(getattr(self, lim_name), _len(loader), lim_name)
+        if limit is None:
+            limit = configured
+        elif configured is not None:
+            limit = min(limit, configured)
+        self.num_val_batches = limit if limit is not None else (_len(loader) or math.inf)
+        ctx = grad_context if grad_context is not None else torch.no_grad()
+        prof = self.profiler
+        if prof is not None:
+            prof.start(f"run_{stage}")
+        with ctx, rt.autocast():
+            for batch_idx, batch in enumerate(
+                self._device_batches(rt, model, loader, self.prefetch)
+            ):
+                if limit is not None and batch_idx >= limit:
                     break
+                for fn in batch_start:
+                    fn(batch, batch_idx)
                 model._gl_step_logs = {}
-                step_fn(batch, batch_idx)
+                out = step_fn(batch, batch_idx)
+                opts = model._gl_log_options
                 for k, v in model._gl_step_logs.items():
-                    sums[k] = sums[k] + v
+                    logged[k].append(v)
+                    o = opts.get(k)
+                    if o is not None and o[3] is not None:
+                        weights[k].append(o[3])
                 count += 1
-        model.train()
-        return {k: rt.mean(float(v) / max(count, 1)) for k, v in sums.items()}
+                for fn in batch_end:
+                    fn(out, batch, batch_idx)
+        if prof is not None:
+            prof.stop(f"run_{stage}")
+        metrics = self._aggregate(rt, logged, weights, model._gl_log_options, count)
+        self.callback_metrics.update(metrics)
+        extra = self._call_epoch_end(f"on_{stage}_epoch_end", model)
+        metrics.update(extra)
+        self._call_monitors(f"on_{stage}_epoch_end", model)
+        self._call_hook(f"on_{stage}_end")
+        if was_training:
+            model.train()
+        return metrics
+
+    def _eval_context(self, rt: Runtime) -> Any:
+        """``torch.inference_mode`` for validate/test/predict (faster than no_grad: no version
+        counters or view tracking), except with gloo or FSDP, where Lightning also uses
+        no_grad."""
+        import torch.distributed as dist
+
+        if not self.inference_mode:
+            return torch.no_grad()
+        if dist.is_available() and dist.is_initialized() and dist.get_backend() == "gloo":
+            return torch.no_grad()
+        if isinstance(self._strategy, FSDPStrategy):
+            return torch.no_grad()
+        return torch.inference_mode()
+
+    def _resolve_ckpt(self, ckpt_path: str | Path | None) -> str | Path | None:
+        if ckpt_path == "best":
+            cb = self.checkpoint_callback
+            if cb is None or cb.best_model_path is None:
+                raise ValidationFailed("ckpt_path='best' needs a ModelCheckpoint that saved a file")
+            return cb.best_model_path
+        if ckpt_path == "last":
+            if self.checkpoint_path is None:
+                raise ValidationFailed("ckpt_path='last': no checkpoint was saved")
+            return self.checkpoint_path
+        return ckpt_path
+
+    def _eval_entry(
+        self,
+        stage: str,
+        model: Module | None,
+        dataloaders: Any,
+        ckpt_path: str | Path | None,
+        datamodule: DataModule | None,
+    ) -> tuple[Runtime, Module, Any]:
+        if isinstance(dataloaders, DataModule):
+            datamodule, dataloaders = dataloaders, None
+        if model is None:
+            if self._model is None:
+                raise ValidationFailed(f"{stage} needs a model (none was fitted with this Trainer)")
+            model = self._model
+        model = self._unwrap(model)
+        if datamodule is not None:
+            self.datamodule = datamodule
+        rt = Runtime(self.accelerator, self.precision, self.gradient_sync).setup()
+        self.runtime = rt
+        self._model = model
+        self.state = TrainerState(stage, stage, "running")
+        self._setup_model(rt, model, stage)
+        path = self._resolve_ckpt(ckpt_path)
+        if path is not None:
+            ckpt = torch.load(path, map_location="cpu", weights_only=False)
+            model.on_load_checkpoint(ckpt)
+            model.load_state_dict(ckpt["state_dict"])
+        model.to(rt.device)
+        rt.convert_module(model)
+        self._build_hooks(model)
+        name = {"validate": "val", "test": "test", "predict": "predict"}[stage]
+        src = self._source(dataloaders, name, model)
+        if src is None:
+            raise ValidationFailed(
+                f"{stage} needs data: pass dataloaders, a datamodule, or define "
+                f"{name}_dataloader() on the model"
+            )
+        loader = self._prepare_loader(rt, src, shuffle=False)
+        return rt, model, loader
 
     def validate(
-        self, model: Module, dataloaders: DataLoader | Callable[[], DataLoader]
+        self,
+        model: Module | None = None,
+        dataloaders: Any = None,
+        ckpt_path: str | Path | None = None,
+        verbose: bool = True,
+        datamodule: DataModule | None = None,
     ) -> dict[str, float]:
-        """Run ``validation_step`` over ``dataloaders`` in this process."""
-        return self._run_eval(model, dataloaders, "validation_step")
+        """Run ``validation_step`` over ``dataloaders`` in this process and return the averaged
+        logs, e.g. ``{"val_loss": 0.21}`` (``result[0]`` also works, as in Lightning)."""
+        return self._run_eval(
+            "validate", "validation_step", model, dataloaders, ckpt_path, verbose, datamodule
+        )
 
     def test(
-        self, model: Module, dataloaders: DataLoader | Callable[[], DataLoader]
+        self,
+        model: Module | None = None,
+        dataloaders: Any = None,
+        ckpt_path: str | Path | None = None,
+        verbose: bool = True,
+        datamodule: DataModule | None = None,
     ) -> dict[str, float]:
         """Run ``test_step`` over ``dataloaders`` in this process and return the averaged logs,
         e.g. ``{"test_acc": 0.93}``."""
-        return self._run_eval(model, dataloaders, "test_step")
-
-    def predict(
-        self, model: Module, dataloaders: DataLoader | Callable[[], DataLoader]
-    ) -> list[Any]:
-        """Run ``predict_step`` over ``dataloaders`` in this process (no gradients) and return
-        one output per batch, moved to the CPU."""
-        rt = Runtime(self.accelerator, self.precision, self.gradient_sync).setup()
-        self.runtime = rt
-        out: list[Any] = []
-        try:
-            model.to(rt.device)
-            model.eval()
-            with torch.no_grad(), rt.autocast():
-                loader = rt.dataloader(_materialize(dataloaders), shuffle=False)
-                for batch_idx, batch in enumerate(rt.batches(loader, prefetch=self.prefetch)):
-                    out.append(_to_cpu(model.predict_step(batch, batch_idx)))
-            return out
-        finally:
-            rt.teardown()
+        return self._run_eval(
+            "test", "test_step", model, dataloaders, ckpt_path, verbose, datamodule
+        )
 
     def _run_eval(
-        self, model: Module, dataloaders: DataLoader | Callable[[], DataLoader], step: str
+        self,
+        stage: str,
+        step: str,
+        model: Module | None,
+        dataloaders: Any,
+        ckpt_path: str | Path | None,
+        verbose: bool,
+        datamodule: DataModule | None,
     ) -> dict[str, float]:
-        rt = Runtime(self.accelerator, self.precision, self.gradient_sync).setup()
-        self.runtime = rt
+        rt, model, loader = self._eval_entry(stage, model, dataloaders, ckpt_path, datamodule)
         try:
-            model.to(rt.device)
-            metrics = self._evaluate(
-                rt, model, rt.dataloader(_materialize(dataloaders), shuffle=False), step
-            )
+            metrics = self._evaluate(rt, model, loader, step, grad_context=self._eval_context(rt))
             self.callback_metrics.update(metrics)
-            return metrics
+            self._log_to_loggers(metrics, self.global_step)
+            self._teardown_model(model, stage)
+            self.state.status = "finished"
+            if verbose and metrics and rt.is_global_zero:
+                width = max(len(k) for k in metrics)
+                for k, v in metrics.items():
+                    print(f"{k:<{width}}  {v:.6g}")
+            return _Results(metrics)
         finally:
+            self.state.stage = None
             rt.teardown()
 
-    def save_checkpoint(self, filename: str) -> Path | None:
-        """Write ``checkpoints/<filename>`` for the current epoch from rank 0 (other ranks
-        return None). Usable from callbacks during ``fit``. Call it on every rank: with
-        ``strategy="fsdp"`` the full state is gathered from all of them."""
-        if self._out_dir is None or self._model is None or self._optimizer is None:
-            raise ValidationFailed("save_checkpoint can only be called during fit")
+    def predict(
+        self,
+        model: Module | None = None,
+        dataloaders: Any = None,
+        datamodule: DataModule | None = None,
+        return_predictions: bool | None = None,
+        ckpt_path: str | Path | None = None,
+    ) -> list[Any] | None:
+        """Run ``predict_step`` over ``dataloaders`` in this process (no gradients) and return
+        one output per batch, moved to the CPU. With ``return_predictions=False`` (for
+        example with a ``BasePredictionWriter``) nothing is kept in memory."""
+        rt, model, loader = self._eval_entry("predict", model, dataloaders, ckpt_path, datamodule)
+        keep = return_predictions is not False
+        self._predictions = []
+        sampler = getattr(loader, "batch_sampler", None)
+        self._predict_indices = None
+        if (
+            any(
+                type(c).__name__ != "BasePredictionWriter" and hasattr(c, "write_on_batch_end")
+                for c in self.callbacks
+            )
+            and sampler is not None
+        ):
+            with contextlib.suppress(TypeError):
+                self._predict_indices = [list(b) for b in sampler]
+        limit = _limit(self.limit_predict_batches, _len(loader), "limit_predict_batches")
+        hooks = self._hook_cache
+        try:
+            self._call_hook("on_predict_start")
+            model.eval()
+            self._call_hook("on_predict_epoch_start")
+            with self._eval_context(rt), rt.autocast():
+                for batch_idx, batch in enumerate(
+                    self._device_batches(rt, model, loader, self.prefetch)
+                ):
+                    if limit is not None and batch_idx >= limit:
+                        break
+                    for fn in hooks.get("on_predict_batch_start", ()):
+                        fn(batch, batch_idx)
+                    out = _to_cpu(model.predict_step(batch, batch_idx))
+                    if keep or hooks.get("on_predict_epoch_end"):
+                        self._predictions.append(out)
+                    for fn in hooks.get("on_predict_batch_end", ()):
+                        fn(out, batch, batch_idx)
+            self._call_hook("on_predict_epoch_end")
+            self._call_hook("on_predict_end")
+            self._teardown_model(model, "predict")
+            self.state.status = "finished"
+            return self._predictions if keep else None
+        finally:
+            self.state.stage = None
+            rt.teardown()
+
+    def _update_bn(self, model: Module) -> None:
+        """Recompute BatchNorm running statistics over the training data (after SWA)."""
         rt = self.runtime
-        if rt is not None and self.strategy == "fsdp" and rt.distributed:
-            model_state, optim_state = rt.full_state(self._model, self._optimizer)
+        loader = self.train_dataloader
+        if rt is None or loader is None:
+            return
+        momenta = {}
+        for m in model.modules():
+            if isinstance(m, torch.nn.modules.batchnorm._BatchNorm):
+                m.reset_running_stats()
+                momenta[m] = m.momentum
+                m.momentum = None
+        was = model.training
+        model.train()
+        with torch.no_grad(), rt.autocast():
+            for batch in rt.batches(loader, prefetch=False):
+                model(batch[0] if isinstance(batch, (list, tuple)) else batch)
+        for m, mom in momenta.items():
+            m.momentum = mom
+        model.train(was)
+
+    # ------------------------------------------------------------- checkpoints
+
+    def _restore(self, rt: Runtime, model: Module, ckpt_path: str | Path) -> tuple[int, int]:
+        state = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+        model.on_load_checkpoint(state)
+        for cb in self.callbacks:
+            if overrides(cb, "on_load_checkpoint"):
+                cb.on_load_checkpoint(self, model, state)
+        optim_states = state.get("optimizer_states") or (
+            [state["optimizer"]] if "optimizer" in state else []
+        )
+        if optim_states:
+            rt.load_full_state(model, self.optimizers[0], state["state_dict"], optim_states[0])
+            for opt, s in zip(self.optimizers[1:], optim_states[1:], strict=False):
+                opt.load_state_dict(s)
+        else:
+            model.load_state_dict(state["state_dict"])
+        for c, s in zip(self.lr_scheduler_configs, state.get("lr_schedulers") or [], strict=False):
+            c.scheduler.load_state_dict(s)
+        if rt.scaler is not None and state.get("scaler"):
+            rt.scaler.load_state_dict(state["scaler"])
+        cb_states = state.get("callbacks") or {}
+        for cb in self.callbacks:
+            if cb.state_key in cb_states:
+                cb.load_state_dict(cb_states[cb.state_key])
+        if self.datamodule is not None and "datamodule" in state:
+            self.datamodule.load_state_dict(state["datamodule"])
+        self.global_step = state.get("global_step", 0)
+        self.history = state.get("history", [])
+        epoch = state["epoch"]
+        if state.get("batches_done"):
+            return epoch, int(state["batches_done"])  # saved within an epoch
+        return epoch + 1, 0
+
+    def save_checkpoint(
+        self,
+        filepath: str | Path,
+        weights_only: bool = False,
+        storage_options: Any = None,
+        dirpath: str | Path | None = None,
+    ) -> Path | None:
+        """Write a checkpoint from rank 0 (other ranks return None) and return its path. A
+        plain file name goes to ``checkpoints/`` of the run (or ``dirpath``); a path is used as
+        it is. Call it on every rank: with ``strategy="fsdp"`` the full state is gathered from
+        all of them."""
+        if self._model is None or not self.optimizers:
+            raise ValidationFailed("save_checkpoint needs a model fitted by this Trainer")
+        rt = self.runtime
+        model = self._model
+        if rt is not None and isinstance(self._strategy, FSDPStrategy) and rt.distributed:
+            model_state, optim_state = rt.full_state(model, self.optimizers[0])
+            optim_states = [optim_state]
         elif rt is not None and not rt.is_global_zero:
             return None
         else:
-            model_state, optim_state = self._model.state_dict(), self._optimizer.state_dict()
+            model_state = model.state_dict()
+            optim_states = [] if weights_only else [o.state_dict() for o in self.optimizers]
         if rt is not None and not rt.is_global_zero:
             return None
-        path = self._out_dir / "checkpoints" / filename
+        p = Path(filepath)
+        if p.is_absolute() or len(p.parts) > 1:
+            path = p
+        else:
+            folder = (
+                Path(dirpath)
+                if dirpath is not None
+                else ((self._out_dir or self.default_root_dir) / "checkpoints")
+            )
+            path = folder / p
         path.parent.mkdir(parents=True, exist_ok=True)
+        from gpulayer import __version__
+
+        checkpoint: dict[str, Any] = {
+            "epoch": self.current_epoch,
+            "global_step": self.global_step,
+            "gpulayer_version": __version__,
+            "state_dict": model_state,
+            "history": self.history,
+        }
+        done = self._batch_counter
+        if self.state.stage == "train" and done and done < self.num_training_batches:
+            # Saved within an epoch: resuming skips the batches already trained.
+            checkpoint["batches_done"] = done
+        if not weights_only:
+            checkpoint["optimizer_states"] = optim_states
+            checkpoint["optimizer"] = optim_states[0] if optim_states else {}
+            checkpoint["lr_schedulers"] = [
+                c.scheduler.state_dict() for c in self.lr_scheduler_configs
+            ]
+            if rt is not None and rt.scaler is not None:
+                checkpoint["scaler"] = rt.scaler.state_dict()
+            checkpoint["callbacks"] = {
+                cb.state_key: cb.state_dict() for cb in self.callbacks if cb.state_dict()
+            }
+            if self.datamodule is not None:
+                checkpoint["datamodule"] = self.datamodule.state_dict()
+        if model.hparams:
+            checkpoint["hyper_parameters"] = dict(model.hparams)
+        if self.datamodule is not None and self.datamodule.hparams:
+            checkpoint["datamodule_hyper_parameters"] = dict(self.datamodule.hparams)
+        model.on_save_checkpoint(checkpoint)
+        for cb in self.callbacks:
+            if overrides(cb, "on_save_checkpoint"):
+                cb.on_save_checkpoint(self, model, checkpoint)
         tmp = path.with_suffix(".tmp")
-        torch.save(
-            {
-                "state_dict": model_state,
-                "optimizer": optim_state,
-                "epoch": self.current_epoch,
-                "global_step": self.global_step,
-                "history": self.history,
-            },
-            tmp,
-        )
+        torch.save(checkpoint, tmp)
         tmp.replace(path)
+        for lg in self.loggers:
+            lg.after_save_checkpoint(path)
         return path
 
     def _write_metrics(self, out_dir: Path) -> None:
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "metrics.json").write_text(json.dumps(self.history, indent=2))
-        self._write_csv(out_dir / "metrics.csv")
+        if self._csv:
+            self._write_csv(out_dir / "metrics.csv")
 
     def _write_csv(self, path: Path) -> None:
         """One row per printed step, per mid-epoch validation and per epoch (rank 0)."""
@@ -617,7 +1831,93 @@ class Trainer:
         return v
 
 
-RESUME_INPUT = "gpulayer-resume.ckpt"
+_NOOP = contextlib.nullcontext()
+
+
+class _StepThrough:
+    """The optimizer handed to an overridden ``Module.optimizer_step``: ``step`` goes
+    through the gradient scaler when there is one."""
+
+    def __init__(self, optimizer: torch.optim.Optimizer, scaler: Any) -> None:
+        self._opt, self._scaler = optimizer, scaler
+
+    def __getattr__(self, name: str) -> Any:
+        if name == "_opt":
+            raise AttributeError(name)
+        return getattr(self._opt, name)
+
+    def step(self, closure: Callable[[], Any] | None = None) -> Any:
+        if self._scaler is not None:
+            if closure is not None:
+                closure()
+            out = self._scaler.step(self._opt)
+            self._scaler.update()
+            return out
+        return self._opt.step(closure) if closure is not None else self._opt.step()
+
+
+def _with_trainer(fn: Callable[..., Any], trainer: Trainer, model: Module) -> Callable[..., Any]:
+    return lambda *args: fn(trainer, model, *args)
+
+
+def _legacy_batch_end(
+    fn: Callable[..., Any], trainer: Trainer, model: Module
+) -> Callable[..., Any]:
+    """Adapter for ``on_train_batch_end(trainer, model, loss, batch_idx)`` callbacks."""
+
+    def call(outputs: Any, batch: Any, batch_idx: int) -> None:
+        loss = outputs.get("loss") if isinstance(outputs, dict) else outputs
+        fn(trainer, model, loss, batch_idx)
+
+    return call
+
+
+def _profiled(it: Iterator[Any], prof: Profiler, action: str) -> Iterator[Any]:
+    iterator = iter(it)
+    while True:
+        prof.start(action)
+        try:
+            batch = next(iterator)
+        except StopIteration:
+            prof.stop(action)
+            return
+        prof.stop(action)
+        yield batch
+
+
+def _prepare_for_backward(ddp: Any, output: Any) -> None:
+    """Arm DDP's gradient reduction for a backward that does not follow DDP's forward
+    (manual optimization), as Lightning does."""
+    if torch.is_grad_enabled() and ddp.require_backward_grad_sync:
+        ddp.require_forward_param_sync = True
+        args = [output] if ddp.find_unused_parameters and not ddp.static_graph else []
+        ddp.reducer._rebuild_buckets()
+        ddp.reducer.prepare_for_backward(args)
+    else:
+        ddp.require_forward_param_sync = False
+
+
+def _convert_sync_batchnorm(model: Module) -> Module:
+    """Replace BatchNorm layers with SyncBatchNorm in place (statistics over all processes)."""
+    for name, child in list(model.named_children()):
+        converted = torch.nn.SyncBatchNorm.convert_sync_batchnorm(child)
+        if converted is not child:
+            setattr(model, name, converted)
+    return model
+
+
+def _without_shuffle(loader: DataLoader) -> DataLoader:
+    if isinstance(loader.sampler, SequentialSampler) or loader.batch_size is None:
+        return loader
+    return DataLoader(
+        loader.dataset,
+        batch_size=loader.batch_size,
+        shuffle=False,
+        num_workers=loader.num_workers,
+        collate_fn=loader.collate_fn,
+        pin_memory=loader.pin_memory,
+        drop_last=loader.drop_last,
+    )
 
 
 def _materialize(loader: Any) -> Any:
@@ -643,6 +1943,24 @@ def _total(values: list[Any]) -> float:
     if tensors:
         total += float(torch.stack([t.reshape(()) for t in tensors]).sum())
     return total
+
+
+def _weighted(values: list[Any], weights: list[float]) -> float:
+    tensors = [
+        v.reshape(()) if isinstance(v, torch.Tensor) else torch.tensor(float(v)) for v in values
+    ]
+    dev = tensors[0].device
+    w = torch.tensor(weights, device=dev, dtype=torch.float32)
+    return float((torch.stack([t.to(dev).float() for t in tensors]) * w).sum() / w.sum())
+
+
+def _extreme(values: list[Any], fx: str) -> float:
+    tensors = [
+        v.reshape(()) if isinstance(v, torch.Tensor) else torch.tensor(float(v)) for v in values
+    ]
+    dev = tensors[0].device
+    stacked = torch.stack([t.to(dev).float() for t in tensors])
+    return float(stacked.max() if fx == "max" else stacked.min())
 
 
 def _to_cpu(value: Any) -> Any:

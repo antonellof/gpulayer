@@ -61,8 +61,12 @@ checkpoints. Each case runs 100 and 600 steps, three times each in fresh process
 at a time with nothing else on the GPU. Milliseconds per step is the difference of the median
 wall times divided by 500. Script: `benchmarks/lightning_comparison/`.
 
-These are single-GPU results with small models. Lightning has far more training features
-(strategies such as FSDP and DeepSpeed, loggers, many callbacks); this compares speed only.
+These are single-GPU results with small models, measured with the GPUlayer Trainer 0.7.
+Version 0.8 added Lightning's hooks, callbacks, loggers and profilers (ADR-0024); an A/B run
+on an Apple M2 Pro CPU measured the 0.8 loop within 1.4% of 0.7
+(`benchmarks/results/2026-11-01-m2pro-parity/`). The GPU numbers have not been re-measured
+with 0.8. Lightning still has features GPUlayer does not (DeepSpeed, XLA, plugins); this
+compares speed only.
 
 ## Several GPUs in one machine against PyTorch Lightning
 

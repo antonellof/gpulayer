@@ -1,6 +1,6 @@
 # ADR-0018: Trainer scope relative to PyTorch Lightning
 
-- **Status:** Accepted (milestone 2)
+- **Status:** Accepted (milestone 2); point 3 replaced by [ADR-0024](ADR-0024-lightning-feature-parity.md)
 - **Date:** 2026-10-30
 
 ## Context

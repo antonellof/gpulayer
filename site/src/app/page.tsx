@@ -102,7 +102,7 @@ const FEATURES = [
   {
     icon: Flame,
     title: "One Trainer, any scale",
-    body: "The same script runs in your process, as DDP on every GPU of a machine, or across machines with Trainer(devices=4, num_nodes=2). Mixed precision, checkpoints, callbacks and experimental FSDP.",
+    body: "The same script runs in your process, as DDP on every GPU of a machine, or across machines with Trainer(devices=4, num_nodes=2). Lightning's hooks, callbacks, loggers and tuner, mixed precision and experimental FSDP.",
   },
   {
     icon: Boxes,
@@ -169,7 +169,7 @@ const STATUS: { label: string; dot: string; items: string }[] = [
   {
     label: "Implemented, not validated",
     dot: "bg-amber-500",
-    items: "NCCL across machines · AMD ROCm · FSDP (experimental) · NVIDIA GPU workers on Kubernetes",
+    items: "NCCL across machines · AMD ROCm · FSDP (experimental) · Trainer features that need a GPU: sync_batchnorm, torch.compile with Inductor · NVIDIA GPU workers on Kubernetes",
   },
   {
     label: "Planned",
