@@ -385,3 +385,25 @@ def test_torch_compile_job_is_rejected_without_a_compiler_with_the_reason():
     assert d.worker_ids == ["cc"]
     reasons = {c.worker_id: " ".join(c.reasons) for c in d.candidates}
     assert "needs a C compiler" in reasons["no-cc"]
+
+
+def test_nightly_and_rc_frameworks_satisfy_their_version(monkeypatch):
+    """A nightly torch (2.3.0.dev20240104) is torch 2.3: it meets >=0 and >=2.2. packaging < 25
+    leaves pre-releases out of a SpecifierSet by default; the test replays that behaviour so it
+    guards the fix whatever packaging CI installs."""
+    from packaging.specifiers import SpecifierSet
+    from packaging.version import Version
+
+    real = SpecifierSet.contains
+
+    def old_default(self, item, prereleases=None, installed=None):
+        if prereleases is None and Version(str(item)).is_prerelease:
+            return False
+        return real(self, item, prereleases=prereleases)
+
+    monkeypatch.setattr(SpecifierSet, "contains", old_default)
+    w = view("w", frameworks={"torch": "2.3.0.dev20240104"}, python_version="3.13.0rc1")
+    assert schedule(spec(ResourceRequest(frameworks={"torch": ">=0"})), [w]).placed
+    assert schedule(spec(ResourceRequest(frameworks={"torch": ">=2.2"})), [w]).placed
+    assert schedule(spec(ResourceRequest(python=">=3.10")), [w]).placed
+    assert not schedule(spec(ResourceRequest(frameworks={"torch": ">=2.4"})), [w]).placed

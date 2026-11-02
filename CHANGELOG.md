@@ -5,6 +5,10 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Fix: a worker with a nightly or release-candidate PyTorch (for example
+  `2.3.0.dev20240104`) was rejected as "does not satisfy >=0" when `packaging` older than 25
+  was installed, because those versions leave pre-releases out of version ranges by default.
+  Pre-releases now count as their version (regression test added).
 - Fix: a job that called the Trainer more than once (fit, then predict or test) could fail
   intermittently with "Gloo connectFullMesh failed ... Connection refused": the process group
   was destroyed after each call, and a rank that finished first joined the next call through

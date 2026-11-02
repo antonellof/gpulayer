@@ -53,7 +53,9 @@ def _spec_ok(spec: str, version: str | None) -> bool:
     if version is None:
         return False
     try:
-        return Version(version) in SpecifierSet(spec)
+        # Nightly and release-candidate builds (torch 2.3.0.dev20240104) count as their version:
+        # packaging < 25 leaves pre-releases out unless asked, so ask.
+        return SpecifierSet(spec).contains(Version(version), prereleases=True)
     except (InvalidSpecifier, InvalidVersion):
         return False
 
