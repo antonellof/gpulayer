@@ -1,341 +1,321 @@
-// Feature art: fine isometric wireframes on a dark panel, one glowing accent, small monospace
-// labels, and one simple looping symbol per card. Motion is CSS
-// (.fa-* in globals.css) plus SMIL for movement along paths; with prefers-reduced-motion the
-// scenes show a still frame.
+// Feature art: one still, flat illustration per capability card, drawn from what GPUlayer
+// actually shows (its API, the scheduler's reasons, validated hardware). Colours follow the
+// site theme and the docs diagrams (--fa-* in globals.css), so they switch with dark mode.
 
 import type { CSSProperties, ReactNode } from "react";
 
-import { InfinityLoop } from "./infinity-loop";
-
 const W = 260;
 const H = 160;
-const S = 10; // one unit
-const C30 = Math.cos(Math.PI / 6);
-const LINE = "rgba(255,255,255,0.22)";
-const LINE_SOFT = "rgba(255,255,255,0.09)";
-const ACCENT = "#22d3ee";
-const ACCENT_TOP = "#a5f3fc";
-const MONO = "'JetBrains Mono', ui-monospace, monospace";
+const MONO = "'JetBrains Mono', ui-monospace, Menlo, monospace";
+const SANS = "Geist, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif";
 
-type Pt = [number, number];
+const FG = "hsl(var(--foreground))";
+const MUTED = "hsl(var(--muted-foreground))";
+const BORDER = "hsl(var(--border))";
+const BG = "hsl(var(--background))";
+const ACCENT = "var(--fa-accent)";
+const ACCENT_SOFT = "var(--fa-accent-soft)";
+const OK = "var(--fa-ok)";
+const BAD = "var(--fa-bad)";
 
-function iso(o: Pt, x: number, y: number, z: number): Pt {
-  return [o[0] + (x - y) * C30 * S, o[1] + (x + y) * 0.5 * S - z * S];
-}
-
-function poly(points: Pt[]): string {
-  return points.map(([a, b]) => `${a.toFixed(1)},${b.toFixed(1)}`).join(" ");
-}
-
-function delay(seconds: number, extra?: CSSProperties): CSSProperties {
-  return { animationDelay: `${seconds}s`, ...extra };
-}
-
-type BoxProps = {
-  o: Pt;
+type TextProps = {
   x: number;
   y: number;
-  z?: number;
-  w?: number;
-  d?: number;
-  h?: number;
-  glow?: boolean;
-  dim?: boolean;
+  children: ReactNode;
+  color?: string;
+  size?: number;
+  mono?: boolean;
+  bold?: boolean;
+  anchor?: "start" | "middle" | "end";
 };
 
-/** A box: wire edges on a dark fill, or filled with the glowing accent. */
-function Box({ o, x, y, z = 0, w = 1, d = 1, h = 1, glow = false, dim = false }: BoxProps) {
-  const P = (a: number, b: number, c: number) => iso(o, a, b, c);
-  const top = [P(x, y, z + h), P(x + w, y, z + h), P(x + w, y + d, z + h), P(x, y + d, z + h)];
-  const left = [P(x, y + d, z), P(x + w, y + d, z), P(x + w, y + d, z + h), P(x, y + d, z + h)];
-  const right = [P(x + w, y, z), P(x + w, y + d, z), P(x + w, y + d, z + h), P(x + w, y, z + h)];
-  if (glow) {
-    return (
-      <g filter="url(#fa-glow)">
-        <polygon points={poly(left)} fill={ACCENT} fillOpacity={0.55} stroke={ACCENT_TOP} strokeWidth={0.6} />
-        <polygon points={poly(right)} fill={ACCENT} fillOpacity={0.35} stroke={ACCENT_TOP} strokeWidth={0.6} />
-        <polygon points={poly(top)} fill={ACCENT_TOP} fillOpacity={0.85} stroke="#ecfeff" strokeWidth={0.6} />
-      </g>
-    );
-  }
+function T({ x, y, children, color = FG, size = 7.5, mono = true, bold = false, anchor = "start" }: TextProps) {
   return (
-    <g fill="#0a0a0a" stroke={dim ? LINE_SOFT : LINE} strokeWidth={0.7}>
-      <polygon points={poly(left)} />
-      <polygon points={poly(right)} />
-      <polygon points={poly(top)} />
-    </g>
+    <text
+      x={x}
+      y={y}
+      fontSize={size}
+      fontFamily={mono ? MONO : SANS}
+      fontWeight={bold ? 600 : 400}
+      textAnchor={anchor}
+      style={{ fill: color, whiteSpace: "pre" }}
+    >
+      {children}
+    </text>
   );
 }
 
-/** A wire box with a glowing copy on top that fades in and out (class sets the timing). */
-function LitBox({ cls, at, still = false, ...p }: BoxProps & { cls: string; at: number; still?: boolean }) {
+type RectProps = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  r?: number;
+  fill?: string;
+  stroke?: string;
+  dash?: boolean;
+};
+
+function R({ x, y, w, h, r = 4, fill = BG, stroke = BORDER, dash = false }: RectProps) {
+  const style: CSSProperties = { fill, stroke, strokeWidth: 1 };
+  if (dash) style.strokeDasharray = "3 2";
+  return <rect x={x} y={y} width={w} height={h} rx={r} style={style} />;
+}
+
+function Check({ x, y }: { x: number; y: number }) {
+  return (
+    <path
+      d={`M${x} ${y} l2.4 2.4 l4.6 -5`}
+      style={{ fill: "none", stroke: OK, strokeWidth: 1.4, strokeLinecap: "round", strokeLinejoin: "round" }}
+    />
+  );
+}
+
+function Cross({ x, y }: { x: number; y: number }) {
+  const s: CSSProperties = { stroke: BAD, strokeWidth: 1.4, strokeLinecap: "round" };
   return (
     <g>
-      <Box {...p} />
-      <g className={`fa-lit ${cls}${still ? " fa-still" : ""}`} style={delay(at)}>
-        <Box {...p} glow />
-      </g>
+      <line x1={x} y1={y - 2.6} x2={x + 5} y2={y + 2.4} style={s} />
+      <line x1={x + 5} y1={y - 2.6} x2={x} y2={y + 2.4} style={s} />
     </g>
   );
 }
 
-function Grid({ o, n, m }: { o: Pt; n: number; m: number }) {
-  const lines = [];
-  for (let i = 0; i <= n; i++) {
-    const [a, b] = [iso(o, i, 0, 0), iso(o, i, m, 0)];
-    lines.push(<line key={`a${i}`} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} />);
-  }
-  for (let j = 0; j <= m; j++) {
-    const [a, b] = [iso(o, 0, j, 0), iso(o, n, j, 0)];
-    lines.push(<line key={`b${j}`} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} />);
-  }
-  return (
-    <g stroke={LINE_SOFT} strokeWidth={0.6}>
-      {lines}
-    </g>
-  );
-}
-
-function Label({ at, text, cls, start }: { at: Pt; text: string; cls?: string; start?: number }) {
-  const w = text.length * 4.6 + 8;
-  return (
-    <g className={`fa-label${cls ? ` ${cls}` : ""}`} style={start !== undefined ? delay(start) : undefined}>
-      <rect x={at[0]} y={at[1] - 8} width={w} height={11} rx={1.5} fill="#0a0a0a" stroke={LINE} strokeWidth={0.6} />
-      <text x={at[0] + 4} y={at[1] + 0.5} fill="rgba(255,255,255,0.6)" fontSize={6.5} fontFamily={MONO}>
-        {text}
-      </text>
-    </g>
-  );
-}
-
-/** A glowing dot that travels along `path` (SMIL), starting at `begin` seconds. */
-function Packet({ path, dur, begin = 0 }: { path: string; dur: number; begin?: number }) {
-  return (
-    <circle r={2.2} fill={ACCENT_TOP} filter="url(#fa-glow)" className="fa-move" opacity={0}>
-      <animateMotion dur={`${dur}s`} begin={`${begin}s`} repeatCount="indefinite" path={path} />
-      <animate
-        attributeName="opacity"
-        values="0;1;1;0"
-        keyTimes="0;0.1;0.85;1"
-        dur={`${dur}s`}
-        begin={`${begin}s`}
-        repeatCount="indefinite"
-      />
-    </circle>
-  );
-}
-
-/** Scales a scene about the panel centre. */
-function Zoom({ k, dy = 0, children }: { k: number; dy?: number; children: ReactNode }) {
-  return <g transform={`translate(${W / 2} ${H / 2 + dy}) scale(${k}) translate(${-W / 2} ${-H / 2})`}>{children}</g>;
+/** A GPU tile: filled with the accent when in use, an outline when idle. */
+function Gpu({ x, y, s = 12, on = true }: { x: number; y: number; s?: number; on?: boolean }) {
+  return <R x={x} y={y} w={s} h={s} r={2} fill={on ? ACCENT : BG} stroke={on ? ACCENT : BORDER} />;
 }
 
 // ------------------------------------------------------------------- scenes
 
-function ApiStack() {
-  // the plates breathe apart and together; the glowing layer travels up the stack
-  const o: Pt = [130, 60];
+function Api() {
+  // the Trainer's surface as a file: a Module with its hooks, a Trainer with a strategy
+  const lines: [string, string][] = [
+    ["class Net(glt.Module):", FG],
+    ["  def training_step(self, batch, i)", MUTED],
+    ["  def configure_optimizers(self)", MUTED],
+    ["", FG],
+    ["trainer = glt.Trainer(", FG],
+    ['  strategy="fsdp", devices=4,', MUTED],
+    ["  callbacks=[ModelCheckpoint()])", MUTED],
+  ];
+  const tags = ["DDP", "FSDP", "DeepSpeed", "TP"];
+  let tx = 30;
   return (
     <>
-      <Grid o={[130, 76]} n={7} m={7} />
-      {[0, 1, 2, 3, 4].map((i) => (
-        <g key={i} className="fa-breathe" style={delay(-i * 0.12, { ["--lift" as string]: `${-i * 3}px` })}>
-          <LitBox cls="fa-climb" at={i * 0.8} still={i === 2} o={o} x={1} y={1} z={i * 1.1} w={5} d={5} h={0.35} />
-        </g>
+      <R x={20} y={16} w={220} h={100} r={6} />
+      <line x1={20} y1={32} x2={240} y2={32} style={{ stroke: BORDER }} />
+      <T x={30} y={27} size={7} color={MUTED}>
+        train.py
+      </T>
+      {lines.map(([s, c], i) => (
+        <T key={i} x={30} y={46 + i * 10.5} size={7} color={c}>
+          {s}
+        </T>
       ))}
-      <Label at={[24, 40]} text="callbacks" />
-      <Label at={[196, 100]} text="strategy" />
+      {tags.map((t) => {
+        const w = t.length * 4.6 + 12;
+        const x = tx;
+        tx += w + 6;
+        return (
+          <g key={t}>
+            <R x={x} y={126} w={w} h={16} r={8} fill={ACCENT_SOFT} stroke={ACCENT} />
+            <T x={x + w / 2} y={137} size={7} color={FG} anchor="middle">
+              {t}
+            </T>
+          </g>
+        );
+      })}
     </>
   );
 }
 
-function AnyScale() {
-  // GPUs light up 1, then 2, then 4, then 8 (2 machines x 4), then the cycle starts again
-  const o: Pt = [130, 44];
-  const order: Record<string, number> = {};
-  const steps = [["0,0"], ["0,1"], ["0,2", "0,3"], ["1,0", "1,1", "1,2", "1,3"]];
-  steps.forEach((cells, s) => cells.forEach((c) => (order[c] = s)));
-  const cells = [];
-  for (let r = 0; r < 5; r++)
-    for (let c = 0; c < 5; c++) {
-      const step = order[`${r},${c}`];
-      cells.push(
-        step === undefined ? (
-          <Box key={`${r}${c}`} o={o} x={r * 1.4} y={c * 1.4} w={1} d={1} h={0.6} dim />
-        ) : (
-          <LitBox key={`${r}${c}`} cls={`fa-scale-${step}`} at={0} still o={o} x={r * 1.4} y={c * 1.4} w={1} d={1} h={1.2} />
-        ),
-      );
-    }
+function Scale() {
+  // the same script at three sizes: one GPU, every GPU of a machine, two machines
+  const machine = (x: number, y: number, n: number) => (
+    <g>
+      <R x={x} y={y} w={62} h={22} r={4} />
+      {[0, 1, 2, 3].map((i) => (
+        <Gpu key={i} x={x + 6 + i * 13.5} y={y + 5} on={i < n} />
+      ))}
+    </g>
+  );
+  const arrow = (x: number) => (
+    <path d={`M${x} 80 h10 m-3.5 -3.5 l3.5 3.5 l-3.5 3.5`} style={{ fill: "none", stroke: MUTED, strokeWidth: 1 }} />
+  );
   return (
     <>
-      <Grid o={[130, 50]} n={7} m={7} />
-      {cells}
-      <Label at={[22, 34]} text="num_nodes=2" cls="fa-scale-3" start={0} />
-      <Label at={[186, 112]} text="devices=4" />
+      {machine(10, 69, 1)}
+      {arrow(78)}
+      {machine(96, 69, 4)}
+      {arrow(164)}
+      {machine(184, 52, 4)}
+      {machine(184, 86, 4)}
+      <T x={41} y={108} size={7} color={MUTED} anchor="middle">
+        devices=1
+      </T>
+      <T x={127} y={108} size={7} color={MUTED} anchor="middle">
+        devices=4
+      </T>
+      <T x={215} y={125} size={7} color={MUTED} anchor="middle">
+        num_nodes=2
+      </T>
+      <T x={130} y={30} size={8} color={FG} anchor="middle">
+        trainer.fit(model)
+      </T>
     </>
   );
 }
 
 function Placement() {
-  // a target: rings ripple out from the one pillar that fits; the others stay dark
-  const o: Pt = [130, 52];
-  const c = 3.5;
-  const ring = (r: number) => {
-    const pts: Pt[] = [];
-    for (let i = 0; i <= 48; i++) {
-      const a = (i / 48) * Math.PI * 2;
-      pts.push(iso(o, c + r * Math.cos(a), c + r * Math.sin(a), 0));
-    }
-    return `M${pts.map(([a, b]) => `${a.toFixed(1)} ${b.toFixed(1)}`).join(" L")} Z`;
-  };
-  const others = [
-    { x: 0.2, y: 1.2, h: 1.6 },
-    { x: 5.6, y: 0.4, h: 2.2 },
-    { x: 0.6, y: 5.8, h: 1.2 },
-    { x: 6.0, y: 5.4, h: 1.8 },
+  // one machine is chosen; every other one says why not (the scheduler's own reasons)
+  const rows: { host: string; ok: boolean; why: string }[] = [
+    { host: "a100-box", ok: true, why: "placed: 2 GPUs over NVLink" },
+    { host: "m2-pro", ok: false, why: "torch cannot use cuda" },
+    { host: "t4-vm", ok: false, why: "needs 2 GPUs, has 1" },
+    { host: "rtx-box", ok: false, why: "reserved for job-41c" },
   ];
-  const back = others.filter((p) => p.x + p.y < 2 * c);
-  const front = others.filter((p) => p.x + p.y >= 2 * c);
   return (
     <>
-      <Zoom k={1.15} dy={4}>
-        <Grid o={o} n={7} m={7} />
-        {[1.2, 2.2, 3.2].map((r) => (
-          <path key={r} d={ring(r)} fill="none" stroke={LINE} strokeWidth={0.6} />
-        ))}
-        <path d={ring(3.2)} fill="none" stroke={ACCENT} strokeWidth={1} className="fa-ripple" />
-        <path d={ring(3.2)} fill="none" stroke={ACCENT} strokeWidth={1} className="fa-ripple" style={delay(-1.5)} />
-        {back.map((p, i) => (
-          <Box key={i} o={o} x={p.x} y={p.y} w={0.8} d={0.8} h={p.h} dim />
-        ))}
-        <g className="fa-pulse-glow">
-          <Box o={o} x={c - 0.45} y={c - 0.45} w={0.9} d={0.9} h={3} glow />
-        </g>
-        {front.map((p, i) => (
-          <Box key={i} o={o} x={p.x} y={p.y} w={0.8} d={0.8} h={p.h} dim />
-        ))}
-      </Zoom>
-      <Label at={[186, 34]} text="best fit" />
+      <T x={20} y={26} size={7} color={MUTED}>
+        accelerator=cuda, devices=2
+      </T>
+      {rows.map((r, i) => {
+        const y = 36 + i * 28;
+        return (
+          <g key={r.host}>
+            <R x={20} y={y} w={220} h={22} r={4} fill={r.ok ? ACCENT_SOFT : BG} stroke={r.ok ? ACCENT : BORDER} />
+            {r.ok ? <Check x={29} y={y + 11.5} /> : <Cross x={30} y={y + 11} />}
+            <T x={44} y={y + 14} size={7} color={FG}>
+              {r.host}
+            </T>
+            <T x={232} y={y + 14} size={7} color={r.ok ? FG : MUTED} anchor="end">
+              {r.why}
+            </T>
+          </g>
+        );
+      })}
     </>
   );
 }
 
-/** A GPU chip: a dark package with pins on its two front edges and a die that lights up. */
-function Chip({ o, x, y, s, step }: { o: Pt; x: number; y: number; s: number; step: number }) {
-  const pins = [];
-  const n = Math.round(s * 3);
-  for (let i = 1; i < n; i++) {
-    const t = (i / n) * s;
-    const [a, b] = [iso(o, x + t, y + s, 0.1), iso(o, x + t, y + s + 0.3, 0)];
-    const [p, q] = [iso(o, x + s, y + t, 0.1), iso(o, x + s + 0.3, y + t, 0)];
-    pins.push(<line key={`a${i}`} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} />);
-    pins.push(<line key={`b${i}`} x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} />);
-  }
-  const die = s * 0.5;
-  return (
-    <g>
-      <g stroke={LINE} strokeWidth={0.6}>{pins}</g>
-      <Box o={o} x={x} y={y} w={s} d={s} h={0.25} />
-      <LitBox cls={`fa-scale-${step}`} at={0} still o={o} x={x + (s - die) / 2} y={y + (s - die) / 2} z={0.25} w={die} d={die} h={0.25} />
-    </g>
-  );
-}
-
-function Fanout() {
-  // every GPU: three chips of different sizes, their dies lighting one after another
-  const o: Pt = [130, 40];
-  const chips = [
-    { x: 0.4, y: 5.2, s: 1.6, label: "M2" },
-    { x: 2.6, y: 2.6, s: 2.2, label: "T4" },
-    { x: 5.0, y: 0.2, s: 3, label: "A100" },
+function Gpus() {
+  // the machines GPUlayer has run on, side by side behind one server
+  const cards = [
+    { where: "laptop", gpu: "Apple M2 Pro", backend: "mps" },
+    { where: "workstation", gpu: "4x RTX 3070", backend: "cuda" },
+    { where: "Google Cloud", gpu: "Tesla T4", backend: "cuda" },
+    { where: "server", gpu: "2x A100 SXM4", backend: "cuda" },
   ];
   return (
     <>
-      <Zoom k={1.5} dy={12}>
-        <Grid o={o} n={8} m={8} />
-        {chips.map((ch, i) => (
-          <Chip key={ch.label} o={o} x={ch.x} y={ch.y} s={ch.s} step={i} />
-        ))}
-        {chips.map((ch) => {
-          const [a, b] = iso(o, ch.x + ch.s + 0.6, ch.y + ch.s + 0.6, 0);
-          return (
-            <text key={ch.label} x={a - 6} y={b + 6} fill="rgba(255,255,255,0.55)" fontSize={5.5} fontFamily={MONO}>
-              {ch.label}
-            </text>
-          );
-        })}
-      </Zoom>
-      <Label at={[20, 30]} text="gpulayer up" />
+      <R x={92} y={14} w={76} h={20} r={10} fill={ACCENT_SOFT} stroke={ACCENT} />
+      <T x={130} y={27} size={7} color={FG} anchor="middle">
+        gpulayer up
+      </T>
+      <path d="M130 34 V42 M71 42 H189 V50 M71 42 V50" style={{ fill: "none", stroke: BORDER, strokeWidth: 1 }} />
+      {cards.map((c, i) => {
+        const x = 16 + (i % 2) * 118;
+        const y = 50 + Math.floor(i / 2) * 52;
+        return (
+          <g key={c.gpu}>
+            <R x={x} y={y} w={110} h={42} r={5} />
+            <Gpu x={x + 8} y={y + 9} s={10} />
+            <T x={x + 24} y={y + 17} size={7.5} color={FG}>
+              {c.gpu}
+            </T>
+            <T x={x + 8} y={y + 33} size={6.5} color={MUTED}>
+              {c.where}
+            </T>
+            <T x={x + 102} y={y + 33} size={6.5} color={ACCENT} anchor="end">
+              {c.backend}
+            </T>
+          </g>
+        );
+      })}
     </>
   );
 }
 
 function Results() {
-  // the loss curve draws on a chart card, then the checkpoint lands on your machine
-  const o: Pt = [178, 92];
-  const curve: Pt[] = [];
-  for (let i = 0; i <= 24; i++) {
-    const t = i / 24;
-    curve.push([36 + 92 * t, 96 - 46 * Math.exp(-4 * t)]);
+  // a loss curve next to the files that come back to your machine
+  const pts: string[] = [];
+  for (let i = 0; i <= 30; i++) {
+    const t = i / 30;
+    const y = 112 - 62 * Math.exp(-4 * t) - 4 * Math.sin(i * 1.7) * (1 - t) * 0.6;
+    pts.push(`${(26 + 104 * t).toFixed(1)} ${y.toFixed(1)}`);
   }
-  const d = `M${curve.map(([a, b]) => `${a.toFixed(1)} ${b.toFixed(1)}`).join(" L")}`;
+  const files = ["last.ckpt", "metrics.csv", "rank0.log", "rank1.log"];
   return (
     <>
-      <Grid o={[178, 86]} n={5} m={5} />
-      <rect x={26} y={30} width={112} height={74} rx={3} fill="#0a0a0a" stroke={LINE} strokeWidth={0.7} />
-      {[50, 66, 82].map((y) => (
-        <line key={y} x1={32} y1={y} x2={132} y2={y} stroke={LINE_SOFT} strokeWidth={0.6} />
-      ))}
-      <text x={32} y={40} fill="rgba(255,255,255,0.5)" fontSize={6} fontFamily={MONO}>
+      <R x={16} y={18} w={124} h={110} r={6} />
+      <T x={26} y={34} size={7} color={MUTED}>
         train_loss
-      </text>
-      <path d={d} fill="none" stroke={ACCENT} strokeWidth={1.3} filter="url(#fa-glow)" pathLength={100} className="fa-draw" />
-      <Box o={o} x={1} y={1} w={3} d={3} h={0.4} />
-      <g className="fa-late">
-        <Box o={o} x={1.8} y={1.8} z={0.4} w={1.4} d={1.4} h={1.4} glow />
-      </g>
-      <Label at={[190, 140]} text="last.ckpt" cls="fa-late" start={0} />
+      </T>
+      {[60, 80, 100].map((y) => (
+        <line key={y} x1={26} y1={y} x2={130} y2={y} style={{ stroke: BORDER, strokeDasharray: "2 2" }} />
+      ))}
+      <path d={`M${pts.join(" L")}`} style={{ fill: "none", stroke: ACCENT, strokeWidth: 1.6, strokeLinejoin: "round" }} />
+      <T x={152} y={34} size={7} color={MUTED}>
+        outputs/
+      </T>
+      {files.map((f, i) => (
+        <g key={f}>
+          <R x={150} y={42 + i * 22} w={94} h={17} r={3} fill={i === 0 ? ACCENT_SOFT : BG} stroke={i === 0 ? ACCENT : BORDER} />
+          <T x={158} y={53.5 + i * 22} size={7} color={FG}>
+            {f}
+          </T>
+        </g>
+      ))}
+      <T x={16} y={146} size={7} color={MUTED}>
+        streamed while it trains, saved to your machine
+      </T>
     </>
   );
 }
 
 function Loop() {
-  // a 3D infinity loop turning in space, a light running along it (infinity-loop.tsx)
+  // a custom loop: two launch lines on top, Runtime calls inside the user's own loop
+  const lines: { s: string; hi?: boolean; dim?: boolean }[] = [
+    { s: 'glt.launch(devices=4, accelerator="cuda")', hi: true },
+    { s: "rt = glt.Runtime().setup()", hi: true },
+    { s: "model = rt.module(model)" },
+    { s: "for xb, yb in rt.dataloader(loader):" },
+    { s: "    with rt.autocast():", dim: true },
+    { s: "        loss = loss_fn(model(xb), yb)", dim: true },
+    { s: "    rt.backward(loss)" },
+    { s: "    rt.step(optimizer)" },
+  ];
   return (
     <>
-      <Grid o={[130, 40]} n={8} m={8} />
-      <InfinityLoop cx={130} cy={74} scale={1.7} />
-      <Label at={[22, 140]} text="launch()" />
+      <R x={14} y={14} w={232} h={132} r={6} />
+      {lines.map((l, i) => {
+        const y = 30 + i * 14.5;
+        return (
+          <g key={i}>
+            {l.hi && <rect x={15} y={y - 9} width={230} height={13} style={{ fill: ACCENT_SOFT }} />}
+            {l.hi && <rect x={15} y={y - 9} width={2} height={13} style={{ fill: ACCENT }} />}
+            <T x={24} y={y} size={6.8} color={l.dim ? MUTED : FG}>
+              {l.s}
+            </T>
+          </g>
+        );
+      })}
     </>
   );
 }
 
-const ART = { api: ApiStack, scale: AnyScale, placement: Placement, gpus: Fanout, results: Results, loop: Loop };
+const ART = { api: Api, scale: Scale, placement: Placement, gpus: Gpus, results: Results, loop: Loop };
 
 export function FeatureArt({ kind }: { kind: keyof typeof ART }) {
   const Art = ART[kind];
   return (
     <svg
       viewBox={`0 0 ${W} ${H}`}
-      preserveAspectRatio="xMidYMid slice"
-      className="feature-art block h-28 w-full sm:h-48"
+      preserveAspectRatio="xMidYMid meet"
+      className="feature-art block h-28 w-full bg-card sm:h-48"
       aria-hidden
     >
-      <defs>
-        <filter id="fa-glow" x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur stdDeviation="2.4" result="b" />
-          <feMerge>
-            <feMergeNode in="b" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-        <radialGradient id="fa-bg" cx="50%" cy="55%" r="65%">
-          <stop offset="0%" stopColor="#0f1f24" />
-          <stop offset="100%" stopColor="#050505" />
-        </radialGradient>
-      </defs>
-      <rect width={W} height={H} fill="url(#fa-bg)" />
       <Art />
     </svg>
   );

@@ -3,6 +3,13 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
+## Unreleased
+
+- Home page: the six "What you get" cards show still, flat illustrations in the docs
+  diagrams' style (the Trainer API, scaling from one GPU to two machines, the scheduler's
+  per-machine reasons, validated hardware, run outputs, a custom loop with `launch()` and
+  `Runtime`) in place of the animated wireframe scenes. They follow the light and dark theme.
+
 ## 0.9.1 (2026-11-02)
 
 - Fix: a worker with a nightly or release-candidate PyTorch (for example
