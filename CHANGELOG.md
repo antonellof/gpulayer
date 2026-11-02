@@ -3,7 +3,7 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
-## Unreleased
+## 0.9.1 (2026-11-02)
 
 - Fix: a worker with a nightly or release-candidate PyTorch (for example
   `2.3.0.dev20240104`) was rejected as "does not satisfy >=0" when `packaging` older than 25
