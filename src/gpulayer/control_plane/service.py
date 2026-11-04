@@ -84,6 +84,10 @@ class ControlPlaneConfig:
     heartbeat_interval_seconds: float = 2.0
     lease_ttl_seconds: float = 20.0
     timeout_grace_seconds: float = 30.0
+    # Time a worker may spend fetching artifacts and building the environment before the
+    # process starts. ``timeout_seconds`` counts from process start (the worker reports it
+    # with ``executing_task``); until then the backstop deadline also allows this much.
+    preparation_allowance_seconds: float = 3600.0
     public_url: str | None = None  # given to provisioned workers for bootstrap
     tls_fingerprint: str | None = None  # of a self-signed server certificate, for bootstrap
     provisioning_retry_seconds: float = 30.0  # back-off after a retryable capacity error
@@ -604,8 +608,15 @@ class ControlPlane:
                 for r in c.execute(
                     "SELECT t.id FROM tasks t JOIN jobs j ON j.id=t.job_id WHERE t.worker_id=? "
                     "AND ((t.state=? AND (t.cancel_requested=1 OR j.cancel_requested=1)) "
-                    "OR t.state=?)",
-                    (worker_id, TaskState.RUNNING.value, TaskState.LOST.value),
+                    "OR t.state IN (?,?))",
+                    # LOST and TIMED_OUT tasks no longer hold their devices, so a process
+                    # that is still running must be stopped before another job gets them.
+                    (
+                        worker_id,
+                        TaskState.RUNNING.value,
+                        TaskState.LOST.value,
+                        TaskState.TIMED_OUT.value,
+                    ),
                 ).fetchall()
             ]
         return HeartbeatResponse(
@@ -886,8 +897,19 @@ class ControlPlane:
             raise Conflict(f"task is {state.value}; do not start it")
         spec = JobSpec.model_validate_json(self._job_row(task["job_id"])["spec"])
         now = self.now()
+        # The worker enforces timeout_seconds from process start; the control plane only
+        # backstops it. Until the worker says the process is running (executing_task), allow
+        # for artifact fetches and the environment build, or a slow first build would mark
+        # the task timed out while the process still has time left (and free its GPUs).
         deadline = (
-            ts(now + timedelta(seconds=spec.timeout_seconds)) if spec.timeout_seconds else None
+            ts(
+                now
+                + timedelta(
+                    seconds=spec.timeout_seconds + self.config.preparation_allowance_seconds
+                )
+            )
+            if spec.timeout_seconds
+            else None
         )
         with self.store.tx() as c:
             c.execute(
@@ -919,6 +941,23 @@ class ControlPlane:
                         {"target": spec.placement.target.value},
                     )
                 self._set_job_state(task["job_id"], JobState.RUNNING)
+
+    def executing_task(self, worker_id: str, task_id: str) -> None:
+        """The task's process has started (preparation is over): the backstop deadline now
+        counts ``timeout_seconds`` from here, matching the worker's own timeout. Idempotent
+        for practical purposes: a repeat moves the deadline later by the time in between."""
+        task = self._owned_task(worker_id, task_id)
+        if TaskState(task["state"]) != TaskState.RUNNING:
+            return  # finished, lost or cancelled meanwhile; the heartbeat handles cancels
+        spec = JobSpec.model_validate_json(self._job_row(task["job_id"])["spec"])
+        if not spec.timeout_seconds:
+            return
+        deadline = ts(self.now() + timedelta(seconds=spec.timeout_seconds))
+        with self.store.tx() as c:
+            c.execute(
+                "UPDATE tasks SET deadline=? WHERE id=? AND state=?",
+                (deadline, task_id, TaskState.RUNNING.value),
+            )
 
     def append_logs(self, worker_id: str, task_id: str, lines: Sequence[LogEntry]) -> None:
         """``lines`` are ``(stream, line)`` or ``(stream, line, global_rank)``."""

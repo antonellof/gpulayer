@@ -307,6 +307,15 @@ class WorkerAgent:
             return False
         return True
 
+    def _report_executing(self, task_id: str) -> None:
+        """Tell the control plane the process started, so its backstop deadline counts
+        ``timeout_seconds`` from now rather than from before preparation. Best effort, off
+        the process path: a control plane without this call keeps its longer backstop."""
+        try:
+            self.channel.executing(task_id)
+        except Exception as e:
+            log.info("could not report task %s as executing: %s", task_id, e)
+
     def _run_and_release(self, a: TaskAssignment, slots: threading.BoundedSemaphore) -> None:
         try:
             self._execute_started(a)
@@ -550,9 +559,16 @@ class WorkerAgent:
             else:  # pragma: no cover - exhaustiveness
                 raise GpuLayerError(f"unsupported workload {type(w).__name__}")
 
+            reported = threading.Event()
+
             def started(pid: int) -> None:
                 with self._cancel_lock:
                     self._pgids[a.task_id] = pid
+                if not reported.is_set():  # once per task (service replicas restart)
+                    reported.set()
+                    threading.Thread(
+                        target=self._report_executing, args=(a.task_id,), daemon=True
+                    ).start()
 
             try:
                 if isinstance(w, ServiceJob):

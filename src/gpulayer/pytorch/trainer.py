@@ -18,7 +18,7 @@ import signal
 import threading
 import time
 from collections import defaultdict
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -433,6 +433,7 @@ class Trainer:
         self._unscaled: set[int] = set()
         self._hook_cache: dict[str, list[Callable[..., Any]]] = {}
         self._batch_counter = 0
+        self._total_batches = 0  # training batches run in this fit (all epochs)
         self._custom_opt = (False, False, False)
         self._step_scheds = False
         self._manual_opts: list[_ManualOptimizer] = []
@@ -999,6 +1000,7 @@ class Trainer:
                     cb.on_fit_end(self, model)
             return
         self.state = TrainerState("fit", None, "running")
+        self._total_batches = 0
         self._merge_model_callbacks(model)
         if self.deterministic is True:
             # Same results on every run (with seed_everything), at some speed cost. cuBLAS
@@ -1440,7 +1442,8 @@ class Trainer:
             self._log_to_loggers(metrics, self.global_step)
             self._call_monitors("on_train_epoch_end", model)
             # ReduceLROnPlateau steps after validation, on the monitored value.
-            self._step_schedulers("epoch", plateau=True)
+            if automatic:
+                self._step_schedulers("epoch", plateau=True)
             if self.enable_checkpointing:
                 # Every rank calls it: with FSDP, gathering the full state is a collective.
                 saved = self.save_checkpoint(Path(CHECKPOINT).name)
@@ -1574,12 +1577,31 @@ class Trainer:
         before_backward = hooks.get("on_before_backward", [])
         after_backward = hooks.get("on_after_backward", [])
         single = not rt.distributed
-        self._step_scheds = any(c.interval == "step" for c in self.lr_scheduler_configs)
+        # Lightning steps schedulers only with automatic optimization; with manual
+        # optimization the model calls sch.step() itself.
+        self._step_scheds = automatic and any(
+            c.interval == "step" for c in self.lr_scheduler_configs
+        )
+        plateau_step = automatic and any(
+            c.interval == "step" and c.reduce_on_plateau for c in self.lr_scheduler_configs
+        )
         if not automatic:
             model.__dict__["_gl_manual"] = self._manual_opts
+        every = self.check_val_every_n_epoch
+        # Validate within this epoch only on epochs check_val_every_n_epoch selects. With
+        # check_val_every_n_epoch=None an integer val_check_interval counts batches across
+        # epochs, as in Lightning, so it may be longer than one epoch.
+        val_epoch = every is None or (epoch + 1) % every == 0
+        count_across = every is None and isinstance(self.val_check_interval, int)
+        validated_last: dict[str, float] | None = None
         batches: Any = self._device_batches(rt, model, train, self.prefetch)
         if prof is not None:
             batches = _profiled(batches, prof, "train_dataloader_next")
+        # A loader without a length gives no batch count: look one batch ahead to know the
+        # last batch, so its accumulated gradients are applied in this epoch (Lightning).
+        ahead = _LookAhead(batches) if n_total is None else None
+        if ahead is not None:
+            batches = ahead
         loss: Any = None
         out: Any = None
         self._batch_counter = 0
@@ -1588,7 +1610,11 @@ class Trainer:
                 break
             if batch_idx < skip_batches:
                 continue  # resuming within an epoch: these batches were trained already
-            self.is_last_batch = n_batches is not None and batch_idx + 1 == n_batches
+            last = (n_batches is not None and batch_idx + 1 == n_batches) or (
+                ahead is not None and ahead.last
+            )
+            self.is_last_batch = last
+            self._total_batches += 1
             if batch_start:
                 ended = False
                 for fn in batch_start:
@@ -1620,7 +1646,7 @@ class Trainer:
             elif automatic:
                 # Apply the optimizer every `accumulate` batches (and on the last one). On the
                 # other batches DDP skips its gradient all-reduce.
-                apply = (batch_idx + 1) % accumulate == 0 or batch_idx + 1 == n_batches
+                apply = (batch_idx + 1) % accumulate == 0 or last
                 with rt.no_sync(ddp, enabled=not apply):
                     with rt.autocast():
                         out = step_fn(batch, batch_idx)
@@ -1651,23 +1677,28 @@ class Trainer:
                         prof.stop("optimizer_step")
                     self._stepped = True
                     self.global_step += 1
+                    if self._step_scheds:  # after the count, so frequency=N steps at N, 2N
+                        self._step_schedulers("step")
             else:
                 with rt.autocast():
                     out = step_fn(batch, batch_idx)
                 loss = out["loss"] if isinstance(out, dict) else out
-                if self._stepped and self._step_scheds:
-                    self._step_schedulers("step")
             if prof is not None:
                 prof.stop("run_training_batch")
             logs = model._gl_step_logs or (
                 {"train_loss": loss.detach().float()} if isinstance(loss, torch.Tensor) else {}
             )
             opts = model._gl_log_options
+            size: float | None = None
             for k, v in logs.items():
                 logged[k].append(v)
                 o = opts.get(k)
                 if o is not None and o[3] is not None:
                     weights[k].append(o[3])
+                else:  # weight the epoch mean by the inferred batch size (Lightning)
+                    if size is None:
+                        size = _batch_size(batch)
+                    weights[k].append(size)
             count += 1
             self._is_log_step = bool(
                 self._stepped and log_every and self.global_step % log_every == 0
@@ -1689,19 +1720,27 @@ class Trainer:
                 )
                 for fn in batch_end:
                     fn(outputs, batch, batch_idx)
-            if (
-                val_every
-                and (batch_idx + 1) % val_every == 0
-                and (n_batches is None or batch_idx + 1 < n_batches)
-            ):
-                # Same batch index on every rank, so the collectives inside line up.
-                mid = self._run_validation(
-                    rt, model, val, zero_grad=(batch_idx + 1) % accumulate == 0
-                )
-                self.val_history.append({"epoch": epoch, "step": self.global_step, **mid})
-                self.callback_metrics.update(mid)
-                self._log_to_loggers(mid, self.global_step)
-                self.state.stage = "train"
+            if val_every and val_epoch:
+                if count_across:
+                    seen = epoch * n_batches + batch_idx + 1 if n_batches else self._total_batches
+                else:
+                    seen = batch_idx + 1
+                # The last batch is left to the end-of-epoch validation, except when counting
+                # across epochs (which validates at the end of an epoch only if it is due).
+                if seen % val_every == 0 and (count_across or not last):
+                    # Same batch index on every rank, so the collectives inside line up.
+                    mid = self._run_validation(
+                        rt, model, val, zero_grad=(batch_idx + 1) % accumulate == 0 or last
+                    )
+                    self.val_history.append({"epoch": epoch, "step": self.global_step, **mid})
+                    self.callback_metrics.update(mid)
+                    self._log_to_loggers(mid, self.global_step)
+                    self.state.stage = "train"
+                    if last:
+                        validated_last = mid
+            if plateau_step and self._stepped:
+                # ReduceLROnPlateau with interval="step": after any validation of this batch.
+                self._step_schedulers("step", plateau=True)
             # SIGTERM (preemption, cancel): one process stops at once; several agree at a log
             # step, where values are read anyway, so no step pays for an extra synchronisation.
             if (single and self.received_sigterm) or (
@@ -1718,13 +1757,15 @@ class Trainer:
             if single and self.should_stop and self._mins_met():
                 break  # one process: stop now (several processes stop at the epoch end)
         self._batch_counter = 0
-        self._step_schedulers("epoch")
+        if automatic:
+            self._step_schedulers("epoch")
         metrics = self._aggregate(rt, logged, weights, model._gl_log_options, count)
-        last = epoch + 1 == self.max_epochs or (
+        final = epoch + 1 == self.max_epochs or (
             self.max_steps is not None and self.global_step >= self.max_steps
         )
-        every = self.check_val_every_n_epoch
-        if val is not None and ((every is not None and (epoch + 1) % every == 0) or last):
+        if validated_last is not None:
+            metrics.update(validated_last)  # the last batch's validation was this epoch's
+        elif val is not None and ((every is not None and (epoch + 1) % every == 0) or final):
             metrics.update(self._run_validation(rt, model, val))
         return metrics
 
@@ -1741,22 +1782,27 @@ class Trainer:
         opts: dict[str, Any],
         count: int,
     ) -> dict[str, float]:
-        """Epoch values: each name reduced with its reduce_fx over the steps, then averaged
-        across processes in one collective."""
-        local: dict[str, float] = {}
+        """Epoch values: each name reduced with its reduce_fx over the steps and across
+        processes (a mean weighted by batch size, as in Lightning)."""
+        means: dict[str, tuple[float, float]] = {}
+        sums: dict[str, float] = {}
+        maxes: dict[str, float] = {}
+        mins: dict[str, float] = {}
         for k, values in logged.items():
             fx = opts[k][0] if k in opts else "mean"
             if fx == "mean":
                 w = weights.get(k)
                 if w and len(w) == len(values):
-                    local[k] = _weighted(values, w)
+                    means[k] = (_weighted_total(values, w), float(sum(w)))
                 else:
-                    local[k] = _total(values) / max(len(values), 1)
+                    means[k] = (_total(values), float(len(values)))
             elif fx == "sum":
-                local[k] = _total(values)
+                sums[k] = _total(values)
+            elif fx == "max":
+                maxes[k] = _extreme(values, fx)
             else:
-                local[k] = _extreme(values, fx)
-        return rt.mean_dict(local)
+                mins[k] = _extreme(values, fx)
+        return rt.reduce_metrics(means, sums, maxes, mins)
 
     def _optimizer_step(
         self, rt: Runtime, model: Module, optimizer: torch.optim.Optimizer, batch_idx: int
@@ -1796,8 +1842,6 @@ class Trainer:
             model.optimizer_zero_grad(self.current_epoch, batch_idx, optimizer)
         else:
             optimizer.zero_grad(set_to_none=True)
-        if self._step_scheds:
-            self._step_schedulers("step")
 
     def _clip(self, optimizer: torch.optim.Optimizer, value: float, algorithm: str) -> None:
         # With manual optimization the model holds _ManualOptimizer wrappers: unscale the real
@@ -1841,7 +1885,10 @@ class Trainer:
             if count % c.frequency:
                 continue
             metric = None
-            if c.reduce_on_plateau:
+            step_logs = self._model._gl_step_logs if self._model is not None else {}
+            if c.reduce_on_plateau and interval == "step" and c.monitor in step_logs:
+                metric = float(step_logs[c.monitor])  # this step's value (read only here)
+            elif c.reduce_on_plateau:
                 if c.monitor not in self.callback_metrics:
                     if c.strict:
                         known = ", ".join(sorted(self.callback_metrics)) or "none"
@@ -1860,11 +1907,19 @@ class Trainer:
 
     def _read_step_metrics(self) -> None:
         """Put this step's logged values into callback_metrics (reads them from the device;
-        only for callbacks that act on step values)."""
+        only for callbacks that act on step values). With several processes the values are
+        averaged across them, so every rank decides the same way (a ModelCheckpoint save
+        is a collective with FSDP; ranks deciding apart would hang). Every rank calls this
+        at the same step."""
         model = self._model
         if model is None:
             return
-        values = {k: float(v) for k, v in model._gl_step_logs.items()}
+        rt = self.runtime
+        if rt is not None and rt.distributed:
+            means = {k: (float(v), 1.0) for k, v in model._gl_step_logs.items()}
+            values = rt.reduce_metrics(means, {}, {}, {})
+        else:
+            values = {k: float(v) for k, v in model._gl_step_logs.items()}
         self.callback_metrics.update(values)
 
     def _broadcast_flag(self, flag: bool) -> bool:
@@ -1970,14 +2025,19 @@ class Trainer:
                     out = step_fn(batch, batch_idx, *extra)
                     opts = model._gl_log_options
                     no_idx = model.__dict__.get("_gl_no_idx", ())
+                    size: float | None = None
                     for k, v in model._gl_step_logs.items():
                         name = f"{k}/dataloader_idx_{dl_idx}" if many and k not in no_idx else k
                         logged[name].append(v)
                         o = opts.get(k)
                         if o is not None:
                             options[name] = o
-                            if o[3] is not None:
-                                weights[name].append(o[3])
+                        if o is not None and o[3] is not None:
+                            weights[name].append(o[3])
+                        else:  # weight the epoch mean by the inferred batch size (Lightning)
+                            if size is None:
+                                size = _batch_size(batch)
+                            weights[name].append(size)
                     count += 1
                     for fn in batch_end:
                         fn(out, batch, batch_idx, *extra)
@@ -2531,6 +2591,26 @@ def _legacy_batch_end(
     return call
 
 
+class _LookAhead:
+    """Iterate ``it`` one item ahead: ``last`` is True while the last item is current."""
+
+    def __init__(self, it: Iterable[Any]) -> None:
+        self._it = it
+        self.last = False
+
+    def __iter__(self) -> Iterator[Any]:
+        iterator = iter(self._it)
+        try:
+            current = next(iterator)
+        except StopIteration:
+            return
+        for following in iterator:
+            yield current
+            current = following
+        self.last = True
+        yield current
+
+
 def _profiled(it: Iterator[Any], prof: Profiler, action: str) -> Iterator[Any]:
     iterator = iter(it)
     while True:
@@ -2657,13 +2737,30 @@ def _total(values: list[Any]) -> float:
     return total
 
 
-def _weighted(values: list[Any], weights: list[float]) -> float:
+def _weighted_total(values: list[Any], weights: list[float]) -> float:
+    """Sum of value x weight (one stack and multiply on the values' device)."""
     tensors = [
         v.reshape(()) if isinstance(v, torch.Tensor) else torch.tensor(float(v)) for v in values
     ]
     dev = tensors[0].device
     w = torch.tensor(weights, device=dev, dtype=torch.float32)
-    return float((torch.stack([t.to(dev).float() for t in tensors]) * w).sum() / w.sum())
+    return float((torch.stack([t.to(dev).float() for t in tensors]) * w).sum())
+
+
+def _batch_size(batch: Any) -> float:
+    """The batch size Lightning infers when ``self.log`` gets no ``batch_size``: the first
+    dimension of the first tensor found in the batch (1 when there is none). Reads only
+    shapes, so it does not synchronise with the device."""
+    stack = [batch]
+    while stack:
+        item = stack.pop(0)
+        if isinstance(item, torch.Tensor):
+            return float(item.shape[0]) if item.dim() else 1.0
+        if isinstance(item, dict):
+            stack.extend(item.values())
+        elif isinstance(item, (list, tuple)):
+            stack.extend(item)
+    return 1.0
 
 
 def _extreme(values: list[Any], fx: str) -> float:

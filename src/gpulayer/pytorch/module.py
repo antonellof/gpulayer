@@ -314,10 +314,11 @@ class Module(HyperparametersMixin, nn.Module):
         rank_zero_only: bool = False,
     ) -> None:
         """Record a scalar for this step. The Trainer aggregates it over the epoch with
-        ``reduce_fx`` ("mean", "sum", "max" or "min"; a mean is weighted by ``batch_size``
-        when given) and averages it across processes. ``prog_bar`` shows it in the progress
-        bar. ``sync_dist`` is accepted for compatibility: epoch values are always combined
-        across processes."""
+        ``reduce_fx`` ("mean", "sum", "max" or "min"; a mean is weighted by ``batch_size``,
+        or by the size Lightning infers from the batch when it is not given) and combines
+        it across processes with the same ``reduce_fx``. ``prog_bar`` shows it in the
+        progress bar. ``sync_dist`` is accepted for compatibility: epoch values are always
+        combined across processes."""
         if not add_dataloader_idx:
             self.__dict__.setdefault("_gl_no_idx", set()).add(name)
         if reduce_fx == "mean" and not prog_bar and batch_size is None and on_step is not False:

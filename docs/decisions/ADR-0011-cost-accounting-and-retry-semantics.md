@@ -32,9 +32,13 @@ distributed systems cannot keep.
   effects may repeat.
 - Distributed jobs are never retried automatically (validation rejects it). One node failure
   fails the group (ADR-0007).
-- **Timeouts:** the worker enforces `timeout_seconds` by killing the process group. The
-  control plane adds a backstop after `timeout_grace_seconds` for workers that stop
-  reporting.
+- **Timeouts:** the worker enforces `timeout_seconds` by killing the process group;
+  `timeout_seconds` counts from process start, not including artifact fetches and the
+  environment build. The control plane adds a backstop after `timeout_grace_seconds` for
+  workers that stop reporting: it counts from the worker's `executing` report, or allows
+  `preparation_allowance_seconds` (default 3600) more when no report arrived. A task the
+  backstop times out no longer holds its devices, so it is sent to the worker as a cancel
+  on the next heartbeat, as a lost task is.
 - Cancellation is idempotent. Unstarted tasks are cancelled immediately; running
   ones are cancelled through heartbeat delivery.
 

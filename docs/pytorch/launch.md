@@ -28,7 +28,7 @@ on every node.
 | `target` | `"local"` | `"local"`, `"remote"` or `"cloud"` |
 | `frameworks` | `{}` | e.g. `{"torch": ">=2.2"}` |
 | `env` | `{}` | environment variables |
-| `timeout_seconds` | `None` | kill the job after this long |
+| `timeout_seconds` | `None` | kill the job after this long (counted from process start, not including the environment build) |
 | `output_dir` | `"gpulayer_runs"` | where outputs are downloaded |
 | `exit` | `True` | `False` returns a `LaunchResult` (`None` on workers) |
 | `quiet` | `False` | do not stream logs |

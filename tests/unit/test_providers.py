@@ -245,3 +245,64 @@ def test_provider_calls_do_not_hold_the_metadata_lock(cp):
 def test_provider_worker_needs_instance_token(cp):
     with pytest.raises(Unauthorized):
         cp.register_worker("x", make_caps(origin=WorkerOrigin.PROVIDER, instance_id="inst-1"))
+
+
+def test_transient_state_check_errors_do_not_orphan_the_instance(cp):
+    """A provider API error while reading an instance's state is retried; the instance is
+    neither forgotten (still billing) nor failed on the first error."""
+    p = FakeProvider([offer("a", 1.0)], start_state=InstanceState.PROVISIONING)
+    make_cp(cp, p)
+    job = cp.submit(cloud_spec())
+    real_get = p.get_instance
+    failures = {"left": 2}
+
+    def flaky_get(pid):
+        if failures["left"]:
+            failures["left"] -= 1
+            raise ProviderError("503 backend error")
+        return real_get(pid)
+
+    p.get_instance = flaky_get
+    cp.reconcile()
+    cp.reconcile()
+    assert cp.get_job(job.job_id).state == JobState.PROVISIONING
+    assert len(p.active_instances()) == 1
+    pid = p.active_instances()[0].provider_instance_id
+    p.set_state(pid, InstanceState.RUNNING)
+    cp.reconcile()
+    types = [e.type for e in cp.events(job_id=job.job_id)]
+    assert types.count("instance.poll_failed") == 2 and "instance.failed" not in types
+
+
+def test_instance_is_terminated_after_repeated_state_check_errors(cp):
+    from gpulayer.control_plane.provisioning import MAX_POLL_FAILURES
+
+    p = FakeProvider([offer("a", 1.0)], start_state=InstanceState.PROVISIONING)
+    make_cp(cp, p)
+    job = cp.submit(cloud_spec())
+    real_get = p.get_instance
+
+    def broken_get(pid):
+        raise ProviderError("403 permission revoked")
+
+    p.get_instance = broken_get
+    for _ in range(MAX_POLL_FAILURES):
+        cp.reconcile()
+    p.get_instance = real_get
+    cp.reconcile()
+    assert cp.get_job(job.job_id).state == JobState.FAILED
+    assert p.active_instances() == []  # terminated, not left running
+    assert ("terminate", "fake-i-0001") in p.calls
+
+
+def test_instance_reported_failed_is_terminated(cp):
+    """A FAILED instance may still hold resources at the provider: release it."""
+    p = FakeProvider([offer("a", 1.0)], start_state=InstanceState.PROVISIONING)
+    make_cp(cp, p)
+    job = cp.submit(cloud_spec())
+    pid = p.active_instances()[0].provider_instance_id
+    p.set_state(pid, InstanceState.FAILED, error="boot disk error")
+    cp.reconcile()
+    cp.reconcile()
+    assert cp.get_job(job.job_id).state == JobState.FAILED
+    assert ("terminate", pid) in p.calls

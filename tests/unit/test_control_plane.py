@@ -179,10 +179,64 @@ def test_deadline_backstop(cp, clock):
     job = cp.submit(cmd_spec(timeout_seconds=5))
     a = cp.acquire_task(w)
     cp.start_task(w, a.task_id)
+    cp.executing_task(w, a.task_id)
     for _ in range(8):  # keep the lease alive, but never report
         clock.advance(5)
         cp.heartbeat(w)
     assert cp.get_job(job.job_id).state == JobState.TIMED_OUT
+
+
+def test_deadline_does_not_count_preparation(cp, clock):
+    """A slow environment build must not time the task out on the control plane while the
+    worker's own timeout (from process start) has time left."""
+    w = reg(cp)
+    job = cp.submit(cmd_spec(timeout_seconds=60))
+    a = cp.acquire_task(w)
+    cp.start_task(w, a.task_id)
+    for _ in range(36):  # 3 minutes of preparation, heartbeating
+        clock.advance(5)
+        cp.heartbeat(w)
+    cp.executing_task(w, a.task_id)
+    for _ in range(10):  # 50 s of the 60 s timeout
+        clock.advance(5)
+        cp.heartbeat(w)
+    assert cp.get_job(job.job_id).state == JobState.RUNNING
+    cp.finish_task(w, a.task_id, OK)
+    assert cp.get_job(job.job_id).state == JobState.SUCCEEDED
+
+
+def test_deadline_backstop_without_executing_report(cp, clock):
+    """A worker that never reports the process start still gets a backstop, after the
+    preparation allowance."""
+    w = reg(cp)
+    job = cp.submit(cmd_spec(timeout_seconds=5))
+    a = cp.acquire_task(w)
+    cp.start_task(w, a.task_id)
+    for _ in range(int(cp.config.preparation_allowance_seconds // 10)):
+        clock.advance(10)
+        cp.heartbeat(w)
+        cp.reconcile()
+    assert cp.get_job(job.job_id).state == JobState.RUNNING
+    for _ in range(5):
+        clock.advance(10)
+        cp.heartbeat(w)
+        cp.reconcile()
+    assert cp.get_job(job.job_id).state == JobState.TIMED_OUT
+
+
+def test_timed_out_task_is_cancelled_on_worker(cp, clock):
+    """The backstop frees the task's devices, so the worker must be told to stop it."""
+    w = reg(cp)
+    cp.submit(cmd_spec(timeout_seconds=5))
+    a = cp.acquire_task(w)
+    cp.start_task(w, a.task_id)
+    cp.executing_task(w, a.task_id)
+    for _ in range(8):
+        clock.advance(5)
+        cp.heartbeat(w)
+        cp.reconcile()
+    assert cp.get_job(a.job_id).state == JobState.TIMED_OUT
+    assert a.task_id in cp.heartbeat(w).cancel_task_ids
 
 
 def test_revoked_worker_cannot_act(cp):

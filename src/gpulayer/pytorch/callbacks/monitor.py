@@ -58,7 +58,11 @@ class _Monitor(Callback):
 
 class EarlyStopping(_Monitor):
     """Stop when ``monitor`` has not improved by more than ``min_delta`` for ``patience``
-    checks in a row (one check per epoch). Also stops at once when the value reaches
+    checks in a row. As in Lightning, it checks at the end of each training epoch when
+    validation runs once per epoch (``val_check_interval`` unset or 1.0 and
+    ``check_val_every_n_epoch=1``), and otherwise after each validation, so epochs without
+    validation do not use up patience; ``check_on_train_epoch_end`` overrides this. Also
+    stops at once when the value reaches
     ``stopping_threshold``, crosses ``divergence_threshold`` the wrong way, or (with
     ``check_finite``) becomes NaN or infinite. With ``strict=False`` a missing metric is
     skipped instead of raising."""
@@ -87,6 +91,7 @@ class EarlyStopping(_Monitor):
         self.divergence_threshold = divergence_threshold
         self.wait_count = 0
         self.stopped_epoch: int | None = None
+        self.check_on_train_epoch_end = check_on_train_epoch_end
 
     # GPUlayer 0.7 name
     @property
@@ -112,7 +117,24 @@ class EarlyStopping(_Monitor):
         trainer.should_stop = True
         trainer._say(f"[gpulayer] early stopping at epoch {trainer.current_epoch}: {reason}")
 
+    def _on_train_epoch_end(self, trainer: Trainer) -> bool:
+        """Check at the training epoch's end (True) or after each validation (False)."""
+        if self.check_on_train_epoch_end is not None:
+            return self.check_on_train_epoch_end
+        v = trainer.val_check_interval
+        return (v is None or v == 1.0) and trainer.check_val_every_n_epoch == 1
+
     def on_train_epoch_end(self, trainer: Trainer, pl_module: Module) -> None:
+        if self._on_train_epoch_end(trainer):
+            self._run_check(trainer)
+
+    def on_validation_end(self, trainer: Trainer, pl_module: Module) -> None:
+        if trainer.state.fn != "fit" or trainer.sanity_checking:
+            return
+        if not self._on_train_epoch_end(trainer):
+            self._run_check(trainer)
+
+    def _run_check(self, trainer: Trainer) -> None:
         value = self._current(trainer)
         if value is None:
             return
@@ -139,7 +161,7 @@ class EarlyStopping(_Monitor):
         if self.wait_count >= self.patience:
             best = f"{self.best_score:.4f}" if self.best_score is not None else "none"
             self._stop(
-                trainer, f"{name} did not improve for {self.patience} epoch(s) (best {best})"
+                trainer, f"{name} did not improve for {self.patience} check(s) (best {best})"
             )
 
 

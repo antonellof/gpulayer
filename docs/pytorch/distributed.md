@@ -14,8 +14,9 @@ trainer.fit(model, train_loader, val_loader)
 ```
 
 Each process joins the process group (`gloo` for CPU, `nccl` for CUDA), wraps the model in
-`DistributedDataParallel` and gets a `DistributedSampler` shard. Metrics are averaged across
-ranks and rank 0 saves checkpoints. Your `Module` does not change.
+`DistributedDataParallel` and gets a `DistributedSampler` shard. Metrics are combined across
+ranks by their `reduce_fx` (a mean over all samples, a sum, a max or a min) and rank 0 saves
+checkpoints. Your `Module` does not change.
 
 If any node fails, the job fails and the other nodes stop; a partly finished group is never
 retried. Ranks, rendezvous and launch are described in

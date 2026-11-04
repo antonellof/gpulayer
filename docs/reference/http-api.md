@@ -45,7 +45,8 @@ All but `register` use the session token, which can also upload and download art
 | `POST /v1/workers/register` | join token (or single-use instance token); returns worker id and session token |
 | `POST /v1/worker/heartbeat` | `{draining, metrics?}`: renews leases, stores an optional `WorkerMetrics` sample; returns tasks to cancel and revocation |
 | `POST /v1/worker/acquire` | `{wait}` (seconds, max 30): long poll for the next assignment, or `null` |
-| `POST /v1/worker/tasks/{id}/start` | mark running |
+| `POST /v1/worker/tasks/{id}/start` | mark running (before artifacts are fetched and the environment is built) |
+| `POST /v1/worker/tasks/{id}/executing` | the process has started: the control plane's timeout backstop counts `timeout_seconds` from here (added after 0.9.1; older workers do not call it and get the longer backstop) |
 | `POST /v1/worker/tasks/{id}/rendezvous` | node rank 0 publishes `{addr, port}` |
 | `POST /v1/worker/tasks/{id}/logs` | `{lines: [[stream, line], ...]}`; optional third element: global rank |
 | `POST /v1/worker/tasks/{id}/finish` | `TaskOutcome` |

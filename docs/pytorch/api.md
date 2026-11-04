@@ -173,7 +173,7 @@ steps and ranks. Override any of the `on_*` hooks to run code at that point of t
 | `configure_sharded_model()` | Lightning's older name for `configure_model`; called the same way. |
 | `freeze()` | No gradients for any parameter, and evaluation mode. |
 | `load_from_checkpoint(checkpoint_path, *args, map_location='cpu', strict=None, **kwargs)` | Build the model and load the weights saved by the Trainer. Arguments recorded with `save_hyperparameters` are used unless given again here. |
-| `log(name, value, prog_bar=False, logger=None, on_step=None, on_epoch=None, reduce_fx='mean', enable_graph=False, sync_dist=False, sync_dist_group=None, add_dataloader_idx=True, batch_size=None, metric_attribute=None, rank_zero_only=False)` | Record a scalar for this step. The Trainer aggregates it over the epoch with `reduce_fx` ("mean", "sum", "max" or "min"; a mean is weighted by `batch_size` when given) and averages it across processes. `prog_bar` shows it in the progress bar. `sync_dist` is accepted for compatibility: epoch values are always combined across processes. |
+| `log(name, value, prog_bar=False, logger=None, on_step=None, on_epoch=None, reduce_fx='mean', enable_graph=False, sync_dist=False, sync_dist_group=None, add_dataloader_idx=True, batch_size=None, metric_attribute=None, rank_zero_only=False)` | Record a scalar for this step. The Trainer aggregates it over the epoch with `reduce_fx` ("mean", "sum", "max" or "min"; a mean is weighted by `batch_size`, or by the size Lightning infers from the batch when it is not given) and combines it across processes with the same `reduce_fx`. `prog_bar` shows it in the progress bar. `sync_dist` is accepted for compatibility: epoch values are always combined across processes. |
 | `log_dict(dictionary, **kwargs)` | `self.log` for each item of `dictionary`, with the same options. |
 | `lr_scheduler_step(scheduler, metric)` | Step a scheduler; `metric` is the monitored value for ReduceLROnPlateau. |
 | `lr_schedulers()` | The scheduler(s) from `configure_optimizers`: one, a list, or None. |
@@ -794,7 +794,11 @@ glt.EarlyStopping(
 ```
 
 Stop when `monitor` has not improved by more than `min_delta` for `patience`
-checks in a row (one check per epoch). Also stops at once when the value reaches
+checks in a row. As in Lightning, it checks at the end of each training epoch when
+validation runs once per epoch (`val_check_interval` unset or 1.0 and
+`check_val_every_n_epoch=1`), and otherwise after each validation, so epochs without
+validation do not use up patience; `check_on_train_epoch_end` overrides this. Also
+stops at once when the value reaches
 `stopping_threshold`, crosses `divergence_threshold` the wrong way, or (with
 `check_finite`) becomes NaN or infinite. With `strict=False` a missing metric is
 skipped instead of raising.
@@ -1983,6 +1987,7 @@ glt.Runtime(
 | `module(model)` | Move `model` to the device and wrap it in DDP when distributed (with two-level gradient sync when it applies). |
 | `no_sync(model, enabled=True)` | Skip the gradient exchange for this backward (gradient accumulation), with DDP or FSDP. |
 | `output_dir(default='gpulayer_runs/local')` | $GPULAYER_OUTPUT_DIR inside a job (returned as artifacts), else `default`. |
+| `reduce_metrics(means, sums, maxes, mins)` | Epoch values across ranks, each by its `reduce_fx`: a mean is the weighted total over the weights of every rank (`(total, weight)` pairs), a sum adds up, max and min take the extreme. |
 | `save_sharded(model, optimizers, path, meta)` | A sharded checkpoint: the folder `path` with each rank's part of the model and optimizer state (`torch.distributed.checkpoint`) and `meta.pt` with everything else. A collective: call it on every rank. |
 | `shard(model, options=None)` | FSDP (experimental): shard the parameters of every submodule that owns them across all ranks, so each rank holds about 1/world_size of the model, and make `model` the FSDP root. Call `model` (its forward) every step, so the root's hooks run and the submodules release their gathered parameters after their forward. Call this before creating the optimizer. A no-op in a single process and on TPUs. `options` is an `FSDPStrategy` (sharding strategy, wrap and activation checkpointing policies, CPU offload, mixed precision). |
 | `step(optimizer, params=None, clip_val=None, clip_algorithm='norm')` | Optimizer step, clipping gradients first: by total norm, or each value to [-clip_val, clip_val] with `clip_algorithm="value"`. |

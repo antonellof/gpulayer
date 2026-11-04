@@ -77,7 +77,7 @@ Lightning's speed-related choices are few, and the GPUlayer Trainer already had 
    answers `result[0]`, Lightning's list form.
 4. **The per-step path stays lean (ADR-0018 point 4).** Hooks are resolved once per run and
    only overridden ones are called; `self.log` has a fast path for the default call; epoch
-   metrics from all names are averaged across ranks in one all-reduce instead of one per
+   metrics from all names are combined across ranks in one all-reduce instead of one per
    name; loggers and monitoring callbacks act only on log steps with values already read;
    profiling code runs only with a profiler. Measured on an Apple M2 Pro (MLP on CPU, A/B
    against 0.7.1 in alternating fresh processes): 0.589 ms per step before, 0.597 after
@@ -110,7 +110,7 @@ Point 2 listed what was not adopted. Most of it is now implemented, with Lightni
   `sequential`) for training; lists for validate/test/predict, with `dataloader_idx` and
   `/dataloader_idx_N` metric names.
 - Distributed `validate`, `test` and `predict`: with several devices or machines they run on
-  the workers, each rank on its shard; metrics are averaged across ranks and predictions come
+  the workers, each rank on its shard; metrics are combined across ranks and predictions come
   back in rank order. A job launched by an earlier `fit` of the same Trainer is reused, since it
   already ran the rest of the script.
 - `LightningCLI` as `GPULayerCLI` (standard library only; no argument linking).

@@ -5,6 +5,42 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 
 ## Unreleased
 
+- Fix: a task the control plane's timeout backstop marked timed out kept running on its
+  worker while its GPUs went to the next job, and a slow first environment build could
+  trigger that backstop although the process had time left. The backstop now counts from
+  process start (new worker call `POST /v1/worker/tasks/{id}/executing`; a worker without
+  it gets `preparation_allowance_seconds`, default 3600, more), and timed-out tasks are
+  cancelled on the worker at the next heartbeat. Mixed versions keep working.
+- Fix: a provider API error while reading a cloud instance's state (a 5xx, throttling)
+  marked the instance failed and nothing ever terminated it, so the VM kept running and
+  billing. State checks are now retried (5 in a row before giving up), and an instance that
+  failed or could not be read is terminated, with retries.
+- Fix (Trainer, Lightning semantics):
+  - With a loader without a length, the gradients of the last `n % accumulate_grad_batches`
+    batches were carried into the next epoch; they are now applied at the epoch's end
+    (one batch read ahead, only for such loaders).
+  - Step schedulers with `frequency=N` stepped after optimizer steps 1, N+1, ... instead of
+    N, 2N, ...; `ReduceLROnPlateau` with `interval="step"` never stepped. With manual
+    optimization the Trainer stepped schedulers itself (Lightning leaves that to the model);
+    it no longer does. **Migration:** manual-optimization models that relied on it call
+    `self.lr_schedulers().step()` in `training_step`.
+  - With `check_val_every_n_epoch=None`, an integer `val_check_interval` now counts batches
+    across epochs (it could never trigger when longer than an epoch). Mid-epoch validation
+    runs only on the epochs `check_val_every_n_epoch` selects.
+  - `EarlyStopping` counted patience once per training epoch, also on epochs without
+    validation, and ignored mid-epoch validations. It now checks after each validation
+    unless validation runs exactly once per epoch, as in Lightning, and honours
+    `check_on_train_epoch_end`.
+  - Epoch values across processes follow `reduce_fx` (a `"sum"` was averaged; max and min
+    too), and a mean is over all samples of all ranks. A name logged on only some ranks no
+    longer hangs the reduction. Epoch means are weighted by the batch size inferred from the
+    batch when `batch_size=` is not given (a smaller last batch counted as a full one).
+  - `ModelCheckpoint(every_n_train_steps=...)` decided on each rank's own step values; with
+    FSDP, where saving is a collective, ranks could decide apart and hang. The step values
+    are now averaged across ranks first.
+  - Step time unchanged: A/B on an M2 Pro CPU, `mlp-cpu`, -5.4% to +0.3% over four runs
+    (`benchmarks/results/2026-11-04-m2pro-loop-fixes/`).
+
 - Home page: the six "What you get" cards show still, flat illustrations in the docs
   diagrams' style (the Trainer API, scaling from one GPU to two machines, the scheduler's
   per-machine reasons, validated hardware, run outputs, a custom loop with `launch()` and

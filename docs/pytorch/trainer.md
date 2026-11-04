@@ -48,9 +48,10 @@ if __name__ == "__main__":
   `validation_step`, `test_step` and `predict_step` are optional.
 - `configure_optimizers` returns an optimizer or any of Lightning's forms
   ([below](#optimizers-and-schedulers)).
-- `self.log(name, value)` records a scalar. Each name is reduced over the epoch (`reduce_fx`
-  `"mean"`, `"sum"`, `"max"` or `"min"`; a mean is weighted by `batch_size=` when given),
-  averaged across processes, and stored in `trainer.callback_metrics` and `trainer.history`.
+- `self.log(name, value)` records a scalar. Each name is reduced over the epoch and across
+  processes with its `reduce_fx` (`"mean"`, `"sum"`, `"max"` or `"min"`; a mean is weighted
+  by `batch_size=`, or by the size inferred from the batch as Lightning does), and stored in
+  `trainer.callback_metrics` and `trainer.history`. Processes may log different names.
   Logged values stay on the GPU until a log step, so logging does not slow the loop.
 - Every Lightning hook (`setup`, `on_train_batch_start`, `on_before_optimizer_step`,
   `on_save_checkpoint`, ...) is available; only the ones you override are called.
@@ -91,7 +92,7 @@ The common ones; all of them, with Lightning's names, are in the [API reference]
 | `target` | `None` | `None` runs here when possible; `"local"`, `"remote"` or `"cloud"` always submits a job |
 | `callbacks`, `logger`, `profiler`, `plugins` | | see [Callbacks, loggers and profilers](callbacks.md) |
 | `accumulate_grad_batches`, `gradient_clip_val` | `1`, `None` | accumulation and clipping; DDP exchanges gradients only on optimizer steps |
-| `check_val_every_n_epoch`, `val_check_interval` | `1`, `None` | when to validate (every N epochs, or every N batches or fraction of an epoch) |
+| `check_val_every_n_epoch`, `val_check_interval` | `1`, `None` | when to validate (every N epochs, or every N batches or fraction of an epoch; within an epoch only on epochs `check_val_every_n_epoch` selects; with `check_val_every_n_epoch=None` an integer `val_check_interval` counts batches across epochs) |
 | `log_every_n_steps` | `50` | print logged values every N steps (`0`: off) |
 | `limit_*_batches`, `fast_dev_run`, `overfit_batches` | | shorter runs for debugging |
 | `sync_batchnorm`, `deterministic`, `inference_mode` | `False`, `False`, `True` | as in Lightning |
@@ -117,8 +118,12 @@ return {"optimizer": opt, "lr_scheduler": {"scheduler": sched, "interval": "step
 return {"optimizer": opt, "lr_scheduler": ReduceLROnPlateau(opt), "monitor": "val_loss"}
 ```
 
-Epoch schedulers step at the end of each epoch; `ReduceLROnPlateau` steps after validation with
-the monitored value. Override `optimizer_step` or `lr_scheduler_step` on the Module to change
+Epoch schedulers step at the end of each epoch; step schedulers after every `frequency`
+optimizer steps (at steps N, 2N, ...); `ReduceLROnPlateau` steps after validation with the
+monitored value (with `interval="step"`, after each optimizer step). With manual
+optimization the Trainer does not step schedulers, as in Lightning: call `sch.step()` in
+`training_step` (`self.lr_schedulers()`). With a loader that has no length, the gradients
+accumulated over the last batches of an epoch are applied at its end. Override `optimizer_step` or `lr_scheduler_step` on the Module to change
 them (for example a warm-up).
 
 ## Where `fit` runs
@@ -162,7 +167,7 @@ outputs = trainer.predict(model, loader)               # one output per batch, o
 ```
 
 They run under `torch.inference_mode`. With several devices or machines they run on workers
-like `fit`: each process takes its shard, metrics are averaged across processes, and
+like `fit`: each process takes its shard, metrics are combined across processes, and
 predictions come back in rank order (`trainer.predict_batch_indices` gives each batch's dataset
 indices).
 

@@ -293,6 +293,12 @@ class ControlPlaneServer:
             ),
             (
                 "POST",
+                r"/v1/worker/tasks/(?P<tid>[\w-]+)/executing",
+                "worker",
+                lambda q: cp.executing_task(q.wid, q.params["tid"]),
+            ),
+            (
+                "POST",
                 r"/v1/worker/tasks/(?P<tid>[\w-]+)/rendezvous",
                 "worker",
                 lambda q: cp.publish_rendezvous(

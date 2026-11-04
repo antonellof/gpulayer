@@ -18,7 +18,7 @@ trainer.test(model, test_loader, ckpt_path="best")
 | Callback | What it does |
 |---|---|
 | `ModelCheckpoint(monitor, filename, save_top_k, save_last, every_n_epochs, ...)` | keeps the best checkpoints by `monitor` (`None`: the latest). Default file `best.ckpt`; `save_top_k=-1` keeps all. Sets `best_model_path`, `best_model_score`, `last_model_path`, also when training ran on workers |
-| `EarlyStopping(monitor, min_delta, patience, mode, ...)` | stops on no improvement, a threshold or NaN |
+| `EarlyStopping(monitor, min_delta, patience, mode, ...)` | stops on no improvement for `patience` checks, a threshold or NaN. Checks at each epoch's end when validation runs once per epoch, otherwise after each validation (as Lightning; `check_on_train_epoch_end` overrides) |
 | `LearningRateMonitor(logging_interval, log_key_prefix)` | records `lr` (`lr-<i>` per group) |
 | `Timer(duration)` | stops after a duration |
 | `GradientAccumulationScheduler({0: 8, 4: 4})` | changes `accumulate_grad_batches` by epoch |

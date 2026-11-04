@@ -13,7 +13,9 @@ Works the same in a plain local process, inside a GPUlayer job, and under torchr
 from __future__ import annotations
 
 import contextlib
+import math
 import os
+import zlib
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -795,6 +797,76 @@ class Runtime:
         dist.all_reduce(t)
         t /= self.world_size
         return dict(zip(keys, t.tolist(), strict=True))
+
+    def _all_reduce(self, t: torch.Tensor, op: str) -> torch.Tensor:
+        """``op`` is "sum" or "max"; returns a CPU tensor."""
+        if self.xla:
+            return self.xla_all_reduce(t.float(), op)
+        t = t.to(self.device if self.gpu else "cpu")
+        dist.all_reduce(t, op=dist.ReduceOp.MAX if op == "max" else dist.ReduceOp.SUM)
+        return t.cpu()
+
+    def reduce_metrics(
+        self,
+        means: dict[str, tuple[float, float]],
+        sums: dict[str, float],
+        maxes: dict[str, float],
+        mins: dict[str, float],
+    ) -> dict[str, float]:
+        """Epoch values across ranks, each by its ``reduce_fx``: a mean is the weighted
+        total over the weights of every rank (``(total, weight)`` pairs), a sum adds up,
+        max and min take the extreme.
+
+        Ranks may log different names (``self.log`` behind a condition): the name lists
+        are compared first (one small all-reduce), and only when they differ are they
+        exchanged, so no rank enters a reduction of a different length (which would hang)."""
+
+        def local() -> dict[str, float]:
+            out = {k: (n / d if d else math.nan) for k, (n, d) in means.items()}
+            return {**out, **sums, **maxes, **mins}
+
+        if not self.distributed or not (self.xla or dist.is_initialized()):
+            return local()
+        layout = [sorted(means), sorted(sums), sorted(maxes), sorted(mins)]
+        crc = zlib.crc32(repr(layout).encode())
+        hi, lo = float(crc >> 16), float(crc & 0xFFFF)  # exact in float32
+        f = self._all_reduce(torch.tensor([hi, lo, -hi, -lo]), "max")
+        if not (f[0] == -f[2] and f[1] == -f[3]):
+            if self.xla:
+                raise ValidationFailed(
+                    "processes logged different metric names; log the same names on every process"
+                )
+            gathered: list[Any] = [None] * self.world_size
+            dist.all_gather_object(gathered, layout)
+            layout = [sorted(set().union(*(g[i] for g in gathered))) for i in range(4)]
+        mean_keys, sum_keys, max_keys, min_keys = layout
+        dtype = torch.float32 if self.xla else torch.float64
+        packed = torch.tensor(
+            [means.get(k, (0.0, 0.0))[0] for k in mean_keys]
+            + [means.get(k, (0.0, 0.0))[1] for k in mean_keys]
+            + [sums.get(k, 0.0) for k in sum_keys],
+            dtype=dtype,
+        )
+        out: dict[str, float] = {}
+        if packed.numel():
+            total = self._all_reduce(packed, "sum").tolist()
+            n = len(mean_keys)
+            for i, k in enumerate(mean_keys):
+                out[k] = total[i] / total[n + i] if total[n + i] else math.nan
+            for i, k in enumerate(sum_keys):
+                out[k] = total[2 * n + i]
+        if max_keys or min_keys:
+            ext = torch.tensor(
+                [maxes.get(k, -math.inf) for k in max_keys]
+                + [-mins.get(k, math.inf) for k in min_keys],
+                dtype=dtype,
+            )
+            got = self._all_reduce(ext, "max").tolist()
+            for i, k in enumerate(max_keys):
+                out[k] = got[i]
+            for i, k in enumerate(min_keys):
+                out[k] = -got[len(max_keys) + i]
+        return out
 
     def mean(self, value: float) -> float:
         """The average of ``value`` across processes (one all-reduce)."""

@@ -65,6 +65,11 @@ def _h(token: str) -> str:
 # recording the intent and hearing back from the provider: the instance may exist.
 STALE_INTENT_SECONDS = 600
 
+# Consecutive failed state checks (provider API errors) before an instance is given up on.
+# One error (a 5xx, throttling) says nothing about the machine, which may be running and
+# billing; giving up releases it rather than forgetting it.
+MAX_POLL_FAILURES = 5
+
 
 class ProvisioningManager:
     def __init__(self, cp: ControlPlane, providers: dict[str, ProviderAdapter]) -> None:
@@ -363,17 +368,41 @@ class ProvisioningManager:
             pid = json.loads(row["offer"]).get("provider_instance_id")
             if adapter is None or pid is None:
                 continue
+            record = json.loads(row["offer"])
             err: str | None
             try:
                 inst = adapter.get_instance(pid)
             except ProviderError as e:
-                inst_state, err = InstanceState.FAILED, str(e)
+                failures = int(record.get("poll_failures", 0)) + 1
+                if failures < MAX_POLL_FAILURES:
+                    self._update(
+                        row["id"], InstanceState(row["state"]), poll_failures=failures, error=str(e)
+                    )
+                    self.cp.store.add_event(
+                        "instance.poll_failed",
+                        f"could not read the state of {pid} (attempt {failures}): {e}; will retry",
+                        job_id=row["job_id"],
+                    )
+                    continue
+                inst_state, err = InstanceState.FAILED, f"{e} ({failures} failed state checks)"
             else:
                 inst_state, err = inst.state, inst.error
+                if record.get("poll_failures"):
+                    self._update(row["id"], InstanceState(row["state"]), poll_failures=0)
+            if inst_state == InstanceState.FAILED:
+                # The machine may still exist and bill (a failed boot, or a state we could not
+                # read): terminate it rather than leave a FAILED row that nothing releases.
+                self._update(row["id"], InstanceState.TERMINATING, error=err)
+                self.cp.store.add_event(
+                    "instance.failed",
+                    f"instance {pid} failed: {err}; releasing it",
+                    job_id=row["job_id"],
+                )
+                if row["job_id"]:
+                    self._fail_if_waiting(row["job_id"], f"instance {pid} failed: {err}")
+                continue
             if inst_state.value != row["state"]:
                 self._update(row["id"], inst_state, error=err)
-            if inst_state == InstanceState.FAILED and row["job_id"]:
-                self._fail_if_waiting(row["job_id"], f"instance {pid} failed: {err}")
 
     def _terminate_pending(self) -> None:
         for row in self.cp.store.query(
