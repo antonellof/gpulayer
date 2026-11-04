@@ -3,7 +3,7 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
-## Unreleased
+## 0.9.2 (2026-11-04)
 
 - Fix: a task the control plane's timeout backstop marked timed out kept running on its
   worker while its GPUs went to the next job, and a slow first environment build could
