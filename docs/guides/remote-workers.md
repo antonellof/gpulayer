@@ -33,9 +33,11 @@ client endpoints. Calls: [HTTP API](../reference/http-api.md#worker-endpoints).
   keeps its workers' leases. A long-poll acquire gives up 10 s after its wait.
 - A task whose lease expires becomes `lost` and its worker `offline`. If the worker
   reconnects, it is told to kill the task; a late result is recorded as an event only.
-- Independent jobs retry only if `retry.max_attempts > 1` and the reason is in
-  `retry.retry_on` (default `worker_lost`). Execution is at-least-once at best, so retries can
-  repeat side effects.
+- Jobs retry only if `retry.max_attempts > 1` and the reason is in `retry.retry_on` (default
+  `worker_lost`; also `preempted` and `failed`). A distributed job also needs `resume`, and
+  restarts as a group from its newest checkpoint
+  ([ADR-0025](../decisions/ADR-0025-keeping-checkpoints-and-restarting-groups.md)). Execution is
+  at-least-once at best, so retries can repeat side effects.
 
 ## Artifacts across machines
 

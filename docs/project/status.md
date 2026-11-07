@@ -50,7 +50,10 @@ machines named. Everything else says what is missing.
 
 ## Next
 
-- Validate AMD ROCm on AMD hardware, and TPU training.
+- AMD: validate ROCm on AMD hardware, and look at Ryzen AI NPUs (XDNA).
+- TPU training on a TPU.
+- Run automatic resume on a reclaimed Spot VM, object stores on S3, GCS and Azure, and `srun` on
+  a SLURM cluster: each is tested only in simulation or on one machine.
 - Why the 1-GPU CNN's CPU work ran about 10% slower than Lightning's on one RTX 3070 host (same GPU kernels).
 - NCCL across multi-GPU machines (only 32 vCPUs of AWS G instances are approved: one GPU each).
 - Why Lightning is faster on the CNN over NCCL across machines.

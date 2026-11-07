@@ -162,7 +162,7 @@ const FEATURES = [
   {
     art: "results" as const,
     title: "Logs, checkpoints, metrics",
-    body: "Logs stream while training runs. Checkpoints and metrics come back to your machine, and a dashboard lists every run.",
+    body: "Logs stream while training runs. Checkpoints and metrics come back to your machine, and a dashboard lists every run. With max_attempts, a run that loses a machine restarts from its newest checkpoint.",
   },
   {
     art: "loop" as const,
