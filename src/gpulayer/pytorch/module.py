@@ -95,6 +95,18 @@ class LogOptions(NamedTuple):
     logger: bool
 
 
+DEFAULT_LOG_OPTIONS = LogOptions("mean", False, True, None, None, None, True)
+
+
+def _one_value(name: str, value: torch.Tensor) -> torch.Tensor:
+    if value.numel() != 1:
+        raise ValidationFailed(
+            f"self.log({name!r}, ...) got a tensor of shape {tuple(value.shape)}; it must hold "
+            "one value, for example its mean"
+        )
+    return value.float().reshape(())
+
+
 class Module(HyperparametersMixin, nn.Module):
     """Subclass and implement ``training_step`` and ``configure_optimizers``.
 
@@ -102,6 +114,8 @@ class Module(HyperparametersMixin, nn.Module):
     ``self.log(name, value)`` in any step; the Trainer averages logged values per epoch across
     steps and ranks. Override any of the ``on_*`` hooks to run code at that point of the loop.
     """
+
+    _gl_in_step: bool = True  # False after training_step, in the batch-end hooks
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -363,7 +377,7 @@ class Module(HyperparametersMixin, nn.Module):
             if isinstance(value, torch.Tensor):
                 value = value.detach()
                 if value.ndim or value.dtype != torch.float32:  # a scalar loss needs no op
-                    value = value.float().mean()
+                    value = _one_value(name, value)
                 self._gl_step_logs[name] = value
             else:
                 self._gl_step_logs[name] = float(value)
@@ -377,11 +391,10 @@ class Module(HyperparametersMixin, nn.Module):
         if isinstance(value, torch.Tensor):
             value = value.detach()
             if value.ndim or value.dtype != torch.float32:
-                value = value.float().mean()
-            self._gl_step_logs[name] = value
+                value = _one_value(name, value)
         else:
-            self._gl_step_logs[name] = float(value)
-        self._gl_log_options[name] = LogOptions(
+            value = float(value)
+        options = LogOptions(
             fx,
             prog_bar,
             on_step is not False,
@@ -390,6 +403,15 @@ class Module(HyperparametersMixin, nn.Module):
             on_epoch,
             logger is not False,
         )
+        if name in self._gl_step_logs and self._gl_in_step:
+            before = self._gl_log_options.get(name, DEFAULT_LOG_OPTIONS)
+            if before._replace(batch_size=None) != options._replace(batch_size=None):
+                raise ValidationFailed(
+                    f"self.log({name!r}, ...) was called twice in this step with different "
+                    "options; use one set of options, or another name"
+                )
+        self._gl_step_logs[name] = value
+        self._gl_log_options[name] = options
 
     def _log_metric(self, name: str, metric: torch.nn.Module) -> torch.Tensor | None:
         """Keep ``metric`` for the end of this loop; return this batch's value, if it has

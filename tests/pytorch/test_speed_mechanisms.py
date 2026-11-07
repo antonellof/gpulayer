@@ -195,3 +195,15 @@ def test_checkpoints_written_in_the_background(tmp_path):
     t = trainer(tmp_path, max_epochs=2, enable_checkpointing=True, plugins=[io])
     t.fit(Lin(), data())
     assert t.checkpoint_path is not None and t.checkpoint_path.is_file()
+
+
+def test_gradients_stay_readable_in_on_train_batch_end(tmp_path, accel):
+    """Freed before the next forward pass, but not before a callback can read them."""
+    seen = []
+
+    class Read(glt.Callback):
+        def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+            seen.append(all(p.grad is not None for p in pl_module.parameters()))
+
+    trainer(tmp_path, accel, max_epochs=1, callbacks=[Read()]).fit(Lin(), data())
+    assert seen and all(seen)
