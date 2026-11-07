@@ -3,7 +3,11 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
-## Unreleased
+## 0.11.0 (2026-11-07)
+
+Adds serving models on AMD Ryzen AI NPUs. **It has not run on an NPU or with FastFlowLM itself:** it
+was built from FastFlowLM's source and tested with a stand-in `flm`. Expect rough edges, and
+please report what you find.
 
 - New: serving models on AMD Ryzen AI NPUs through FastFlowLM (ADR-0026). `gl.flm_service("model")`
   builds a service with an OpenAI-compatible API; workers report an `npu` device when `flm validate`

@@ -13,7 +13,7 @@ from gpulayer.sdk.builders import command, distributed, flm_service, function, s
 from gpulayer.sdk.client import Client, Job
 from gpulayer.sdk.remote import RemoteError, RemoteFunction, connect, default_client, remote
 
-__version__ = "0.10.1"
+__version__ = "0.11.0"
 
 __all__ = [
     "API_VERSION",
