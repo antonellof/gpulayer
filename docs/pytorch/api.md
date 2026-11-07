@@ -96,11 +96,14 @@ Lightning; the GPUlayer-only ones are `target`, `gradient_sync`, `prefetch` and
 | `enable_validation` | True when `fit` will validate (validation data and batches to run). |
 | `estimated_stepping_batches` | Optimizer steps this fit plans (`inf` when the loader's length is unknown). |
 | `evaluating` | True while validating or testing. |
+| `fit_loop` | Lightning's most used loop state; `fit_loop.max_epochs` can be set. |
 | `global_rank` | This process's rank among all processes (0 in a single process). |
 | `is_global_zero` | True in the process with global rank 0 (and in a single process). |
+| `lightning_module` | The Module being trained: Lightning's name for `module`. |
 | `local_rank` | This process's rank on its machine. |
 | `log_dir` | The first logger's directory, else the run's output directory. |
 | `logger` | The first logger, or None. |
+| `max_steps` | The limit on optimizer steps; -1 for none, as in Lightning. |
 | `model` | The Module as the loop calls it: wrapped in DDP when distributed, else the Module. |
 | `module` | The Module being trained or evaluated (unwrapped; `model` is what the loop calls). |
 | `node_rank` | This machine's rank among the machines of the job. |
@@ -109,13 +112,17 @@ Lightning; the GPUlayer-only ones are `target`, `gradient_sync`, `prefetch` and
 | `num_sanity_val_batches` | Validation batches the sanity check runs, per loader. |
 | `num_test_batches` | Test batches per loader of the last `test`. |
 | `precision_plugin` | The precision plugin in use (a `Precision` for plain precision strings). |
+| `predict_loop` | Progress of the last prediction. |
 | `predicting` | True while `predict` runs. |
 | `progress_bar_callback` | The progress bar callback, if any. |
 | `sanity_checking` | True during the validation check before training. |
 | `scaler` | The gradient scaler with `16-mixed` (else None). |
 | `strategy` | The strategy object (`DDPStrategy`, `FSDPStrategy`, ...) from `strategy=`. |
+| `test_loop` | Progress of the last test. |
 | `testing` | True while `test` runs. |
 | `training` | True while training batches run. |
+| `val_check_batch` | Training batches between validations. |
+| `validate_loop` | Progress of the last validation. |
 | `validating` | True while validation runs (inside fit or `validate`). |
 | `will_launch` | True when `fit` will run on GPUlayer workers instead of this process. |
 | `world_size` | Number of processes training together. |
@@ -184,6 +191,7 @@ steps and ranks. Override any of the `on_*` hooks to run code at that point of t
 | `predict_dataloader()` | The prediction loader(s). |
 | `predict_step(batch, batch_idx, dataloader_idx=0)` | Default: `self(batch)`, or `self(batch[0])` for an `(inputs, ...)` batch. |
 | `print(*args, **kwargs)` | `print` on rank 0 only. |
+| `remove_ignored_hparams(ignore)` | Remove names from `hparams`. |
 | `save_hyperparameters(*args, ignore=None, frame=None)` | Record the `__init__` arguments (all of them, or the names in `args`) as `self.hparams`. They are saved in checkpoints, and `load_from_checkpoint` uses them to rebuild the model without passing the arguments again. |
 | `test_dataloader()` | The test loader(s). |
 | `test_step(batch, batch_idx)` | One test batch, run by `Trainer.test`: compute metrics and `self.log` them. |
@@ -209,6 +217,7 @@ steps and ranks. Override any of the `on_*` hooks to run code at that point of t
 | `global_rank` | This process's rank among all processes. |
 | `global_step` | Optimizer steps taken so far. |
 | `hparams` | The arguments recorded by `save_hyperparameters`, as an `AttributeDict`. |
+| `hparams_initial` | The arguments as `save_hyperparameters` recorded them, whatever changed later. |
 | `local_rank` | This process's rank on its machine. |
 | `logger` | The Trainer's first logger, or None. |
 | `loggers` | The Trainer's loggers. |
@@ -281,6 +290,7 @@ not build its data in the launching process.
 | `load_from_checkpoint(checkpoint_path, map_location=None, hparams_file=None, weights_only=None, **kwargs)` | Rebuild this DataModule from the arguments the Trainer saved in a checkpoint (`datamodule_hyper_parameters`, recorded with `save_hyperparameters`), then restore its `state_dict`. Values in `hparams_file` (YAML or JSON) and in `kwargs` override the saved ones. `map_location` defaults to the CPU; `weights_only` defaults to False because GPUlayer checkpoints hold more than tensors. |
 | `load_state_dict(state_dict)` | Restore what `state_dict` returned, when resuming. |
 | `predict_dataloader()` | The prediction loader (needed for `predict`). |
+| `remove_ignored_hparams(ignore)` | Remove names from `hparams`. |
 | `save_hyperparameters(*args, ignore=None, frame=None)` | Record the `__init__` arguments (all of them, or the names in `args`) as `self.hparams`. They are saved in checkpoints, and `load_from_checkpoint` uses them to rebuild the model without passing the arguments again. |
 | `state_dict()` | State saved in checkpoints (empty by default). |
 | `test_dataloader()` | The test loader (needed for `test`). |
@@ -290,6 +300,7 @@ not build its data in the launching process.
 | Property | |
 |---|---|
 | `hparams` | The arguments recorded by `save_hyperparameters`, as an `AttributeDict`. |
+| `hparams_initial` | The arguments as `save_hyperparameters` recorded them, whatever changed later. |
 
 | Hook | |
 |---|---|
@@ -567,7 +578,24 @@ Base class of the strategies.
 
 | Method | |
 |---|---|
+| `all_gather(tensor, group=None, sync_grads=False)` | Gather from every process, with a leading world-size dimension. |
+| `barrier(name=None)` | Wait until every process reaches this point. |
+| `broadcast(obj, src=0)` | Process `src`'s `obj`, on every process. Not available on TPUs. |
 | `ddp_kwargs()` | Keyword arguments for `DistributedDataParallel` (empty unless DDP is used). |
+| `reduce(tensor, group=None, reduce_op='mean')` | `tensor` combined across processes: `"mean"`, `"sum"`, `"max"` or `"min"`. |
+| `reduce_boolean_decision(decision, all=True)` | Whether every process (`all=True`) or any process decided `True`. |
+
+| Property | |
+|---|---|
+| `global_rank` | This process's rank across all machines. |
+| `is_global_zero` | True in the first process. |
+| `lightning_module` | The Module being trained. |
+| `local_rank` | This process's rank on its machine. |
+| `model` | The Module as the loop calls it (wrapped in DDP when distributed). |
+| `node_rank` | This machine's rank. |
+| `optimizers` | The optimizers from `configure_optimizers`. |
+| `root_device` | The device of this process. |
+| `world_size` | Processes in the run. |
 
 ## Accelerators
 

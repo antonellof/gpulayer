@@ -55,6 +55,8 @@ Lightning needs torchrun, SLURM or a cluster to start processes on each machine.
 | a checkpoint from Lightning | `fit(ckpt_path=...)` reads it, also one saved within an epoch |
 | going back to Lightning | `load_from_checkpoint` reads GPUlayer checkpoints; for `fit`, first `gpulayer.pytorch.utilities.to_lightning_checkpoint(source, target)` |
 | `accelerator="gpu"` | accepted; GPUlayer's name is `"cuda"` (or `"rocm"`, `"mps"`) |
+| `trainer.accelerator` is an object | the name, a string |
+| `validation_step(self, dataloader_iter)` | `training_step` only |
 | no limit given means 1000 epochs | no limit given means one epoch; `max_steps` and `max_time` work as in Lightning |
 | progress bar and model summary on by default | off by default: `enable_progress_bar=True`, `enable_model_summary=True` |
 | `logger=True` means TensorBoard (or CSV) | `logger=None` writes `metrics.csv` in the run folder; pass `glt.TensorBoardLogger(...)` |
@@ -71,9 +73,13 @@ Lightning needs torchrun, SLURM or a cluster to start processes on each machine.
 
 ## Not run on hardware yet, or not available
 
-Every public name in Lightning's `Trainer`, `LightningModule`, hooks, callbacks, loggers,
-profilers, plugins, strategies, accelerators and utilities has a GPUlayer counterpart (compared
-with `scripts/compare_api.py` against Lightning's source). How far each has run:
+Every public name of a live Lightning `Trainer` and `LightningModule`, and of its callbacks,
+loggers, profilers, plugins and utilities, has a GPUlayer counterpart. Names alone say little,
+so `tests/conformance` runs the same code on both and compares what happens. Two things are not
+one-to-one: `trainer.strategy` has what code usually calls (`barrier`, `broadcast`, `reduce`,
+`all_gather`, `root_device` and the ranks), so a custom `Strategy` written against Lightning's
+internals will not work; and `trainer.fit_loop` is a view of the loop's state, not a tree of loop
+objects to replace. How far each has run:
 
 - DeepSpeed (ZeRO 1 to 3, CPU offload) and `BitsandbytesPrecision` were validated on Tesla
   T4s; TPU (XLA) is implemented but not yet run on a TPU. See

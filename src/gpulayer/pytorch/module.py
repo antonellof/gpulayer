@@ -48,6 +48,13 @@ def _init_args(frame: Any) -> dict[str, Any]:
 
 
 class HyperparametersMixin:
+    CHECKPOINT_HYPER_PARAMS_KEY = "hyper_parameters"
+    CHECKPOINT_HYPER_PARAMS_NAME = "hparams_name"
+    CHECKPOINT_HYPER_PARAMS_TYPE = "hparams_type"
+    # False: prepare_data runs once in the whole run, for a filesystem the machines share.
+    prepare_data_per_node = True
+    allow_zero_length_dataloader_with_multiple_devices = False
+
     """``save_hyperparameters()`` and ``hparams``, shared by Module and DataModule."""
 
     def save_hyperparameters(
@@ -75,11 +82,24 @@ class HyperparametersMixin:
         }
         hp = self.__dict__.setdefault("_gl_hparams", AttributeDict())
         hp.update(values)
+        self.__dict__["_gl_hparams_initial"] = copy.deepcopy(hp)
 
     @property
     def hparams(self) -> AttributeDict:
         """The arguments recorded by ``save_hyperparameters``, as an ``AttributeDict``."""
         return self.__dict__.setdefault("_gl_hparams", AttributeDict())
+
+    @property
+    def hparams_initial(self) -> AttributeDict:
+        """The arguments as ``save_hyperparameters`` recorded them, whatever changed later."""
+        return copy.deepcopy(self.__dict__.get("_gl_hparams_initial", AttributeDict()))
+
+    def remove_ignored_hparams(self, ignore: Any) -> None:
+        """Remove names from ``hparams``."""
+        names = [ignore] if isinstance(ignore, str) else list(ignore)
+        for name in names:
+            self.hparams.pop(name, None)
+            self.__dict__.get("_gl_hparams_initial", {}).pop(name, None)
 
 
 class LogOptions(NamedTuple):

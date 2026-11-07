@@ -81,6 +81,17 @@ before 1.0, minor versions may change public APIs, with migration notes here.
     a hook nothing collects from (`setup`, `configure_optimizers`, `on_fit_start`,
     `on_fit_end`, `on_train_end`, `on_validation_end`, `on_test_end`, `teardown`, ...), and the
     same name twice in a step with different options.
+- New: `trainer.strategy` has `barrier`, `broadcast`, `reduce`, `all_gather`,
+  `reduce_boolean_decision`, `root_device`, the ranks, `lightning_module` and `optimizers`;
+  `trainer.fit_loop` (`max_epochs` can be set), `validate_loop`, `test_loop`, `predict_loop`,
+  `val_check_batch`, `lightning_module`; `Module.hparams_initial`, `prepare_data_per_node`.
+  **Migration:** `trainer.max_steps` is -1 without a limit (was None); `limit_*_batches` default
+  to 1.0 (were None); `num_val_batches` and `num_test_batches` are always lists; with one loader
+  `trainer.val_dataloaders` is that loader, not a list.
+- Docs: "every public name has a counterpart" was overstated. `scripts/compare_api.py` reads
+  source and missed instance attributes such as `fit_loop`, what classes inherit such as
+  `hparams_initial`, and that `trainer.strategy` lacked 58 of the 60 attributes of Lightning's.
+  Names are now compared on live objects in `tests/conformance`.
 - New CI job and `tests/conformance`: the same code runs on PyTorch Lightning and on the
   Trainer and must behave the same; differences not fixed yet are listed as strict `xfail`s.
   `pip install -e '.[conformance]'` adds what it needs.

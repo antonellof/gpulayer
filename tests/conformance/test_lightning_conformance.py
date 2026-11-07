@@ -749,7 +749,6 @@ def test_object_store_paths(tmp_path, monkeypatch):
 # ------------------------------------------------------------------ the public surface
 
 
-@pytest.mark.xfail(strict=True, reason="item 7: trainer.strategy is a configuration object")
 @pytest.mark.parametrize(
     "expression",
     [
@@ -763,6 +762,16 @@ def test_object_store_paths(tmp_path, monkeypatch):
         "t.strategy.all_gather(torch.tensor(1.0)).shape",
         "t.val_check_batch",
         "t.lightning_module is t.model",
+        "t.strategy.reduce(torch.tensor(2.0), reduce_op='sum').item()",
+        "t.strategy.reduce_boolean_decision(True)",
+        "t.strategy.lightning_module is m",
+        "len(t.strategy.optimizers)",
+        "t.fit_loop.epoch_loop.batch_idx",
+        "t.fit_loop.max_steps",
+        "t.fit_loop.epoch_loop.batch_progress.current.completed",
+        "t.fit_loop.epoch_loop.val_loop.batch_progress.current.completed",
+        "t.limit_train_batches",
+        "t.limit_test_batches",
         "t.max_steps",
         "t.limit_val_batches",
         "t.num_val_batches",
@@ -780,5 +789,30 @@ def test_public_attribute(expression):
         m = model_class(fw)()
         t.fit(m, data(), data())
         return eval(expression)  # noqa: S307
+
+    same(scenario)
+
+
+def _public(obj: Any) -> set[str]:
+    return {n for n in dir(obj) if not n.startswith("_")}
+
+
+def test_every_public_name_exists_at_runtime():
+    """``dir()`` of real objects: unlike reading the source, this sees instance attributes and
+    what classes inherit."""
+    lightning = FRAMEWORKS["lightning"]
+    gpulayer = FRAMEWORKS["gpulayer"]
+    assert _public(lightning.Trainer(**QUIET)) - _public(gpulayer.Trainer(**QUIET)) == set()
+    assert _public(model_class(lightning)()) - _public(model_class(gpulayer)()) == set()
+
+
+def test_setting_max_epochs_through_fit_loop():
+    def scenario(fw):
+        t = fw.Trainer(max_epochs=1, limit_train_batches=2, **QUIET)
+        m = model_class(fw)()
+        t.fit(m, data())
+        t.fit_loop.max_epochs = 2
+        t.fit(m, data())
+        return t.global_step, t.current_epoch
 
     same(scenario)
