@@ -53,6 +53,10 @@ if __name__ == "__main__":
   by `batch_size=`, or by the size inferred from the batch as Lightning does), and stored in
   `trainer.callback_metrics` and `trainer.history`. Processes may log different names.
   Logged values stay on the GPU until a log step, so logging does not slow the loop.
+- `self.log(name, metric)` also takes a `torchmetrics.Metric`: it is computed once at the end
+  of the epoch or evaluation, then reset, and syncs across processes itself. Every process
+  must log it. `metric(preds, target)` also gives a value for the step; `metric.update(...)`
+  does not.
 - Every Lightning hook (`setup`, `on_train_batch_start`, `on_before_optimizer_step`,
   `on_save_checkpoint`, ...) is available; only the ones you override are called.
 - `self.save_hyperparameters()` stores the `__init__` arguments in checkpoints, so
