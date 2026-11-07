@@ -188,7 +188,7 @@ def test_max_steps_stops_mid_epoch(tmp_path):
     trainer = glt.Trainer(accelerator="cpu", max_epochs=10, max_steps=20, default_root_dir=tmp_path)
     trainer.fit(Lin(), train, val)
     assert trainer.global_step == 20 and trainer.current_epoch == 1
-    assert "val_loss" in trainer.history[-1]  # the last epoch is always validated
+    assert "val_loss" not in trainer.history[-1]  # ended within an epoch: as in Lightning
     with pytest.raises(ValidationFailed, match="max_steps"):
         glt.Trainer(max_steps=0)
 
@@ -200,7 +200,7 @@ def test_check_val_every_n_epoch(tmp_path):
     )
     trainer.fit(Lin(), train, val)
     validated = [h["epoch"] for h in trainer.history if "val_loss" in h]
-    assert validated == [1, 3, 4]  # every 2nd epoch, plus the last
+    assert validated == [1, 3]  # every 2nd epoch
 
 
 class LinWithTest(Lin):
@@ -234,15 +234,17 @@ def test_val_check_interval_validates_within_epochs(tmp_path):
         (0, 4),
         (0, 8),
         (0, 12),
+        (0, 16),
         (1, 20),
         (1, 24),
         (1, 28),
+        (1, 32),
     ]
     t2 = glt.Trainer(
         accelerator="cpu", max_epochs=1, val_check_interval=0.5, default_root_dir=tmp_path
     )
     t2.fit(Lin(), train, val)
-    assert [v["step"] for v in t2.val_history] == [8]
+    assert [v["step"] for v in t2.val_history] == [8, 16]
     for bad in (0, 1.5, -2):
         with pytest.raises(ValidationFailed, match="val_check_interval"):
             glt.Trainer(val_check_interval=bad)
@@ -310,7 +312,7 @@ def test_launched_run_without_checkpoints_returns_metrics(tmp_path):
         timeout=300,
     )
     assert p.returncode == 0, p.stdout + p.stderr
-    assert "METRICS ['epoch', 'epoch_seconds', 'train_loss'] 2" in p.stdout, p.stdout
+    assert "METRICS ['train_loss'] 2" in p.stdout, p.stdout
 
 
 SCRIPT_FSDP = """

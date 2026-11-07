@@ -27,6 +27,20 @@ before 1.0, minor versions may change public APIs, with migration notes here.
   now go through `fsspec` (new extra: `gpulayer[remote]`), and a URL that cannot be served is
   an error when the object is created. URLs with a password are refused. Tested with fsspec's
   in-memory filesystem, not yet against S3, GCS or Azure.
+- Fix: `self.log` options were ignored. `on_step` with `on_epoch` now gives `<name>_step` and
+  `<name>_epoch` (so `EarlyStopping("val_loss_epoch")` works), `logger=False` keeps a value from
+  the loggers, and `trainer.progress_bar_metrics` and `logged_metrics` hold what Lightning's do.
+  Loggers get Lightning's rows: steps from 0 (a value logged at `global_step` 2 is step 1), an
+  `epoch` column on every row, no `epoch_seconds`, and evaluation's per-step values under their
+  own counter. Values logged in `on_*_epoch_end` are combined across processes.
+  **Migration:** `trainer.callback_metrics` no longer has `epoch` and `epoch_seconds`, and a
+  name logged per step in `training_step` holds its last value (Lightning's), not the epoch
+  mean: log it with `on_epoch=True` and monitor `<name>_epoch` for the mean, or read
+  `trainer.history`. `callback_metrics` is cleared when `fit`, `validate` or `test` starts.
+- Fix: with `val_check_interval`, validation also ran after the last batch of each epoch, and
+  ending a run with `max_steps` within an epoch validated once more. Validation now runs at
+  the interval's multiples only (with `val_check_interval=3` and 10 batches: after 3, 6 and 9),
+  as in Lightning.
 - New CI job and `tests/conformance`: the same code runs on PyTorch Lightning and on the
   Trainer and must behave the same; differences not fixed yet are listed as strict `xfail`s.
   `pip install -e '.[conformance]'` adds what it needs.

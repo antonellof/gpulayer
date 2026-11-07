@@ -27,6 +27,7 @@ import lightning as L  # noqa: E402
 import torch.nn.functional as F  # noqa: E402
 from lightning.pytorch import callbacks as lightning_callbacks  # noqa: E402
 from lightning.pytorch.loggers import CSVLogger as LightningCSVLogger  # noqa: E402
+from lightning.pytorch.loggers import Logger as LightningLogger  # noqa: E402
 from torch import nn  # noqa: E402
 from torch.utils.data import DataLoader, IterableDataset, TensorDataset  # noqa: E402
 
@@ -39,6 +40,7 @@ FRAMEWORKS = {
         DataModule=L.LightningDataModule,
         Trainer=L.Trainer,
         Callback=lightning_callbacks.Callback,
+        Logger=LightningLogger,
         ModelCheckpoint=lightning_callbacks.ModelCheckpoint,
         EarlyStopping=lightning_callbacks.EarlyStopping,
         CSVLogger=LightningCSVLogger,
@@ -50,6 +52,7 @@ FRAMEWORKS = {
         DataModule=glt.DataModule,
         Trainer=glt.Trainer,
         Callback=glt.Callback,
+        Logger=glt.Logger,
         ModelCheckpoint=glt.ModelCheckpoint,
         EarlyStopping=glt.EarlyStopping,
         CSVLogger=glt.CSVLogger,
@@ -330,7 +333,6 @@ def test_second_fit_with_the_same_limits():
     same(scenario)
 
 
-@pytest.mark.xfail(strict=True, reason="item 6: extra validation at the end of the epoch")
 @pytest.mark.parametrize("sized", [True, False], ids=["sized", "iterable"])
 def test_val_check_interval(sized):
     class Stream(IterableDataset):
@@ -355,6 +357,58 @@ def test_val_check_interval(sized):
         )
         t.fit(Model(), train, data())
         return steps
+
+    same(scenario)
+
+
+@pytest.mark.parametrize(
+    "schedule",
+    [
+        {"max_epochs": 2},
+        {"max_epochs": 3, "check_val_every_n_epoch": 2},
+        {"max_steps": 3},
+        {"max_steps": 13},
+        {"max_epochs": 2, "val_check_interval": 0.25},
+        {"max_epochs": 2, "val_check_interval": 0.5},
+        {"max_epochs": 2, "val_check_interval": 5},
+        {"max_epochs": 2, "val_check_interval": 10},
+        {"max_epochs": 2, "val_check_interval": 15, "check_val_every_n_epoch": None},
+        {"max_epochs": 3, "val_check_interval": 4, "check_val_every_n_epoch": 2},
+    ],
+    ids=str,
+)
+def test_validation_schedule(schedule):
+    def scenario(fw):
+        steps: list[int] = []
+
+        class Model(model_class(fw)):
+            def on_validation_end(self):
+                steps.append(self.global_step)
+
+        t = fw.Trainer(num_sanity_val_steps=0, limit_val_batches=1, **schedule, **QUIET)
+        t.fit(Model(), data(), data())
+        return steps
+
+    same(scenario)
+
+
+def test_validation_when_a_callback_stops_training():
+    def scenario(fw):
+        steps: list[int] = []
+
+        class Stop(fw.Callback):
+            def on_train_batch_end(self, trainer, *args):
+                trainer.should_stop = trainer.global_step == 3 or trainer.should_stop
+
+        class Model(model_class(fw)):
+            def on_validation_end(self):
+                steps.append(self.global_step)
+
+        t = fw.Trainer(
+            max_epochs=2, num_sanity_val_steps=0, limit_val_batches=1, callbacks=[Stop()], **QUIET
+        )
+        t.fit(Model(), data(), data())
+        return steps, t.global_step
 
     same(scenario)
 
@@ -384,7 +438,6 @@ def test_torchmetrics_value():
     same(scenario)
 
 
-@pytest.mark.xfail(strict=True, reason="item 3: _step and _epoch names, logger=False")
 def test_metric_destinations():
     def scenario(fw):
         class Model(model_class(fw)):
@@ -406,7 +459,6 @@ def test_metric_destinations():
     same(scenario)
 
 
-@pytest.mark.xfail(strict=True, reason="item 3: monitoring the _epoch name")
 def test_early_stopping_on_epoch_name():
     def scenario(fw):
         class Model(model_class(fw)):
@@ -427,7 +479,6 @@ def test_early_stopping_on_epoch_name():
     same(scenario)
 
 
-@pytest.mark.xfail(strict=True, reason="item 3: steps in the logger are 0-based")
 def test_csv_logger_rows(tmp_path):
     def scenario(fw):
         quiet = {k: v for k, v in QUIET.items() if k != "logger"}
@@ -484,6 +535,73 @@ def test_missing_monitor_is_an_error():
         )
         t.fit(model_class(fw)(), data(), data())
         return "accepted"
+
+    same(scenario)
+
+
+@pytest.mark.xfail(strict=True, reason="item 5: the epoch after fit, in the rows of test")
+def test_logger_rows_and_stored_values():
+    """Every row a logger receives, its step and values, across fit, test and validate."""
+
+    def scenario(fw):
+        rows: list[Any] = []
+        base = fw.Logger
+
+        class Recorder(base):
+            name = "recorder"
+            version = 0
+
+            def log_hyperparams(self, *args, **kwargs):
+                pass
+
+            def log_metrics(self, metrics, step=None):
+                rows.append((step, sorted(metrics.items())))
+
+        class Model(model_class(fw)):
+            def training_step(self, batch, batch_idx):
+                self.log("a", 1.0)
+                self.log("b", 2.0, on_epoch=True)
+                self.log("c", 3.0, on_step=False, on_epoch=True)
+                self.log("p", 4.0, prog_bar=True, on_epoch=True, logger=False)
+                return F.cross_entropy(self(batch[0]), batch[1])
+
+            def validation_step(self, batch, batch_idx):
+                self.log("v", 5.0)
+                self.log("w", 6.0, on_step=True, on_epoch=True)
+                self.log("q", 7.0, prog_bar=True)
+
+            def on_train_epoch_end(self):
+                self.log("e", 8.0)
+
+            def on_validation_epoch_end(self):
+                self.log("f", 9.0)
+
+            def test_step(self, batch, batch_idx):
+                self.log("t", 1.0)
+                self.log("u", 2.0, on_step=True)
+
+        quiet = {k: v for k, v in QUIET.items() if k != "logger"}
+        t = fw.Trainer(
+            max_epochs=2,
+            log_every_n_steps=2,
+            num_sanity_val_steps=0,
+            logger=Recorder(),
+            val_check_interval=3,
+            limit_val_batches=2,
+            **quiet,
+        )
+        loader = data(n=20)
+        model = Model()
+        t.fit(model, loader, loader)
+        stored = (
+            sorted(t.callback_metrics),
+            sorted(t.logged_metrics),
+            sorted(t.progress_bar_metrics),
+        )
+        tested = t.test(model, loader, verbose=False)
+        after_test = sorted(t.callback_metrics)
+        validated = t.validate(model, loader, verbose=False)
+        return rows, stored, sorted(tested[0]), after_test, sorted(validated[0])
 
     same(scenario)
 

@@ -456,10 +456,10 @@ class ModelCheckpoint(_Monitor, Checkpoint):
             return
         # Trained on workers: the checkpoints came back with the job's outputs.
         out: Any = trainer.launch_result.output_dir
-        root = trainer.default_root_dir
+        root = getattr(trainer, "default_root_dir", None)
         if is_remote(self.dirpath):  # the workers wrote to the store, not to job outputs
             out = self.dirpath
-        elif is_remote(root):
+        elif root is not None and is_remote(root):
             out = root / "checkpoints"
         found: dict[Any, float] = {}
         for path in sorted(out.rglob(f"*{self.FILE_EXTENSION}")):

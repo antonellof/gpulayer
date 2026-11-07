@@ -48,11 +48,19 @@ if __name__ == "__main__":
   `validation_step`, `test_step` and `predict_step` are optional.
 - `configure_optimizers` returns an optimizer or any of Lightning's forms
   ([below](#optimizers-and-schedulers)).
-- `self.log(name, value)` records a scalar. Each name is reduced over the epoch and across
-  processes with its `reduce_fx` (`"mean"`, `"sum"`, `"max"` or `"min"`; a mean is weighted
-  by `batch_size=`, or by the size inferred from the batch as Lightning does), and stored in
-  `trainer.callback_metrics` and `trainer.history`. Processes may log different names.
-  Logged values stay on the GPU until a log step, so logging does not slow the loop.
+- `self.log(name, value)` records a scalar. Epoch values are reduced over the epoch and across
+  processes with `reduce_fx` (`"mean"`, `"sum"`, `"max"` or `"min"`; a mean is weighted by
+  `batch_size=`, or by the size inferred from the batch as Lightning does). Processes may log
+  different names. Logged values stay on the GPU until a log step, so logging does not slow
+  the loop.
+- Where a value goes follows Lightning. In `training_step` a name is logged per step and
+  `trainer.callback_metrics` holds its last value; in evaluation and `on_*_epoch_end`, per
+  epoch. With both (`on_step=True, on_epoch=True`, or `on_epoch=True` in `training_step`), the
+  names are `<name>_step` and `<name>_epoch`, also for `monitor=`. `logger=False` keeps a value
+  from the loggers, and `prog_bar=True` adds it to `trainer.progress_bar_metrics`. Loggers get
+  Lightning's rows: steps counted from 0, an `epoch` column, and evaluation's per-step values
+  under their own counter. `trainer.history` and the run's `metrics.csv` stay GPUlayer's own
+  summary: every name's value for each epoch.
 - `self.log(name, metric)` also takes a `torchmetrics.Metric`: it is computed once at the end
   of the epoch or evaluation, then reset, and syncs across processes itself. Every process
   must log it. `metric(preds, target)` also gives a value for the step; `metric.update(...)`

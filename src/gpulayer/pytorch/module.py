@@ -11,7 +11,7 @@ import inspect
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import torch
 from torch import nn
@@ -82,6 +82,19 @@ class HyperparametersMixin:
         return self.__dict__.setdefault("_gl_hparams", AttributeDict())
 
 
+class LogOptions(NamedTuple):
+    """What ``self.log`` was asked to do with a name. ``step`` is False only for an explicit
+    ``on_step=False``; ``on_step`` and ``on_epoch`` keep None for "the default of this hook"."""
+
+    fx: str
+    prog_bar: bool
+    step: bool
+    batch_size: float | None
+    on_step: bool | None
+    on_epoch: bool | None
+    logger: bool
+
+
 class Module(HyperparametersMixin, nn.Module):
     """Subclass and implement ``training_step`` and ``configure_optimizers``.
 
@@ -93,7 +106,7 @@ class Module(HyperparametersMixin, nn.Module):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._gl_step_logs: dict[str, Any] = {}
-        self._gl_log_options: dict[str, tuple[str, bool, bool, float | None]] = {}
+        self._gl_log_options: dict[str, LogOptions] = {}
         self._gl_metrics: dict[str, Any] = {}  # torchmetrics objects logged in this loop
         self.trainer: Any = None
         self._gl_automatic_optimization = True
@@ -323,6 +336,12 @@ class Module(HyperparametersMixin, nn.Module):
         progress bar. ``sync_dist`` is accepted for compatibility: epoch values are always
         combined across processes.
 
+        Where a value goes follows Lightning. ``on_step`` and ``on_epoch`` default to per step
+        in ``training_step`` and per epoch in evaluation and ``on_*_epoch_end``; with both, the
+        names become ``<name>_step`` and ``<name>_epoch``. ``logger=False`` keeps it from the
+        loggers, ``prog_bar=True`` adds it to the progress bar, and
+        ``trainer.callback_metrics`` always has it, for callbacks to monitor.
+
         A ``Metric`` is computed once at the end of the epoch or evaluation and then reset; it
         syncs across processes itself, inside ``compute()``. Call it (or ``update``) in the
         step and pass the object, as in Lightning."""
@@ -332,7 +351,14 @@ class Module(HyperparametersMixin, nn.Module):
             value = self._log_metric(name, value)
             if value is None:  # update() only: nothing to show for this step
                 return
-        if reduce_fx == "mean" and not prog_bar and batch_size is None and on_step is not False:
+        if (
+            on_step is None
+            and on_epoch is None
+            and logger is None
+            and reduce_fx == "mean"
+            and not prog_bar
+            and batch_size is None
+        ):
             # The common call, kept short: it runs every step.
             if isinstance(value, torch.Tensor):
                 value = value.detach()
@@ -355,11 +381,14 @@ class Module(HyperparametersMixin, nn.Module):
             self._gl_step_logs[name] = value
         else:
             self._gl_step_logs[name] = float(value)
-        self._gl_log_options[name] = (
+        self._gl_log_options[name] = LogOptions(
             fx,
             prog_bar,
             on_step is not False,
             float(batch_size) if batch_size is not None else None,
+            on_step,
+            on_epoch,
+            logger is not False,
         )
 
     def _log_metric(self, name: str, metric: torch.nn.Module) -> torch.Tensor | None:

@@ -164,8 +164,8 @@ def test_integer_val_check_interval_counts_across_epochs(tmp_path):
         callbacks=[count],
     )
     t.fit(Lin(), DataLoader(xy(32), batch_size=8), DataLoader(xy(16), batch_size=8))
-    # 4 batches per epoch, 24 in all: after batches 10 and 20, and at the end of the run.
-    assert count.at == [(2, 10), (4, 20), (5, 24)]
+    # 4 batches per epoch, 24 in all: after batches 10 and 20, as in Lightning.
+    assert count.at == [(2, 10), (4, 20)]
 
 
 def test_mid_epoch_validation_respects_check_val_every_n_epoch(tmp_path):
