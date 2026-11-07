@@ -57,6 +57,12 @@ before 1.0, minor versions may change public APIs, with migration notes here.
   it now rebuilds the order and skips them in the sampler, without reading them. `torchdata`'s
   `StatefulDataLoader` is saved and restored, as in Lightning. Across processes the data order
   is exact; each rank's own random numbers are not restored.
+- Fix: checkpoints work both ways with Lightning. A Lightning checkpoint saved within an epoch
+  lost the rest of that epoch, and one saved after `fit` skipped an epoch; `fit` now reads
+  Lightning's loop state. GPUlayer checkpoints load with Lightning's `load_from_checkpoint`, and
+  `gpulayer.pytorch.utilities.to_lightning_checkpoint` writes one for Lightning's `fit`.
+  **Migration:** after `fit`, and in `on_train_end`, `trainer.current_epoch` now counts the
+  epochs run (Lightning's meaning): one more than before. New checkpoints have `next_epoch`.
 - New CI job and `tests/conformance`: the same code runs on PyTorch Lightning and on the
   Trainer and must behave the same; differences not fixed yet are listed as strict `xfail`s.
   `pip install -e '.[conformance]'` adds what it needs.

@@ -71,6 +71,8 @@ CHECKPOINT = "checkpoints/last.ckpt"
 # cuDNN autotuning pays off from about this many optimizer steps (see Trainer.fit).
 AUTOTUNE_MIN_STEPS = 1000
 UNLIMITED_EPOCHS = 10**9
+LIGHTNING_VERSION_KEY = "pytorch-lightning_version"
+LIGHTNING_FORMAT = "2.5.0"  # the checkpoint layout written here; Lightning migrates from it
 
 
 @dataclass
@@ -778,7 +780,7 @@ class Trainer:
             self.history = state.get("history", [])
             self.callback_metrics = state.get("callback_metrics") or _metrics_of(self.history)
             self.global_step = state.get("global_step", 0)
-            self.current_epoch = state.get("epoch", 0)
+            self.current_epoch = state.get("next_epoch", state.get("epoch", 0))
         else:
             # Without checkpoints, the metrics still come back (weights do not).
             found = sorted(output_dir.rglob("metrics.json"))
@@ -786,7 +788,7 @@ class Trainer:
                 self.history = json.loads(found[0].read_text())
                 self.callback_metrics = _metrics_of(self.history)
                 if self.history:
-                    self.current_epoch = int(self.history[-1].get("epoch", 0))
+                    self.current_epoch = int(self.history[-1].get("epoch", 0)) + 1
 
     def _launch_job(self, ckpt_path: str | Path | None = None) -> LaunchResult:
         """Submit this script as a job on GPUlayer workers and wait for it."""
@@ -1436,8 +1438,10 @@ class Trainer:
                 "that is not intended"
             )
         self._call_hook("on_train_start")
+        finished = self.current_epoch = start_epoch
         for epoch in range(start_epoch, self.max_epochs):
             self.current_epoch = epoch
+            finished = epoch + 1
             n = self.reload_dataloaders_every_n_epochs
             if n and epoch > start_epoch and epoch % n == 0 and callable(self._train_src):
                 train = self._prepare_loader(rt, self._train_src)
@@ -1499,6 +1503,7 @@ class Trainer:
             if self.should_stop and self._mins_met():
                 break
         self.state.stage = None
+        self.current_epoch = finished  # after fit it counts epochs, as in Lightning
         self._call_hook("on_train_end")
         if self._weights_changed_at_end and self.enable_checkpointing:
             # SWA, weight averaging or pruning replaced the weights after the last epoch.
@@ -2583,10 +2588,12 @@ class Trainer:
         self.history = state.get("history", [])
         self._restored_rng = state.get("rng_states")
         self._restored_loaders = state.get("dataloaders")
+        if "loops" in state:
+            return _lightning_position(state["loops"]["fit_loop"])
         epoch = state["epoch"]
         if state.get("batches_done"):
             return epoch, int(state["batches_done"])  # saved within an epoch
-        return epoch + 1, 0
+        return state.get("next_epoch", epoch + 1), 0
 
     def save_checkpoint(
         self,
@@ -2643,10 +2650,14 @@ class Trainer:
         path.parent.mkdir(parents=True, exist_ok=True)
         from gpulayer import __version__
 
+        in_fit = self.state.fn == "fit" and self.state.stage is not None
         checkpoint: dict[str, Any] = {
             "epoch": self.current_epoch,
+            "next_epoch": self.current_epoch + 1 if in_fit else self.current_epoch,
             "global_step": self.global_step,
             "gpulayer_version": __version__,
+            # What Lightning's load_from_checkpoint reads; see utilities.to_lightning_checkpoint.
+            LIGHTNING_VERSION_KEY: LIGHTNING_FORMAT,
             "state_dict": model_state,
             "history": self.history,
             "callback_metrics": dict(self.callback_metrics),
@@ -2679,6 +2690,7 @@ class Trainer:
                 checkpoint["rng_states"] = {"now": _rng_states(), "epoch_start": self._epoch_rng}
         if model.hparams:
             checkpoint["hyper_parameters"] = dict(model.hparams)
+            checkpoint["hparams_name"] = "kwargs"
         if self.datamodule is not None and self.datamodule.hparams:
             checkpoint["datamodule_hyper_parameters"] = dict(self.datamodule.hparams)
         model.on_save_checkpoint(checkpoint)
@@ -3006,6 +3018,18 @@ def _materialize(loader: Any) -> Any:
     if callable(loader) and not hasattr(loader, "__iter__"):
         return loader()
     return loader
+
+
+def _lightning_position(fit_loop: dict[str, Any]) -> tuple[int, int]:
+    """The epoch and batch to continue from, read from a Lightning checkpoint's loop state:
+    within an epoch it has started but not processed one."""
+    epochs = fit_loop["epoch_progress"]["current"]
+    batches = fit_loop["epoch_loop.batch_progress"]
+    if epochs["ready"] <= epochs["processed"]:
+        return epochs["processed"], 0
+    if batches.get("is_last_batch"):
+        return epochs["ready"], 0
+    return epochs["processed"], batches["current"]["processed"]
 
 
 def _kept_checkpoint() -> Path | None:

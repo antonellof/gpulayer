@@ -187,7 +187,7 @@ def test_max_steps_stops_mid_epoch(tmp_path):
     train, val = loaders()  # 16 batches per epoch
     trainer = glt.Trainer(accelerator="cpu", max_epochs=10, max_steps=20, default_root_dir=tmp_path)
     trainer.fit(Lin(), train, val)
-    assert trainer.global_step == 20 and trainer.current_epoch == 1
+    assert trainer.global_step == 20 and trainer.current_epoch == 2
     assert "val_loss" not in trainer.history[-1]  # ended within an epoch: as in Lightning
     with pytest.raises(ValidationFailed, match="max_steps"):
         glt.Trainer(max_steps=0)

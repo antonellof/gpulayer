@@ -160,7 +160,7 @@ built only where training runs and not thrown away in the launching process.
 
 Rank 0 writes `checkpoints/last.ckpt`, `metrics.json` and `metrics.csv` after every epoch: in
 `gpulayer_runs/<directory>-<script>/` in your process, or in the job's outputs, downloaded to
-`gpulayer_runs/<job-id>/`. Checkpoints use Lightning's layout.
+`gpulayer_runs/<job-id>/`. Checkpoints follow Lightning's layout, without its loop state.
 
 ```python
 trainer.fit(model, train_loader, ckpt_path="gpulayer_runs/my_project-train/checkpoints/last.ckpt")
