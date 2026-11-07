@@ -119,6 +119,10 @@
           "title": "AMD ROCm"
         },
         {
+          "slug": "guides/amd-npu",
+          "title": "AMD Ryzen AI NPUs"
+        },
+        {
           "slug": "guides/cloud-providers",
           "title": "Cloud and providers"
         },

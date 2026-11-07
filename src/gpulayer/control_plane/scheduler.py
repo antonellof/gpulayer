@@ -295,11 +295,13 @@ def _best_connected(free: list[int], n: int, links: dict[int, dict[int, str]]) -
 
 def default_max_tasks(caps: WorkerCapabilities) -> int:
     """One task slot per usable discrete GPU, so a multi-GPU machine runs one single-GPU job
-    per GPU at the same time. Machines without such GPUs run one task at a time."""
+    per GPU at the same time, and one per NPU, so a service on it leaves a GPU free for
+    training. Machines without either run one task at a time."""
     n = sum(
         1
         for d in caps.accelerators
-        if d.execution_supported and d.accelerator in (Accelerator.CUDA, Accelerator.ROCM)
+        if d.execution_supported
+        and d.accelerator in (Accelerator.CUDA, Accelerator.ROCM, Accelerator.NPU)
     )
     return max(1, n)
 

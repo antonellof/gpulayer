@@ -22,6 +22,9 @@ print(job.endpoints(wait=120))   # ['10.0.0.5:41237', '10.0.0.6:38811']
 job.cancel()                     # stops every replica
 ```
 
+On an AMD Ryzen AI NPU, `gl.flm_service("llama3.2:1b")` does this for you: see
+[AMD Ryzen AI NPUs](amd-npu.md).
+
 ## Behaviour
 
 | Setting | Default | Meaning |

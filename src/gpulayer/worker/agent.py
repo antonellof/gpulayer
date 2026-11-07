@@ -494,8 +494,8 @@ class WorkerAgent:
                 ]
             )
             env["HIP_VISIBLE_DEVICES"] = ",".join(str(i) for i in indices)
-        elif spec.resources.accelerator == Accelerator.CPU:
-            env["CUDA_VISIBLE_DEVICES"] = ""  # CPU jobs must not grab a GPU by accident
+        elif spec.resources.accelerator in (Accelerator.CPU, Accelerator.NPU):
+            env["CUDA_VISIBLE_DEVICES"] = ""  # these jobs must not grab a GPU by accident
             env["HIP_VISIBLE_DEVICES"] = ""
         if isinstance(spec.workload, DistributedJob):
             env["GPULAYER_COMM_BACKEND"] = spec.workload.comm_backend

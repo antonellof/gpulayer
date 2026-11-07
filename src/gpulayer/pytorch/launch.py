@@ -156,6 +156,11 @@ def launch(
             "a notebook has no script to submit: export it to a .py file, pass script=, or, for "
             "several devices of this machine, use Trainer(devices=N), which forks them"
         )
+    if accelerator == "npu":
+        raise ValidationFailed(
+            "launch runs training scripts, which cannot use an NPU; serve a model on it with "
+            "gpulayer.flm_service (ADR-0026)"
+        )
     if accelerator == "auto":
         raise ValidationFailed(
             "accelerator='auto' cannot be resolved before placement; pass 'cpu', 'cuda' or "
