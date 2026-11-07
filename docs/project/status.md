@@ -38,6 +38,8 @@ machines named. Everything else says what is missing.
 | TensorBoard, Weights & Biases and MLflow loggers | implemented; not tested (optional packages) |
 | Trainer: several dataloaders (`CombinedLoader`, `dataloader_idx`), distributed `validate`/`test`/`predict`, `LightningCLI`, plugins (precision, `CheckpointIO`, `AsyncCheckpointIO`) | tested on CPU, distributed cases with two processes |
 | Trainer `accelerator="tpu"` (one device, every device of a TPU VM through `xmp.spawn`, or a TPU pod) | implemented and tested with a simulated torch_xla; not run on a TPU |
+| Notebooks: `devices=N` forks one process per device (Linux; refused on macOS, where forks of a kernel crash) | tested in CI in a real Jupyter kernel on CPU; not run on a GPU |
+| SLURM: `srun` tasks train in place | simulated with SLURM's variables on one machine; not run on a cluster |
 | Long-running services: replicas, `$PORT`, endpoints, restarts | tested on a local worker and on Kubernetes (kind); no load balancer |
 | Google Cloud provisioning | validated: a CPU VM and a Spot T4 created for a job, joined, ran it and were deleted |
 | Kubernetes Helm chart | tested in CI on kind (jobs, a distributed job, upgrade, server restart); GPU worker pool not run |

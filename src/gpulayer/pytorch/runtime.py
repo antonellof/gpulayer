@@ -26,6 +26,7 @@ from torch import nn
 from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, SequentialSampler
 
 from gpulayer.errors import ValidationFailed
+from gpulayer.pytorch.launch import adopt_slurm
 from gpulayer.pytorch.storage import as_path
 
 PRECISIONS = ("32-true", "bf16-mixed", "16-mixed", "bf16-true", "16-true", "64-true")
@@ -267,6 +268,7 @@ class Runtime:
         self.data_parallel: tuple[int, int] | None = None
         self.accelerator = resolve_accelerator(accelerator)
         self.precision = precision
+        adopt_slurm()
         self.world_size = int(os.environ.get("WORLD_SIZE", "1"))
         self.global_rank = int(os.environ.get("RANK", "0"))
         self.local_rank = int(os.environ.get("LOCAL_RANK", "0"))
@@ -296,7 +298,9 @@ class Runtime:
                 "supported yet"
             )
         if self.gpu:
-            self.device = torch.device("cuda", self.local_rank)
+            # SLURM's --gpus-per-task shows each task only its own GPU.
+            index = self.local_rank if torch.cuda.device_count() > 1 else 0
+            self.device = torch.device("cuda", index)
         elif self.xla:
             import torch_xla.core.xla_model as xm
 

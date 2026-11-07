@@ -12,7 +12,9 @@ with the standard torchrun environment (RANK, WORLD_SIZE, LOCAL_RANK, MASTER_ADD
 
 from __future__ import annotations
 
+import math
 import os
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -44,8 +46,59 @@ def in_torchrun() -> bool:
     return "TORCHELASTIC_RUN_ID" in os.environ or "LOCAL_RANK" in os.environ
 
 
+def in_slurm_task() -> bool:
+    """True in a process ``srun`` started as a task. Not in an ``sbatch`` script, which runs
+    once whatever the number of tasks, nor in an interactive ``srun --pty bash``."""
+    env = os.environ
+    return (
+        "SLURM_PROCID" in env
+        and "SLURM_NTASKS" in env
+        and env.get("SLURM_STEP_ID") not in (None, "batch", "extern")
+        and env.get("SLURM_JOB_NAME") not in ("bash", "interactive")
+    )
+
+
+def first_host(nodelist: str) -> str:
+    """The first host of a SLURM node list: ``gpu[07-09,12],cpu01`` gives ``gpu07``."""
+    m = re.match(r"([^,\[]*)(?:\[([^,\]\-]+))?", nodelist.strip())
+    return (m.group(1) + (m.group(2) or "")) if m else nodelist
+
+
+def adopt_slurm() -> None:
+    """Inside ``srun``, turn SLURM's variables into the standard rank variables, so a task
+    trains in place, as under ``torchrun``. SLURM started the processes; there is nothing to
+    submit. Values already set win."""
+    env = os.environ
+    if "LOCAL_RANK" in env or not in_slurm_task():
+        return
+    tasks = int(env["SLURM_NTASKS"])
+    nodes = int(env.get("SLURM_NNODES") or env.get("SLURM_JOB_NUM_NODES") or 1)
+    per_node = env.get("SLURM_NTASKS_PER_NODE", "")
+    job = int(env.get("SLURM_JOB_ID", "0"))
+    for name, value in {
+        "RANK": env["SLURM_PROCID"],
+        "WORLD_SIZE": tasks,
+        "LOCAL_RANK": env.get("SLURM_LOCALID", "0"),
+        "LOCAL_WORLD_SIZE": per_node if per_node.isdigit() else math.ceil(tasks / nodes),
+        "GPULAYER_NODE_RANK": env.get("SLURM_NODEID", "0"),
+        "MASTER_ADDR": first_host(
+            env.get("SLURM_STEP_NODELIST") or env.get("SLURM_NODELIST") or "127.0.0.1"
+        ),
+        "MASTER_PORT": 15000 + job % 10000,  # every task of a job computes the same one
+    }.items():
+        env.setdefault(name, str(value))
+
+
+def in_notebook() -> bool:
+    """True in a Jupyter kernel: code lives in cells, so there is no script to launch."""
+    ipython = sys.modules.get("IPython")
+    shell = ipython.get_ipython() if ipython is not None else None
+    return type(shell).__name__ == "ZMQInteractiveShell" or "google.colab" in sys.modules
+
+
 def is_launcher_process() -> bool:
     """True in the process that submits work, False on workers (where the work runs)."""
+    adopt_slurm()
     return not (in_gpulayer_job() or in_torchrun())
 
 
@@ -98,6 +151,11 @@ def launch(
     the workers do not have; each worker installs them once and reuses them (ADR-0022)."""
     if not is_launcher_process():
         return None
+    if script is None and in_notebook():
+        raise ValidationFailed(
+            "a notebook has no script to submit: export it to a .py file, pass script=, or, for "
+            "several devices of this machine, use Trainer(devices=N), which forks them"
+        )
     if accelerator == "auto":
         raise ValidationFailed(
             "accelerator='auto' cannot be resolved before placement; pass 'cpu', 'cuda' or "

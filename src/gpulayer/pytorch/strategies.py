@@ -616,11 +616,14 @@ def resolve_strategy(strategy: Any) -> Any:
         return strategy
     if strategy in _STRINGS:
         return _STRINGS[strategy]()
-    if isinstance(strategy, str) and strategy.startswith(("ddp_spawn", "ddp_fork", "ddp_notebook")):
+    if isinstance(strategy, str) and strategy.startswith("ddp_spawn"):
         raise ValidationFailed(
-            f"strategy {strategy!r}: GPUlayer starts one process per rank itself, so spawn, "
-            "fork and notebook launchers are not needed; use 'ddp'"
+            f"strategy {strategy!r}: GPUlayer starts one process per rank itself, so the spawn "
+            "launcher is not needed; use 'ddp'"
         )
+    if isinstance(strategy, str) and strategy.startswith(("ddp_fork", "ddp_notebook")):
+        # In a notebook the Trainer forks its ranks whatever the name; elsewhere it is ddp.
+        return resolve_strategy(strategy.replace("ddp_fork", "ddp").replace("ddp_notebook", "ddp"))
     if strategy in ("xla", "xla_debug", "single_xla"):
         return DDPStrategy()  # accelerator="tpu" picks the XLA path (see the Trainer)
     raise ValidationFailed(

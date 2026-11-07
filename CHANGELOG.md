@@ -92,6 +92,15 @@ before 1.0, minor versions may change public APIs, with migration notes here.
   source and missed instance attributes such as `fit_loop`, what classes inherit such as
   `hparams_initial`, and that `trainer.strategy` lacked 58 of the 60 attributes of Lightning's.
   Names are now compared on live objects in `tests/conformance`.
+- New: notebooks. `Trainer(devices=N)` in a Jupyter kernel forks one process per device and
+  returns the weights, instead of packaging the folder of `ipykernel_launcher.py` (all of
+  `site-packages`) as a job. `launch()` from a notebook now explains itself. `ddp_notebook` and
+  `ddp_fork` are accepted. Linux only, tested in CI against a real Jupyter kernel on CPU; not
+  run on a GPU. On macOS it stops with an explanation, because forks of a kernel crash there.
+- New: SLURM. Under `srun`, tasks train in place with SLURM's ranks and the first node as
+  rendezvous, where each task used to submit its own job. An `sbatch` script or `srun --pty
+  bash` is not taken for a task. Simulated with SLURM's variables on one machine; not run on a
+  cluster. With `--gpus-per-task`, each task uses its only visible GPU.
 - New CI job and `tests/conformance`: the same code runs on PyTorch Lightning and on the
   Trainer and must behave the same; differences not fixed yet are listed as strict `xfail`s.
   `pip install -e '.[conformance]'` adds what it needs.
