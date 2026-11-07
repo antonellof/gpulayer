@@ -204,7 +204,7 @@ class Recording(glt.Logger):
 def test_log_key_prefix_and_autolog_hparams(tmp_path):
     lg = Recording()
     t = trainer(tmp_path, max_epochs=1, logger=lg, log_key_prefix="trainer/",
-                enable_autolog_hparams=False)  # fmt: skip
+                log_every_n_steps=1, enable_autolog_hparams=False)  # fmt: skip
     t.fit(Lin(), DataLoader(ds(), batch_size=8))
     last = lg.metrics[-1]
     assert "trainer/epoch" in last and "epoch" not in last and "train_loss" in last
@@ -560,11 +560,11 @@ def test_lit_logger_with_a_fake_litlogger(tmp_path, monkeypatch):
     )
     monkeypatch.setitem(sys.modules, "litlogger", fake)
     lg = glt.LitLogger(root_dir=tmp_path, name="exp", teamspace="team", log_model=True)
-    t = trainer(tmp_path, max_epochs=2, logger=lg)
+    t = trainer(tmp_path, max_epochs=2, logger=lg, log_every_n_steps=4)
     t.fit(Lin(), DataLoader(ds(), batch_size=8))
     exp = lg.experiment
     assert sent["init"]["teamspace"] == "team" and sent["init"]["name"] == "exp"
-    assert [s for s, _ in exp["train_loss"]] == [4, 8] and exp["lr"] == "0.05"
+    assert [s for s, _ in exp["train_loss"]] == [3, 7] and exp["lr"] == "0.05"
     assert exp["exp-model"][0] == "model" and exp["exp-model"][1].endswith("last.ckpt")
     assert sent["status"] == "success" and lg.url.startswith("https://")
 

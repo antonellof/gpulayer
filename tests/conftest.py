@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -16,6 +18,11 @@ from gpulayer.contracts import (
 )
 from gpulayer.control_plane.service import ControlPlane, ControlPlaneConfig
 from gpulayer.storage.sqlite import SqliteStore
+
+if sys.platform == "darwin":
+    # Gloo picks its interface from the host name; on a Mac whose name does not resolve it
+    # then hangs on connecting. These tests use one machine, so name the loopback.
+    os.environ.setdefault("GLOO_SOCKET_IFNAME", "lo0")
 
 
 class Clock:

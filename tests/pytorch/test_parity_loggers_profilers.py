@@ -182,7 +182,7 @@ def test_comet_logger_in_a_trainer_fit(comet, tmp_path):
     assert ("log_parameters", ({"lr": 0.05},), {}) in calls
     logged = [c for c in calls if c[0] == "log_metrics"]
     assert logged and all("epoch" not in c[1][0] for c in logged)
-    assert any("train_loss" in c[1][0] and c[2]["step"] == 2 for c in logged)
+    assert any("train_loss" in c[1][0] and c[2]["step"] == 1 for c in logged)  # from 0
     assert calls[-1][0] == "flush"
 
 

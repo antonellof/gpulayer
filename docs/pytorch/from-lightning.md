@@ -56,6 +56,7 @@ Lightning needs torchrun, SLURM or a cluster to start processes on each machine.
 | no limit given means 1000 epochs | no limit given means one epoch; `max_steps` and `max_time` work as in Lightning |
 | progress bar and model summary on by default | off by default: `enable_progress_bar=True`, `enable_model_summary=True` |
 | `logger=True` means TensorBoard (or CSV) | `logger=None` writes `metrics.csv` in the run folder; pass `glt.TensorBoardLogger(...)` |
+| a run without `self.log` has no metrics | `train_loss` is recorded for you |
 | `ModelCheckpoint()` names files `epoch=..-step=..ckpt` | `best.ckpt`; pass `filename="{epoch}-{step}"` for Lightning's names |
 | `trainer.validate/test` return a list of dicts | a dict that also answers `result[0]` |
 | `benchmark=None` leaves cuDNN autotuning off | `None` turns it on for CUDA runs of 1,000 steps or more |

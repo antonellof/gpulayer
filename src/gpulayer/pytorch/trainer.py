@@ -431,7 +431,8 @@ class Trainer:
         self._ddp: Any = None
         self._is_log_step = False
         self._stepped = False
-        self._step_logs_read: dict[str, float] = {}
+        self._train_epoch_log: dict[str, float] = {}
+        self._eval_log_step = 0
         self._weights_changed_at_end = False
         self._predictions: list[Any] = []
         self._predict_indices: list[Any] | None = None
@@ -769,7 +770,7 @@ class Trainer:
         if state is not None:
             model.load_state_dict(state["state_dict"], strict=model.strict_loading)
             self.history = state.get("history", [])
-            self.callback_metrics = dict(self.history[-1]) if self.history else {}
+            self.callback_metrics = state.get("callback_metrics") or _metrics_of(self.history)
             self.global_step = state.get("global_step", 0)
             self.current_epoch = state.get("epoch", 0)
         else:
@@ -777,7 +778,7 @@ class Trainer:
             found = sorted(output_dir.rglob("metrics.json"))
             if found:
                 self.history = json.loads(found[0].read_text())
-                self.callback_metrics = dict(self.history[-1]) if self.history else {}
+                self.callback_metrics = _metrics_of(self.history)
                 if self.history:
                     self.current_epoch = int(self.history[-1].get("epoch", 0))
 
@@ -865,16 +866,28 @@ class Trainer:
         Lightning)."""
         model._gl_step_logs = {}
         monitors = (EarlyStopping, ModelCheckpoint)
+        ran = overridden(model, name, Module)
         for cb in self.callbacks:
             if not isinstance(cb, monitors) and overrides(cb, name):
                 getattr(cb, name)(self, model)
+                ran = True
         if overridden(model, name, Module):
             getattr(model, name)()
-        extra = {k: float(v) for k, v in model._gl_step_logs.items()}
+        rt = self.runtime
+        logs = {k: [v] for k, v in model._gl_step_logs.items()}
+        if ran and rt is not None and rt.distributed:
+            # Every rank ran the same hooks, so they all reach this collective.
+            extra = self._aggregate(rt, logs, {}, model._gl_log_options, 1)
+        else:
+            extra = {k: float(v[0]) for k, v in logs.items()}
         extra.update(_compute_metrics(model._gl_metrics))
         model._gl_step_logs = {}
         if extra:
             self.callback_metrics.update(extra)
+            opts = model._gl_log_options
+            self.progress_bar_metrics.update(
+                {k: v for k, v in extra.items() if k in opts and opts[k].prog_bar}
+            )
         self._pending_monitors = [
             cb for cb in self.callbacks if isinstance(cb, monitors) and overrides(cb, name)
         ]
@@ -1014,7 +1027,8 @@ class Trainer:
                     cb.on_fit_end(self, model)
             return
         self.state = TrainerState("fit", None, "running")
-        self._total_batches = 0
+        self._total_batches = self._eval_log_step = 0
+        self.callback_metrics = {}
         self._merge_model_callbacks(model)
         if self.deterministic is True:
             # Same results on every run (with seed_everything), at some speed cost. cuBLAS
@@ -1407,6 +1421,7 @@ class Trainer:
             )
             self._call_hook("on_sanity_check_end")
             self.callback_metrics = {}
+            self.progress_bar_metrics = {}
         self.state.stage = "train"
         if not model.training:
             self._say(
@@ -1448,14 +1463,13 @@ class Trainer:
             metrics["epoch"] = epoch
             metrics["epoch_seconds"] = round(time.perf_counter() - t0, 3)
             self.history.append(metrics)
-            self.callback_metrics = {**self.callback_metrics, **metrics}
             extra = self._call_epoch_end("on_train_epoch_end", model)
             metrics.update(extra)
             shown = " ".join(
                 f"{k}={v:.4f}" for k, v in metrics.items() if k not in ("epoch", "epoch_seconds")
             )
             self._say(f"epoch {epoch} done in {metrics['epoch_seconds']}s: {shown}")
-            self._log_to_loggers(metrics, self.global_step)
+            self._log_to_loggers({**self._train_epoch_log, **self._for_loggers(extra, model)})
             self._call_monitors("on_train_epoch_end", model)
             # ReduceLROnPlateau steps after validation, on the monitored value.
             if automatic:
@@ -1620,6 +1634,7 @@ class Trainer:
             batches = ahead
         loss: Any = None
         out: Any = None
+        last = False
         self._batch_counter = 0
         for batch_idx, batch in enumerate(batches):
             if limit is not None and batch_idx >= limit:
@@ -1637,6 +1652,7 @@ class Trainer:
                     if fn(batch, batch_idx) == -1:
                         ended = True
                 if ended:
+                    last = True
                     break  # on_train_batch_start returned -1: end the epoch (as in Lightning)
             self._batch_counter = batch_idx + 1
             model._gl_step_logs = {}
@@ -1720,14 +1736,11 @@ class Trainer:
                 self._stepped and log_every and self.global_step % log_every == 0
             )
             if self._is_log_step:
-                values = {k: float(v) for k, v in logs.items() if opts.get(k, (0, 0, True))[2]}
-                self._step_logs_read = values
+                values = {k: float(v) for k, v in logs.items() if k not in opts or opts[k].step}
                 shown = " ".join(f"{k}={v:.4f}" for k, v in values.items())
                 self._say(f"epoch {epoch} step {self.global_step} {shown}")
-                self._step_rows.append({"epoch": epoch, "step": self.global_step, **values})
-                self.logged_metrics.update(values)
-                self._update_progress(values, opts)
-                self._log_to_loggers(values, self.global_step)
+                sent = self._publish_step(values, opts)
+                self._step_rows.append({"epoch": epoch, "step": self.global_step, **sent})
             if batch_end:
                 outputs = (
                     out
@@ -1741,16 +1754,13 @@ class Trainer:
                     seen = epoch * n_batches + batch_idx + 1 if n_batches else self._total_batches
                 else:
                     seen = batch_idx + 1
-                # The last batch is left to the end-of-epoch validation, except when counting
-                # across epochs (which validates at the end of an epoch only if it is due).
-                if seen % val_every == 0 and (count_across or not last):
+                # With an interval, validation runs at its multiples only, as in Lightning.
+                if seen % val_every == 0:
                     # Same batch index on every rank, so the collectives inside line up.
                     mid = self._run_validation(
                         rt, model, val, zero_grad=(batch_idx + 1) % accumulate == 0 or last
                     )
                     self.val_history.append({"epoch": epoch, "step": self.global_step, **mid})
-                    self.callback_metrics.update(mid)
-                    self._log_to_loggers(mid, self.global_step)
                     self.state.stage = "train"
                     if last:
                         validated_last = mid
@@ -1777,19 +1787,66 @@ class Trainer:
             self._step_schedulers("epoch")
         metrics = self._aggregate(rt, logged, weights, model._gl_log_options, count)
         metrics.update(_compute_metrics(model._gl_metrics))
-        final = epoch + 1 == self.max_epochs or (
-            self.max_steps is not None and self.global_step >= self.max_steps
-        )
+        self._train_epoch_log = self._publish_train_epoch(rt, metrics, logged, model)
         if validated_last is not None:
             metrics.update(validated_last)  # the last batch's validation was this epoch's
-        elif val is not None and ((every is not None and (epoch + 1) % every == 0) or final):
+        elif val is not None and val_every is None and self._epoch_end_validation(epoch, last):
             metrics.update(self._run_validation(rt, model, val))
         return metrics
 
-    def _update_progress(self, values: dict[str, float], opts: dict[str, Any]) -> None:
-        shown = {k: v for k, v in values.items() if k in opts and opts[k][1]}
-        if shown:
-            self.progress_bar_metrics.update(shown)
+    def _epoch_end_validation(self, epoch: int, last_batch: bool) -> bool:
+        """Validate after the last batch of an epoch ``check_val_every_n_epoch`` selects, or
+        when stopping early. ``max_steps`` ending the run within an epoch does not validate."""
+        every = self.check_val_every_n_epoch
+        selected = every is not None and (epoch + 1) % every == 0
+        return selected and (last_batch or self.should_stop)
+
+    def _publish_step(self, values: dict[str, float], opts: dict[str, Any]) -> dict[str, float]:
+        """Send a log step's values where ``self.log`` asked; returns what the loggers got."""
+        sent: dict[str, float] = {}
+        for k, v in values.items():
+            o = opts.get(k)
+            key = f"{k}_step" if o is not None and o.on_epoch else k
+            self.callback_metrics[k] = self.callback_metrics[key] = v
+            if o is None or o.logger:
+                sent[key] = v
+            if o is not None and o.prog_bar:
+                self.progress_bar_metrics[key] = v
+        self._log_to_loggers(sent)
+        return sent
+
+    def _publish_train_epoch(
+        self, rt: Runtime, metrics: dict[str, float], logged: dict[str, list[Any]], model: Module
+    ) -> dict[str, float]:
+        """At an epoch's end: names logged per epoch get their reduced value; names logged per
+        step keep their last one, the default in ``training_step``. Returns what the loggers
+        get at the end of the epoch (``trainer.history`` keeps every name's epoch value)."""
+        opts = model._gl_log_options
+        sent: dict[str, float] = {}
+        last = {k: (float(v[-1]), 1.0) for k, v in logged.items() if v}
+        lasts = rt.reduce_metrics(last, {}, {}, {}) if rt.distributed else {
+            k: v[0] for k, v in last.items()
+        }  # fmt: skip
+        for k, v in metrics.items():
+            o = opts.get(k)
+            if o is None or not (o.on_epoch or not o.step or k not in last):
+                self.callback_metrics[k] = lasts.get(k, v)
+                continue
+            both = bool(o.on_epoch) and o.step
+            key = f"{k}_epoch" if both else k
+            self.callback_metrics[k] = self.callback_metrics[key] = v
+            if both and k in lasts:
+                self.callback_metrics[f"{k}_step"] = lasts[k]
+            if o.logger:
+                sent[key] = v
+            if o.prog_bar:
+                self.progress_bar_metrics[key] = v
+        return sent
+
+    @staticmethod
+    def _for_loggers(values: dict[str, float], model: Module) -> dict[str, float]:
+        opts = model._gl_log_options
+        return {k: v for k, v in values.items() if k not in opts or opts[k].logger}
 
     def _aggregate(
         self,
@@ -1937,7 +1994,11 @@ class Trainer:
             values = rt.reduce_metrics(means, {}, {}, {})
         else:
             values = {k: float(v) for k, v in model._gl_step_logs.items()}
+        opts = model._gl_log_options
         self.callback_metrics.update(values)
+        self.callback_metrics.update(
+            {f"{k}_step": v for k, v in values.items() if k in opts and opts[k].on_epoch}
+        )
 
     def _broadcast_flag(self, flag: bool) -> bool:
         rt = self.runtime
@@ -1960,13 +2021,23 @@ class Trainer:
             self._step_rows[-1].update(metrics)
         else:
             self._step_rows.append({"epoch": self.current_epoch, "step": step, **metrics})
-        self.logged_metrics.update(metrics)
         self._log_to_loggers(metrics, step)
 
-    def _log_to_loggers(self, metrics: dict[str, float], step: int) -> None:
+    def _log_to_loggers(
+        self, metrics: dict[str, float], step: int | None = None, epoch: bool = True
+    ) -> None:
+        """Send values to the loggers, with Lightning's step numbers: counted from 0 while
+        fitting (the first optimizer step is step 0), ``global_step`` for a ``validate`` or
+        ``test`` after it. ``epoch`` adds the epoch; evaluation's per-step rows have none."""
+        if not metrics:
+            return
+        self.logged_metrics.update(metrics)
         if not self.loggers or not self.is_global_zero:
             return
-        out = dict(metrics)
+        if step is None:
+            fitting = self.state.fn == "fit"
+            step = max(0, self.global_step - 1) if fitting else self.global_step
+        out = {**metrics, "epoch": self.current_epoch} if epoch else dict(metrics)
         if self.log_key_prefix:
             for key in ("epoch", "epoch_seconds"):
                 if key in out:
@@ -2046,18 +2117,24 @@ class Trainer:
                     opts = model._gl_log_options
                     no_idx = model.__dict__.get("_gl_no_idx", ())
                     size: float | None = None
+                    step_values: dict[str, float] = {}
                     for k, v in model._gl_step_logs.items():
                         name = f"{k}/dataloader_idx_{dl_idx}" if many and k not in no_idx else k
                         logged[name].append(v)
                         o = opts.get(k)
                         if o is not None:
                             options[name] = o
+                            if o.on_step and o.logger:  # asked for: reads the value every step
+                                step_values[_suffixed(name, "step")] = float(v)
                         if o is not None and o[3] is not None:
                             weights[name].append(o[3])
                         else:  # weight the epoch mean by the inferred batch size (Lightning)
                             if size is None:
                                 size = _batch_size(batch)
                             weights[name].append(size)
+                    if step_values and self.state.stage != "sanity_check":
+                        self._log_to_loggers(step_values, self._eval_log_step, epoch=False)
+                        self._eval_log_step += 1
                     if model._gl_metrics:
                         for k, m in model._gl_metrics.items():
                             metric_objects[
@@ -2073,11 +2150,24 @@ class Trainer:
             self.num_val_batches = sizes if many else sizes[0]
         if prof is not None:
             prof.stop(f"run_{stage}")
-        metrics = self._aggregate(rt, logged, weights, options, count)
-        metrics.update(_compute_metrics(metric_objects))
-        self.callback_metrics.update(metrics)
+        values = self._aggregate(rt, logged, weights, options, count)
+        values.update(_compute_metrics(metric_objects))
+        metrics: dict[str, float] = {}
+        sent: dict[str, float] = {}
+        for k, v in values.items():
+            o = options.get(k)
+            if o is not None and o.on_step and o.on_epoch is False:
+                continue  # per step only
+            key = _suffixed(k, "epoch") if o is not None and o.on_step else k
+            metrics[key] = self.callback_metrics[k] = self.callback_metrics[key] = v
+            if o is None or o.logger:
+                sent[key] = v
+            if o is not None and o.prog_bar:
+                self.progress_bar_metrics[key] = v
         extra_logs = self._call_epoch_end(f"on_{stage}_epoch_end", model)
         metrics.update(extra_logs)
+        if self.state.stage != "sanity_check":
+            self._log_to_loggers({**sent, **self._for_loggers(extra_logs, model)})
         self._call_monitors(f"on_{stage}_epoch_end", model)
         self._call_hook(f"on_{stage}_end")
         model._gl_metrics = outer_metrics
@@ -2245,14 +2335,14 @@ class Trainer:
                     print(f"{k:<{width}}  {v:.6g}")
             return _Results(metrics)
         rt, model, loaders = self._eval_entry(stage, model, dataloaders, ckpt_path, datamodule)
+        self.callback_metrics = {}
+        self._eval_log_step = 0
         try:
             metrics = self._evaluate(rt, model, loaders, step, grad_context=self._eval_context(rt))
             if in_gpulayer_job() and rt.is_global_zero:
                 # a launched run: the launching process reads these back
                 out = rt.output_dir()
                 (out / f"{stage}-{call}.json").write_text(json.dumps(metrics))
-            self.callback_metrics.update(metrics)
-            self._log_to_loggers(metrics, self.global_step)
             self._teardown_model(model, stage)
             self.state.status = "finished"
             if verbose and metrics and rt.is_global_zero:
@@ -2519,6 +2609,7 @@ class Trainer:
             "gpulayer_version": __version__,
             "state_dict": model_state,
             "history": self.history,
+            "callback_metrics": dict(self.callback_metrics),
         }
         done = self._batch_counter
         if self.state.stage == "train" and done and done < self.num_training_batches:
@@ -2789,6 +2880,18 @@ def _resume_path(ckpt_path: str | Path | None) -> str | Path | None:
         if folder.is_dir():
             return folder
     return ckpt_path
+
+
+def _suffixed(name: str, kind: str) -> str:
+    """``<name>_step`` or ``<name>_epoch``, before any ``/dataloader_idx_N`` (Lightning)."""
+    base, sep, rest = name.partition("/dataloader_idx_")
+    return f"{base}_{kind}{sep}{rest}"
+
+
+def _metrics_of(history: list[dict[str, Any]]) -> dict[str, float]:
+    """``callback_metrics`` of a run known only by its history."""
+    last = history[-1] if history else {}
+    return {k: v for k, v in last.items() if k not in ("epoch", "epoch_seconds")}
 
 
 def _compute_metrics(metrics: dict[str, Any]) -> dict[str, float]:
