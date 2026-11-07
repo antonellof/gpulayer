@@ -47,7 +47,7 @@ remote = ["fsspec>=2024.1"]
 gcp = ["google-auth>=2.20", "requests>=2.28"]
 dev = ["pytest>=7.4", "ruff>=0.4", "mypy>=1.8", "prometheus-client>=0.20"]
 # tests/conformance: the same code on PyTorch Lightning and on the Trainer.
-conformance = ["lightning>=2.5", "torchmetrics>=1.0", "fsspec>=2024.1"]
+conformance = ["lightning>=2.5", "torchmetrics>=1.0", "fsspec>=2024.1", "torchdata>=0.8"]
 
 [project.scripts]
 gpulayer = "gpulayer.cli.main:main"

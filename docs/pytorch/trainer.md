@@ -167,7 +167,13 @@ trainer.fit(model, train_loader, ckpt_path="gpulayer_runs/my_project-train/check
 ```
 
 `ckpt_path` restores the model, optimizers, schedulers, callbacks and step counters; a local
-checkpoint is uploaded with a launched job. `ckpt_path="last"` picks the newest `last*.ckpt` of
+checkpoint is uploaded with a launched job. In one process a resumed run also gives the same
+weights as one that never stopped: checkpoints hold the random number generators (torch, Python,
+NumPy, CUDA, MPS), a run resumed within an epoch rebuilds that epoch's order and skips the trained
+batches in the sampler, without reading them, and a `torchdata` `StatefulDataLoader` continues
+by itself. Across processes the data order is exact, but each rank's own random numbers are not
+restored. A loader of an iterable dataset is read and thrown away up to where it stopped. Some
+GPU operations are not deterministic unless `deterministic=True`. `ckpt_path="last"` picks the newest `last*.ckpt` of
 this Trainer, its `ModelCheckpoint` folders and the run folder, or starts from scratch if there
 is none, so one script can both start and continue a run; `"best"` needs a `ModelCheckpoint`.
 A rerun of a launched script finds its checkpoint in `gpulayer_runs/<job-id>/`: pass that path. After `fit`, `trainer.callback_metrics`,
