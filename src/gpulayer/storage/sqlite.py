@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, state TEXT NOT NULL, spec TEXT NOT NULL,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
   cancel_requested INTEGER NOT NULL DEFAULT 0, error TEXT, scheduling TEXT, result TEXT,
-  rendezvous TEXT, provisioning_deadline TEXT, submitted_by TEXT
+  rendezvous TEXT, provisioning_deadline TEXT, submitted_by TEXT, resume_artifact TEXT
 );
 CREATE INDEX IF NOT EXISTS jobs_state ON jobs(state, created_at);
 CREATE INDEX IF NOT EXISTS jobs_undecided ON jobs(state, created_at) WHERE scheduling IS NULL;
@@ -111,6 +111,9 @@ class SqliteStore:
                 self._conn.execute("ALTER TABLE tasks ADD COLUMN devices TEXT")
             if "endpoint" not in cols:
                 self._conn.execute("ALTER TABLE tasks ADD COLUMN endpoint TEXT")
+            job_cols = {r[1] for r in self._conn.execute("PRAGMA table_info(jobs)")}
+            if "resume_artifact" not in job_cols:
+                self._conn.execute("ALTER TABLE jobs ADD COLUMN resume_artifact TEXT")
             log_cols = {r[1] for r in self._conn.execute("PRAGMA table_info(logs)")}
             if "rank" not in log_cols:
                 self._conn.execute("ALTER TABLE logs ADD COLUMN rank INTEGER")

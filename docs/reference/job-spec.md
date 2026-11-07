@@ -31,7 +31,8 @@ fields are rejected.
 | `secrets` | list of `SecretRef` | `[]` | resolved from the worker's environment |
 | `inputs` | list of `{artifact, path}` | `[]` | staged at `$GPULAYER_INPUT_DIR/path` |
 | `timeout_seconds` | number | none | from process start; artifact fetches and the environment build do not count |
-| `retry` | `{max_attempts, retry_on}` | `1`, `["worker_lost"]` | not for distributed jobs |
+| `retry` | `{max_attempts, retry_on}` | `1`, `["worker_lost"]` | `retry_on`: `worker_lost`, `preempted` (SIGTERM, exit code 143), `failed`. A distributed job needs `resume` to retry |
+| `resume` | `{path}` | none | keeps the newest checkpoint (default path `checkpoints/last.ckpt`, relative to the output folder) on the control plane and gives it to the next attempt ([ADR-0025](../decisions/ADR-0025-keeping-checkpoints-and-restarting-groups.md)). Needs 0.10 workers |
 | `labels` | map | `{}` | free-form |
 | `environment` | object | none | `{requirements: [...], requirements_file: "path in bundle"}`, installed once per worker ([details](../workloads/frameworks.md#extra-packages-for-one-job)) |
 

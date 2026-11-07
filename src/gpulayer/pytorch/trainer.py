@@ -27,6 +27,7 @@ from typing import Any
 import torch
 from torch.utils.data import DataLoader, DistributedSampler, SequentialSampler
 
+from gpulayer.contracts.models import CHECKPOINT_MARKER, RESUME_INPUT
 from gpulayer.errors import ValidationFailed
 from gpulayer.pytorch.accelerators import Accelerator, accelerator_name
 from gpulayer.pytorch.callbacks import Callback, Checkpoint
@@ -66,7 +67,6 @@ from gpulayer.sdk.remote import RemoteError, default_client, default_target, exp
 CHECKPOINT = "checkpoints/last.ckpt"
 # cuDNN autotuning pays off from about this many optimizer steps (see Trainer.fit).
 AUTOTUNE_MIN_STEPS = 1000
-RESUME_INPUT = "gpulayer-resume.ckpt"
 UNLIMITED_EPOCHS = 10**9
 
 
@@ -2228,6 +2228,10 @@ class Trainer:
         """Resolve ``fit``'s ``ckpt_path``. Inside a launched job the checkpoint found by the
         launching process has arrived as an input; the job must use it. With ``"last"`` and
         nothing to resume from, training starts from the beginning, as in Lightning."""
+        kept = _kept_checkpoint()
+        if kept is not None:
+            self._say(f"[gpulayer] attempt {os.environ['GPULAYER_ATTEMPT']}: resuming")
+            return kept
         shipped = _resume_path(ckpt_path)
         if shipped != ckpt_path:
             return shipped
@@ -2650,6 +2654,9 @@ class Trainer:
                 return None
         else:
             self.checkpoint_io.save_checkpoint(checkpoint, path)
+        if os.environ.get("GPULAYER_CHECKPOINT_STREAM") and Path(CHECKPOINT).name == p.name:
+            # The worker keeps this file for the next attempt, without making training wait.
+            print(CHECKPOINT_MARKER, flush=True)
         for lg in self.loggers:
             if not is_remote(path):  # loggers upload a local file
                 lg.after_save_checkpoint(path)
@@ -2868,6 +2875,17 @@ def _materialize(loader: Any) -> Any:
     if callable(loader) and not hasattr(loader, "__iter__"):
         return loader()
     return loader
+
+
+def _kept_checkpoint() -> Path | None:
+    """In a later attempt of a job with a resume policy, the checkpoint the control plane
+    kept from the attempt before. It is newer than any ``ckpt_path`` the script names."""
+    attempt = int(os.environ.get("GPULAYER_ATTEMPT", "1"))
+    folder = os.environ.get("GPULAYER_INPUT_DIR")
+    if attempt < 2 or not folder or "GPULAYER_CHECKPOINT_STREAM" not in os.environ:
+        return None
+    kept = Path(folder) / RESUME_INPUT
+    return kept if kept.is_file() else None
 
 
 def _resume_path(ckpt_path: str | Path | None) -> str | Path | None:

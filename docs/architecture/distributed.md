@@ -10,7 +10,7 @@ layer of its own. See ADR-0007.
 ## Flow
 
 1. Submission rejects distributed MPS, `nccl` without CUDA, `procs_per_worker > gpu_count` and
-   automatic retries.
+   automatic retries without a resume policy.
 2. The scheduler picks `num_workers` distinct, available, compatible workers in one step. They
    must share a torch version and support the job's launcher and backend. Multi-node jobs need
    an `advertise_address` on each worker. If no such group exists, the job stays queued.
@@ -46,9 +46,12 @@ layer of its own. See ADR-0007.
 
 ## Checkpoints and retries
 
-A partially executed group is never retried automatically. Checkpointing is up to the
-workload: write checkpoints to `GPULAYER_OUTPUT_DIR` (returned as artifacts) or to your own
-storage, then resubmit with an input pointing at them.
+A partially executed group is never replayed. With a resume policy (`JobSpec.resume`), the
+control plane keeps the job's newest checkpoint while it runs, and after a lost worker or a
+SIGTERM the whole group restarts from it, once every rank of the old attempt has stopped
+([ADR-0025](../decisions/ADR-0025-keeping-checkpoints-and-restarting-groups.md)). Without one,
+checkpointing is up to the workload: write checkpoints to `GPULAYER_OUTPUT_DIR` (returned as
+artifacts) or to your own storage, then resubmit with an input pointing at them.
 
 ## Processes, threads and logs
 

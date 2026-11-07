@@ -50,7 +50,12 @@ from gpulayer.contracts import (
     WorkerStatus,
     utcnow,
 )
-from gpulayer.contracts.models import JOB_TRANSITIONS
+from gpulayer.contracts.models import (
+    JOB_TRANSITIONS,
+    RESUME_INPUT,
+    SIGTERM_EXIT_CODES,
+    InputArtifact,
+)
 from gpulayer.control_plane.scheduler import (
     WorkerView,
     ever_schedulable,
@@ -807,12 +812,13 @@ class ControlPlane:
             self.reconcile()
             self.schedule_pending()
         rows = self.store.query(
-            "SELECT t.*, j.spec, j.rendezvous FROM tasks t JOIN jobs j ON j.id=t.job_id "
+            "SELECT t.*, j.spec, j.rendezvous, j.resume_artifact FROM tasks t "
+            "JOIN jobs j ON j.id=t.job_id "
             "WHERE t.worker_id=? AND t.state=? ORDER BY j.created_at, t.node_rank",
             (worker_id, TaskState.ASSIGNED.value),
         )
         for r in rows:
-            spec = JobSpec.model_validate_json(r["spec"])
+            spec = self._with_resume(JobSpec.model_validate_json(r["spec"]), r["resume_artifact"])
             rdzv = RendezvousInfo.model_validate_json(r["rendezvous"]) if r["rendezvous"] else None
             if isinstance(spec.workload, DistributedJob) and r["node_rank"] > 0 and rdzv is None:
                 continue  # wait for rank 0 to publish the rendezvous endpoint
@@ -942,6 +948,41 @@ class ControlPlane:
                     )
                 self._set_job_state(task["job_id"], JobState.RUNNING)
 
+    def checkpoint_task(self, worker_id: str, task_id: str, artifact: ArtifactReference) -> None:
+        """A running attempt stored a newer checkpoint: it replaces the job's previous one
+        (ADR-0025). Reports from an attempt that is no longer current are ignored."""
+        task = self._owned_task(worker_id, task_id)
+        if not self.artifacts.exists(artifact.sha256):
+            raise NotFound(f"artifact {artifact.sha256} not found")
+        with self.store.tx() as c:
+            row = c.execute(
+                "SELECT spec, attempts, resume_artifact FROM jobs WHERE id=?", (task["job_id"],)
+            ).fetchone()
+            if row["attempts"] != task["attempt"] or task["node_rank"] != 0:
+                return
+            if JobSpec.model_validate_json(row["spec"]).resume is None:
+                raise Conflict("this job did not ask to keep checkpoints (resume)")
+            c.execute(
+                "UPDATE jobs SET resume_artifact=? WHERE id=?",
+                (artifact.model_dump_json(), task["job_id"]),
+            )
+        self.store.inc("gpulayer_checkpoints_kept_total", {})
+        if row["resume_artifact"]:
+            old = ArtifactReference.model_validate_json(row["resume_artifact"])
+            if old.sha256 != artifact.sha256:
+                self.artifacts.delete(old.sha256)  # checkpoints are large; only one is needed
+
+    def _with_resume(self, spec: JobSpec, resume_artifact: str | None) -> JobSpec:
+        """The spec an attempt runs: a kept checkpoint is one more input, in the place of an
+        earlier resume input."""
+        if spec.resume is None or not resume_artifact:
+            return spec
+        kept = InputArtifact(
+            artifact=ArtifactReference.model_validate_json(resume_artifact), path=RESUME_INPUT
+        )
+        others = [i for i in spec.inputs if i.path != RESUME_INPUT]
+        return spec.model_copy(update={"inputs": [*others, kept]})
+
     def executing_task(self, worker_id: str, task_id: str) -> None:
         """The task's process has started (preparation is over): the backstop deadline now
         counts ``timeout_seconds`` from here, matching the worker's own timeout. Idempotent
@@ -1053,7 +1094,9 @@ class ControlPlane:
                 if t.state in (TaskState.FAILED, TaskState.LOST, TaskState.TIMED_OUT)
             ]
             if distributed and bad and not all(s.terminal for s in states):
-                # fail_fast: one failed node invalidates the group; stop the others.
+                # fail_fast: one failed node invalidates the group; stop the others. A group
+                # that will restart waits until they have stopped: the new attempt must not
+                # meet the old one on its GPUs or at its checkpoint.
                 c.execute(
                     "UPDATE tasks SET cancel_requested=1 WHERE job_id=? AND attempt=? AND state=?",
                     (job_id, row["attempts"], TaskState.RUNNING.value),
@@ -1069,11 +1112,29 @@ class ControlPlane:
                         TaskState.ASSIGNED.value,
                     ),
                 )
-                self._resolve_terminal(job_id, spec, tasks, row)
+                if spec.resume is None or not self._retries(spec, tasks, row):
+                    self._resolve_terminal(job_id, spec, tasks, row)
                 return
             if not all(s.terminal for s in states):
                 return
             self._resolve_terminal(job_id, spec, tasks, row)
+
+    @staticmethod
+    def _retry_reason(task: TaskStatus) -> str | None:
+        if task.state == TaskState.LOST:
+            return "worker_lost"
+        if task.state != TaskState.FAILED:
+            return None
+        return "preempted" if task.exit_code in SIGTERM_EXIT_CODES else "failed"
+
+    def _retries(self, spec: JobSpec, tasks: list[TaskStatus], row: Any) -> str | None:
+        """The reason this job gets another attempt, or None. Distributed jobs need a resume
+        policy, which ``JobSpec`` checks; ranks of a group that lost a peer fail in ways of
+        their own, so any task's reason counts."""
+        if row["attempts"] >= spec.retry.max_attempts or row["cancel_requested"]:
+            return None
+        reasons = [r for r in map(self._retry_reason, tasks) if r in spec.retry.retry_on]
+        return reasons[0] if reasons else None
 
     def _resolve_terminal(
         self, job_id: str, spec: JobSpec, tasks: list[TaskStatus], row: Any
@@ -1086,20 +1147,14 @@ class ControlPlane:
         if row["cancel_requested"]:
             self._set_job_state(job_id, JobState.CANCELLED)
             return
-        reason_map = {TaskState.LOST: "worker_lost", TaskState.FAILED: "failed"}
-        failed = [t for t in tasks if t.state in reason_map]
-        if (
-            spec.workload_type.value in ("independent", "service")
-            and failed
-            and reason_map[failed[0].state] in retry.retry_on
-            and row["attempts"] < retry.max_attempts
-            and not row["cancel_requested"]
-        ):
+        failed = [t for t in tasks if t.state in (TaskState.LOST, TaskState.FAILED)]
+        reason = self._retries(spec, tasks, row)
+        if reason is not None:
             with self.store.tx():
                 self._set_job_state(
                     job_id,
                     JobState.QUEUED,
-                    message=f"retrying after {reason_map[failed[0].state]} (attempt "
+                    message=f"retrying after {reason} (attempt "
                     f"{row['attempts']} of {retry.max_attempts}); side effects may repeat",
                 )
             self.schedule_pending()
@@ -1138,6 +1193,14 @@ class ControlPlane:
         rank0_out = outcomes.get(rank0.task_id) if rank0 else None
         exit_codes = [t.exit_code for t in tasks if t.exit_code is not None]
         outputs = [o for out in outcomes.values() for o in out.outputs]
+        if row["resume_artifact"]:
+            kept = ArtifactReference.model_validate_json(row["resume_artifact"])
+            returned = kept.sha256 in {o.sha256 for o in outputs}
+            if row["state"] != JobState.SUCCEEDED.value and not returned:
+                # The attempts ran out: the newest checkpoint is the job's way forward.
+                outputs.append(kept.model_copy(update={"name": "resume/last.ckpt"}))
+            elif not returned:
+                self.artifacts.delete(kept.sha256)
         result = JobResult(
             job_id=job_id,
             state=JobState(row["state"]),

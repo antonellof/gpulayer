@@ -362,6 +362,11 @@ class HttpWorkerChannel:
     def executing(self, task_id: str) -> None:
         self.t.request("POST", f"/v1/worker/tasks/{task_id}/executing", {})
 
+    def checkpoint(self, task_id: str, artifact: ArtifactReference) -> None:
+        self.t.request(
+            "POST", f"/v1/worker/tasks/{task_id}/checkpoint", artifact.model_dump(mode="json")
+        )
+
     def report_endpoint(self, task_id: str, endpoint: str | None) -> None:
         self.t.request("POST", f"/v1/worker/tasks/{task_id}/endpoint", {"endpoint": endpoint})
 

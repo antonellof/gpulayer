@@ -1915,6 +1915,7 @@ glt.launch(
     env: dict[str, str] | None = None,
     inputs: dict[str, str | Path] | None = None,
     timeout_seconds: float | None = None,
+    max_attempts: int = 1,
     requirements: list[str] | None = None,
     requirements_file: str | None = None,
     name: str | None = None,
@@ -1929,6 +1930,11 @@ Submit this script as a GPUlayer job, or return `None` when already inside one.
 
 `inputs` maps a path under `$GPULAYER_INPUT_DIR` in the job to a local file, which is
 uploaded and placed there on every node (for example a checkpoint to resume from).
+
+`max_attempts` above 1 runs the job again when a worker is lost or preempted (SIGTERM),
+from the newest `checkpoints/last.ckpt`, which is kept on the control plane while the job
+runs; a group of machines restarts as a whole (ADR-0025). A crash in the script is not
+retried.
 
 `requirements` / `requirements_file` (relative to the script's directory) add packages
 the workers do not have; each worker installs them once and reuses them (ADR-0022).

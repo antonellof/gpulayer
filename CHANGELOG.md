@@ -41,6 +41,15 @@ before 1.0, minor versions may change public APIs, with migration notes here.
   ending a run with `max_steps` within an epoch validated once more. Validation now runs at
   the interval's multiples only (with `val_check_interval=3` and 10 batches: after 3, 6 and 9),
   as in Lightning.
+- New: automatic resume (ADR-0025). `launch(max_attempts=N)` and
+  `Trainer(launch_options={"max_attempts": N})` keep the job's newest `last.ckpt` on the control
+  plane while it runs, without making training wait, and start the next attempt from it after a
+  lost worker or a SIGTERM. Distributed jobs can now retry: the whole group restarts from the
+  checkpoint, after every rank of the old attempt has stopped. New: `JobSpec.resume`, the retry
+  reason `preempted`, and `POST /v1/worker/tasks/{id}/checkpoint`. A job with `resume` needs 0.10
+  workers; other jobs run on any worker. Tested with real processes on one machine; not yet on
+  a reclaimed cloud VM. `from-lightning.md` said SLURM's requeue was not needed, which
+  overstated what 0.9 did: retries started over.
 - New CI job and `tests/conformance`: the same code runs on PyTorch Lightning and on the
   Trainer and must behave the same; differences not fixed yet are listed as strict `xfail`s.
   `pip install -e '.[conformance]'` adds what it needs.

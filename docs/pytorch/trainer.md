@@ -173,6 +173,27 @@ is none, so one script can both start and continue a run; `"best"` needs a `Mode
 A rerun of a launched script finds its checkpoint in `gpulayer_runs/<job-id>/`: pass that path. After `fit`, `trainer.callback_metrics`,
 `trainer.history`, `trainer.checkpoint_path` and `trainer.launch_result` hold the results.
 
+### Surviving preemption
+
+```python
+trainer = glt.Trainer(max_epochs=100, accelerator="cuda", devices=4, num_nodes=2,
+                      launch_options={"max_attempts": 5})
+trainer.fit(model, loader)
+```
+
+With `max_attempts` above 1, the worker stores each new `last.ckpt` on the control plane in the
+background, without making training wait. When a worker is lost or the job gets a SIGTERM (a
+Spot VM being reclaimed), the job runs again and `fit` continues from the newest checkpoint.
+A group of machines restarts as a whole, after every rank of the old attempt has stopped. A
+crash in your code is not retried. If the attempts run out, the checkpoint comes back in the
+job's outputs as `resume/last.ckpt`.
+
+What repeats is the work since the last `last.ckpt`, by default up to one epoch: add
+`ModelCheckpoint(every_n_train_steps=..., save_last=True)` to lose less. Sharded checkpoints and
+a remote `default_root_dir` are not kept this way ([ADR-0025](../decisions/ADR-0025-keeping-checkpoints-and-restarting-groups.md)).
+Tested with real processes on one machine, with the job sending itself a SIGTERM; not yet on a
+reclaimed cloud VM.
+
 ### Object stores
 
 `default_root_dir`, `ModelCheckpoint(dirpath=...)`, `ckpt_path`, `save_checkpoint`,
