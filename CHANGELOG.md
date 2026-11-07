@@ -3,6 +3,12 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
+## Unreleased
+
+- Fix: `self.log(name, metric)` with a `torchmetrics.Metric` raised `TypeError`. The Trainer
+  now computes the metric once at the end of the epoch or evaluation and resets it; the
+  metric syncs across processes itself. No new dependency, and no added cost for tensors.
+
 ## 0.9.2 (2026-11-04)
 
 - Fix: a task the control plane's timeout backstop marked timed out kept running on its

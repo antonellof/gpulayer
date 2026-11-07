@@ -93,6 +93,7 @@ class Module(HyperparametersMixin, nn.Module):
         super().__init__(*args, **kwargs)
         self._gl_step_logs: dict[str, Any] = {}
         self._gl_log_options: dict[str, tuple[str, bool, bool, float | None]] = {}
+        self._gl_metrics: dict[str, Any] = {}  # torchmetrics objects logged in this loop
         self.trainer: Any = None
         self._gl_automatic_optimization = True
         self.example_input_array: Any = None
@@ -313,14 +314,23 @@ class Module(HyperparametersMixin, nn.Module):
         metric_attribute: str | None = None,
         rank_zero_only: bool = False,
     ) -> None:
-        """Record a scalar for this step. The Trainer aggregates it over the epoch with
+        """Record a scalar or a ``torchmetrics.Metric`` for this step. The Trainer aggregates a
+        scalar over the epoch with
         ``reduce_fx`` ("mean", "sum", "max" or "min"; a mean is weighted by ``batch_size``,
         or by the size Lightning infers from the batch when it is not given) and combines
         it across processes with the same ``reduce_fx``. ``prog_bar`` shows it in the
         progress bar. ``sync_dist`` is accepted for compatibility: epoch values are always
-        combined across processes."""
+        combined across processes.
+
+        A ``Metric`` is computed once at the end of the epoch or evaluation and then reset; it
+        syncs across processes itself, inside ``compute()``. Call it (or ``update``) in the
+        step and pass the object, as in Lightning."""
         if not add_dataloader_idx:
             self.__dict__.setdefault("_gl_no_idx", set()).add(name)
+        if isinstance(value, torch.nn.Module):
+            value = self._log_metric(name, value)
+            if value is None:  # update() only: nothing to show for this step
+                return
         if reduce_fx == "mean" and not prog_bar and batch_size is None and on_step is not False:
             # The common call, kept short: it runs every step.
             if isinstance(value, torch.Tensor):
@@ -350,6 +360,20 @@ class Module(HyperparametersMixin, nn.Module):
             on_step is not False,
             float(batch_size) if batch_size is not None else None,
         )
+
+    def _log_metric(self, name: str, metric: torch.nn.Module) -> torch.Tensor | None:
+        """Keep ``metric`` for the end of this loop; return this batch's value, if it has
+        one (``metric(preds, target)`` sets it, ``metric.update(...)`` does not)."""
+        if not callable(getattr(metric, "compute", None)) or not callable(
+            getattr(metric, "reset", None)
+        ):
+            raise ValidationFailed(
+                f"self.log({name!r}, ...) got a {type(metric).__name__}: pass a number, a "
+                "tensor or a torchmetrics.Metric"
+            )
+        self._gl_metrics[name] = metric
+        cached = getattr(metric, "_forward_cache", None)
+        return cached if isinstance(cached, torch.Tensor) else None
 
     def log_dict(self, dictionary: dict[str, Any], **kwargs: Any) -> None:
         """``self.log`` for each item of ``dictionary``, with the same options."""

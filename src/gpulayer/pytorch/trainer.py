@@ -858,6 +858,7 @@ class Trainer:
         if overridden(model, name, Module):
             getattr(model, name)()
         extra = {k: float(v) for k, v in model._gl_step_logs.items()}
+        extra.update(_compute_metrics(model._gl_metrics))
         model._gl_step_logs = {}
         if extra:
             self.callback_metrics.update(extra)
@@ -1760,6 +1761,7 @@ class Trainer:
         if automatic:
             self._step_schedulers("epoch")
         metrics = self._aggregate(rt, logged, weights, model._gl_log_options, count)
+        metrics.update(_compute_metrics(model._gl_metrics))
         final = epoch + 1 == self.max_epochs or (
             self.max_steps is not None and self.global_step >= self.max_steps
         )
@@ -1997,6 +1999,9 @@ class Trainer:
         logged: dict[str, list[Any]] = defaultdict(list)
         weights: dict[str, list[float]] = defaultdict(list)
         options: dict[str, Any] = {}
+        # A validation inside a training epoch must not compute the training metrics.
+        outer_metrics, model._gl_metrics = model._gl_metrics, {}
+        metric_objects: dict[str, Any] = {}
         count = 0
         lim_name = "limit_val_batches" if stage == "validation" else "limit_test_batches"
         ctx = grad_context if grad_context is not None else torch.no_grad()
@@ -2038,6 +2043,12 @@ class Trainer:
                             if size is None:
                                 size = _batch_size(batch)
                             weights[name].append(size)
+                    if model._gl_metrics:
+                        for k, m in model._gl_metrics.items():
+                            metric_objects[
+                                f"{k}/dataloader_idx_{dl_idx}" if many and k not in no_idx else k
+                            ] = m
+                        model._gl_metrics = {}
                     count += 1
                     for fn in batch_end:
                         fn(out, batch, batch_idx, *extra)
@@ -2048,11 +2059,13 @@ class Trainer:
         if prof is not None:
             prof.stop(f"run_{stage}")
         metrics = self._aggregate(rt, logged, weights, options, count)
+        metrics.update(_compute_metrics(metric_objects))
         self.callback_metrics.update(metrics)
         extra_logs = self._call_epoch_end(f"on_{stage}_epoch_end", model)
         metrics.update(extra_logs)
         self._call_monitors(f"on_{stage}_epoch_end", model)
         self._call_hook(f"on_{stage}_end")
+        model._gl_metrics = outer_metrics
         if overridden(model, f"on_{stage}_model_train", Module):
             getattr(model, f"on_{stage}_model_train")()
         else:  # each submodule back to its mode before (frozen parts stay in eval), as Lightning
@@ -2726,6 +2739,24 @@ def _resume_path(ckpt_path: str | Path | None) -> str | Path | None:
         if folder.is_dir():
             return folder
     return ckpt_path
+
+
+def _compute_metrics(metrics: dict[str, Any]) -> dict[str, float]:
+    """Compute and reset the ``torchmetrics`` objects logged in a loop, and forget them. Each
+    syncs across processes in ``compute()``; every rank logs the same names, so the
+    collectives line up."""
+    values: dict[str, float] = {}
+    for name, metric in metrics.items():
+        value = metric.compute()
+        if isinstance(value, torch.Tensor) and value.numel() != 1:
+            raise ValidationFailed(
+                f"self.log({name!r}, metric): compute() returned a tensor of shape "
+                f"{tuple(value.shape)}; log a metric that computes one value"
+            )
+        values[name] = float(value)
+        metric.reset()
+    metrics.clear()
+    return values
 
 
 def _total(values: list[Any]) -> float:
