@@ -13,7 +13,8 @@ before 1.0, minor versions may change public APIs, with migration notes here.
   now get a note.
 - New: `scripts/validate_rocm.sh` for the first AMD machine, which also records `amd-smi` and
   `rocm-smi` output, since AMD publishes neither JSON format; `docs/guides/amd-rocm.md`; Docker
-  `EXTRAS=base-torch` for images on `rocm/pytorch` (not built yet).
+  `EXTRAS=base-torch` for images on `rocm/pytorch` (built on x86 and started; not run on a GPU).
+  The Dockerfile now also installs venv when a base image has Python without it.
 - Docs: ADR-0026 proposes how Ryzen AI NPUs fit in, as a service for inference.
 
 ## 0.10.0 (2026-11-07)

@@ -1,8 +1,10 @@
 # AMD ROCm
 
 **Status: implemented, not run on AMD hardware.** Everything below comes from the code, tests with
-simulated devices, and AMD's documentation. If you run it, the [validation](#validating-a-machine)
-tells us what works.
+simulated devices, and AMD's documentation. A real ROCm wheel (torch 2.15.0 nightly, ROCm 7.2) was
+tested on a machine with no AMD GPU: it reports `torch.version.hip` and the `nccl` backend, and the
+Trainer's loop tests pass on its CPU. If you run it on a GPU, the
+[validation](#validating-a-machine) tells us what works.
 
 ## Requirements
 
@@ -39,12 +41,14 @@ docker build -t gpulayer:rocm --build-arg BASE=rocm/pytorch:latest --build-arg E
 docker run --device=/dev/kfd --device=/dev/dri --group-add video --ipc=host --shm-size 8G gpulayer:rocm ...
 ```
 
-This image has not been built yet.
+Built on x86 with `rocm/pytorch:latest` (torch 2.14.0, ROCm 10.1) and started without a GPU; not run
+on one.
 
 ## What is different from NVIDIA
 
-- Several GPUs use the `nccl` backend, which is RCCL on a ROCm build. AMD's pages name RCCL but do
-  not say that `backend="nccl"` works: the validation checks it, and gloo as well.
+- Several GPUs use the `nccl` backend, which is RCCL on a ROCm build. The ROCm wheel includes that
+  backend, and AMD's pages name RCCL, but do not say that `backend="nccl"` works: the validation
+  checks it, and gloo as well.
 - GPU utilisation and memory in worker metrics and the dashboard are NVIDIA only.
 - GPUs in a machine are not ranked by interconnect, as they are on NVIDIA, because AMD does not
   publish the output of `amd-smi topology`.
