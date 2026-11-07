@@ -6,7 +6,9 @@
 Compares the ``__all__`` of Lightning's callbacks, loggers, profilers, plugins, strategies,
 accelerators and utilities, the Trainer's arguments and members, and the LightningModule's
 methods and hooks. Prints what is missing (nothing when GPUlayer covers them) and exits 1 if
-anything is. It reads Lightning's source and does not import it.
+anything is. It reads Lightning's source and does not import it, so it cannot see instance
+attributes or inherited names, and it says nothing about behaviour: tests/conformance runs the
+same code on both and compares names on live objects.
 """
 
 from __future__ import annotations

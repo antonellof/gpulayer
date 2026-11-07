@@ -339,6 +339,7 @@ class Trainer:
             )
         self.gradient_sync = gradient_sync
         self._strategy = resolve_strategy(strategy)
+        self._strategy.trainer = self
         precision = normalize_precision(precision)
         if isinstance(self._strategy, FSDPStrategy) and precision == "16-mixed":
             raise ValidationFailed(
@@ -347,7 +348,7 @@ class Trainer:
             )
         self.max_epochs = max_epochs
         self.min_epochs = min_epochs
-        self.max_steps = max_steps
+        self._max_steps = max_steps
         self.min_steps = min_steps
         self.check_val_every_n_epoch = check_val_every_n_epoch
         if val_check_interval is not None and (
@@ -367,10 +368,10 @@ class Trainer:
         self.gradient_clip_val = gradient_clip_val
         self.accumulate_grad_batches = accumulate_grad_batches
         self.log_every_n_steps = log_every_n_steps
-        self.limit_train_batches = limit_train_batches
-        self.limit_val_batches = limit_val_batches
-        self.limit_test_batches = limit_test_batches
-        self.limit_predict_batches = limit_predict_batches
+        self.limit_train_batches = 1.0 if limit_train_batches is None else limit_train_batches
+        self.limit_val_batches = 1.0 if limit_val_batches is None else limit_val_batches
+        self.limit_test_batches = 1.0 if limit_test_batches is None else limit_test_batches
+        self.limit_predict_batches = 1.0 if limit_predict_batches is None else limit_predict_batches
         self.enable_checkpointing = enable_checkpointing
         self.inference_mode = inference_mode
         self.use_distributed_sampler = use_distributed_sampler
@@ -423,7 +424,7 @@ class Trainer:
         self.interrupted = False
         self.ckpt_path: str | Path | None = None
         self.num_training_batches: int | float = math.inf
-        self.num_val_batches: int | float | list[int | float] = 0
+        self.num_val_batches: list[int | float] = []
         self.is_last_batch = False
         self.datamodule: DataModule | None = None
         self.train_dataloader: Any = None
@@ -438,6 +439,7 @@ class Trainer:
         self._is_log_step = False
         self._stepped = False
         self._train_epoch_log: dict[str, float] = {}
+        self._last_batch_idx = -1
         self._epoch_rng: dict[str, Any] | None = None
         self._restored_rng: dict[str, Any] | None = None
         self._restored_loaders: list[Any] | None = None
@@ -458,7 +460,7 @@ class Trainer:
         self._eval_calls: dict[str, int] = defaultdict(int)
         self._ds_engine: Any = None
         self._reloaded_train: Any = None
-        self._num_test_batches: int | float | list[int | float] = 0
+        self._num_test_batches: list[int | float] = []
         self._num_predict_batches: list[int | float] = []
 
     # ---------------------------------------------------------------- properties
@@ -467,6 +469,47 @@ class Trainer:
     def strategy(self) -> Strategy:
         """The strategy object (``DDPStrategy``, ``FSDPStrategy``, ...) from ``strategy=``."""
         return self._strategy
+
+    @property
+    def max_steps(self) -> int:
+        """The limit on optimizer steps; -1 for none, as in Lightning."""
+        return -1 if self._max_steps is None else self._max_steps
+
+    @max_steps.setter
+    def max_steps(self, value: int | None) -> None:
+        self._max_steps = None if value in (None, -1) else value
+
+    @property
+    def lightning_module(self) -> Module | None:
+        """The Module being trained: Lightning's name for ``module``."""
+        return self.module
+
+    @property
+    def val_check_batch(self) -> int | float:
+        """Training batches between validations."""
+        n = self.num_training_batches
+        every = self._val_every(None if n == math.inf else int(n))
+        return every if every is not None else n
+
+    @property
+    def fit_loop(self) -> _FitLoop:
+        """Lightning's most used loop state; ``fit_loop.max_epochs`` can be set."""
+        return _FitLoop(self)
+
+    @property
+    def validate_loop(self) -> _EvaluationLoop:
+        """Progress of the last validation."""
+        return _EvaluationLoop(self.num_val_batches)
+
+    @property
+    def test_loop(self) -> _EvaluationLoop:
+        """Progress of the last test."""
+        return _EvaluationLoop(self.num_test_batches)
+
+    @property
+    def predict_loop(self) -> _EvaluationLoop:
+        """Progress of the last prediction."""
+        return _EvaluationLoop(self.num_predict_batches)
 
     @property
     def module(self) -> Module | None:
@@ -613,7 +656,7 @@ class Trainer:
         return out
 
     @property
-    def num_test_batches(self) -> int | float | list[int | float]:
+    def num_test_batches(self) -> list[int | float]:
         """Test batches per loader of the last ``test``."""
         return self._num_test_batches
 
@@ -1130,8 +1173,8 @@ class Trainer:
 
     def _planned_steps(self, train: Any) -> int:
         """Optimizer steps this fit plans (0 when the loader's length is unknown)."""
-        if self.max_steps is not None:
-            return self.max_steps
+        if self._max_steps is not None:
+            return self._max_steps
         n = _len(train) if train is not None else None
         if n is None:
             return 0
@@ -1227,11 +1270,12 @@ class Trainer:
         dm = self.datamodule
         if dm is not None:
             dm.trainer = self
-        if rt.local_rank == 0:
-            if dm is not None:
-                dm.prepare_data()
-            if overridden(model, "prepare_data", Module):
-                model.prepare_data()
+        for owner, base in ((dm, DataModule), (model, Module)):
+            rank = (
+                rt.local_rank if getattr(owner, "prepare_data_per_node", True) else rt.global_rank
+            )
+            if owner is not None and rank == 0 and overridden(owner, "prepare_data", base):
+                owner.prepare_data()
         rt.barrier()
         with _no_log(model, "setup"):
             if dm is not None:
@@ -1275,7 +1319,8 @@ class Trainer:
         self._train_src = train_src
         train = self._prepare_loader(rt, train_src)
         val = self._prepare_loaders(rt, val_src)
-        self.train_dataloader, self.val_dataloaders = train, val
+        self.train_dataloader = train
+        self.val_dataloaders = val[0] if isinstance(val, list) and len(val) == 1 else val
         if rt.is_global_zero:
             _performance_hints(rt, loaders_of(train), self.num_devices)
         if rt.device.type == "cuda" and not self.deterministic:
@@ -1413,7 +1458,7 @@ class Trainer:
             where += f", two-level gradient sync ({rt.local_world_size} per machine)"
         planned = f"{self.max_epochs} epoch(s)"
         if self.max_epochs == UNLIMITED_EPOCHS:
-            planned = f"{self.max_steps} step(s)" if self.max_steps else "until stopped"
+            planned = f"{self._max_steps} step(s)" if self._max_steps else "until stopped"
         self._say(f"[gpulayer] training on {where}, precision {rt.precision}, {planned}")
         if rt.is_global_zero and self.loggers and self.enable_autolog_hparams:
             hp = {
@@ -1446,7 +1491,7 @@ class Trainer:
             )
         finished = self.current_epoch = start_epoch
         done = start_epoch >= self.max_epochs or (
-            self.max_steps is not None and self.global_step >= self.max_steps
+            self._max_steps is not None and self.global_step >= self._max_steps
         )
         if done:
             self._say("[gpulayer] nothing to train: the limits were reached already")
@@ -1511,7 +1556,7 @@ class Trainer:
             if self.max_time is not None and time.perf_counter() - fit_t0 >= self.max_time:
                 self.should_stop = True
                 self._say(f"[gpulayer] max_time of {self.max_time:g}s reached")
-            if self.max_steps is not None and self.global_step >= self.max_steps:
+            if self._max_steps is not None and self.global_step >= self._max_steps:
                 self.should_stop = True
             # Every rank must leave the loop together, or the next collective would hang.
             self.should_stop = rt.any(self.should_stop)
@@ -1827,7 +1872,7 @@ class Trainer:
             ):
                 self._sigterm_stop = True
                 return {}  # keeps _batch_counter: the checkpoint resumes after this batch
-            if self.max_steps is not None and self.global_step >= self.max_steps:
+            if self._max_steps is not None and self.global_step >= self._max_steps:
                 break  # same step count on every rank, so no extra synchronisation
             if single and (
                 self.max_time is not None and time.perf_counter() - fit_t0 >= self.max_time
@@ -1835,6 +1880,7 @@ class Trainer:
                 self.should_stop = True
             if single and self.should_stop and self._mins_met():
                 break  # one process: stop now (several processes stop at the epoch end)
+        self._last_batch_idx = self._batch_counter - 1
         self._batch_counter = 0
         if automatic:
             self._step_schedulers("epoch")
@@ -2217,9 +2263,9 @@ class Trainer:
                     for fn in batch_end:
                         fn(out, batch, batch_idx, *extra)
         if stage == "test":
-            self._num_test_batches = sizes if many else sizes[0]
+            self._num_test_batches = sizes
         else:
-            self.num_val_batches = sizes if many else sizes[0]
+            self.num_val_batches = sizes
         if prof is not None:
             prof.stop(f"run_{stage}")
         values = self._aggregate(rt, logged, weights, options, count)
@@ -2958,6 +3004,92 @@ def _without_shuffle(loader: DataLoader) -> DataLoader:
         pin_memory=loader.pin_memory,
         drop_last=loader.drop_last,
     )
+
+
+@dataclass
+class _Counts:
+    ready: int | float = 0
+    started: int | float = 0
+    processed: int | float = 0
+    completed: int | float = 0
+
+
+@dataclass
+class _Progress:
+    current: _Counts
+    total: _Counts
+
+
+def _progress(current: int | float, total: int | float) -> _Progress:
+    return _Progress(_Counts(*[current] * 4), _Counts(*[total] * 4))
+
+
+class _EvaluationLoop:
+    def __init__(self, batches: list[int | float]) -> None:
+        self.batch_progress = _progress(sum(batches), sum(batches))
+
+
+class _TrainingEpochLoop:
+    def __init__(self, trainer: Trainer) -> None:
+        self.trainer = trainer
+
+    @property
+    def batch_idx(self) -> int:
+        return self.trainer._last_batch_idx
+
+    @property
+    def global_step(self) -> int:
+        return self.trainer.global_step
+
+    @property
+    def max_steps(self) -> int:
+        return self.trainer.max_steps
+
+    @property
+    def batch_progress(self) -> _Progress:
+        t = self.trainer
+        return _progress(t._last_batch_idx + 1, t._total_batches)
+
+    @property
+    def val_loop(self) -> _EvaluationLoop:
+        return self.trainer.validate_loop
+
+
+class _FitLoop:
+    """A view of the Trainer's state under Lightning's names. GPUlayer's loop is one function,
+    not a tree of loop objects, so only what code usually reads is here."""
+
+    def __init__(self, trainer: Trainer) -> None:
+        self.trainer = trainer
+        self.epoch_loop = _TrainingEpochLoop(trainer)
+
+    @property
+    def max_epochs(self) -> int:
+        return self.trainer.max_epochs
+
+    @max_epochs.setter
+    def max_epochs(self, value: int) -> None:
+        self.trainer.max_epochs = value
+
+    @property
+    def min_epochs(self) -> int | None:
+        return self.trainer.min_epochs
+
+    @property
+    def max_steps(self) -> int:
+        return self.trainer.max_steps
+
+    @max_steps.setter
+    def max_steps(self, value: int) -> None:
+        self.trainer.max_steps = value
+
+    @property
+    def epoch_progress(self) -> _Progress:
+        return _progress(self.trainer.current_epoch, self.trainer.current_epoch)
+
+    @property
+    def batch_idx(self) -> int:
+        return self.trainer._last_batch_idx
 
 
 class _SkipFirst:

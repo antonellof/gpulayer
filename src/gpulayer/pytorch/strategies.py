@@ -36,9 +36,121 @@ class Strategy:
     checkpoint_io: Any = None
     precision_plugin: Any = None
 
+    trainer: Any = None  # set by the Trainer
+
     def ddp_kwargs(self) -> dict[str, Any]:
         """Keyword arguments for ``DistributedDataParallel`` (empty unless DDP is used)."""
         return {}
+
+    # What code usually reads through ``trainer.strategy``. GPUlayer's strategies describe
+    # how to train; the Runtime does it, so these ask the Runtime.
+
+    @property
+    def _runtime(self) -> Any:
+        return self.trainer.runtime if self.trainer is not None else None
+
+    @property
+    def _distributed(self) -> bool:
+        rt = self._runtime
+        return rt is not None and rt.distributed
+
+    @property
+    def root_device(self) -> Any:
+        """The device of this process."""
+        import torch
+
+        rt = self._runtime
+        return rt.device if rt is not None else torch.device("cpu")
+
+    @property
+    def global_rank(self) -> int:
+        """This process's rank across all machines."""
+        return self.trainer.global_rank if self.trainer is not None else 0
+
+    @property
+    def local_rank(self) -> int:
+        """This process's rank on its machine."""
+        return self.trainer.local_rank if self.trainer is not None else 0
+
+    @property
+    def node_rank(self) -> int:
+        """This machine's rank."""
+        return self.trainer.node_rank if self.trainer is not None else 0
+
+    @property
+    def world_size(self) -> int:
+        """Processes in the run."""
+        return self.trainer.world_size if self.trainer is not None else 1
+
+    @property
+    def is_global_zero(self) -> bool:
+        """True in the first process."""
+        return self.global_rank == 0
+
+    @property
+    def lightning_module(self) -> Any:
+        """The Module being trained."""
+        return self.trainer.module if self.trainer is not None else None
+
+    @property
+    def model(self) -> Any:
+        """The Module as the loop calls it (wrapped in DDP when distributed)."""
+        return self.trainer.model if self.trainer is not None else None
+
+    @property
+    def optimizers(self) -> list[Any]:
+        """The optimizers from ``configure_optimizers``."""
+        return list(self.trainer.optimizers) if self.trainer is not None else []
+
+    def barrier(self, name: str | None = None) -> None:
+        """Wait until every process reaches this point."""
+        if self._distributed:
+            self._runtime.barrier()
+
+    def broadcast(self, obj: Any, src: int = 0) -> Any:
+        """Process ``src``'s ``obj``, on every process. Not available on TPUs."""
+        if not self._distributed:
+            return obj
+        if self._runtime.xla:
+            raise ValidationFailed("strategy.broadcast is not available on TPUs")
+        import torch.distributed as dist
+
+        box = [obj]
+        dist.broadcast_object_list(box, src=src)
+        return box[0]
+
+    def reduce(self, tensor: Any, group: Any = None, reduce_op: str | None = "mean") -> Any:
+        """``tensor`` combined across processes: ``"mean"``, ``"sum"``, ``"max"`` or
+        ``"min"``."""
+        import torch
+
+        if not isinstance(tensor, torch.Tensor):
+            tensor = torch.tensor(tensor, device=self.root_device, dtype=torch.float32)
+        if not self._distributed:
+            return tensor
+        op = (reduce_op or "mean").lower()
+        if op not in ("mean", "sum", "max", "min"):
+            raise ValidationFailed(f"reduce_op must be mean, sum, max or min, got {reduce_op!r}")
+        value = tensor.detach().float().reshape(-1)
+        rt = self._runtime
+        if op == "min":
+            out = -rt._all_reduce(-value, "max")
+        else:
+            out = rt._all_reduce(value, "max" if op == "max" else "sum")
+        if op == "mean":
+            out = out / self.world_size
+        return out.to(tensor.device).reshape(tensor.shape)
+
+    def all_gather(self, tensor: Any, group: Any = None, sync_grads: bool = False) -> Any:
+        """Gather from every process, with a leading world-size dimension."""
+        return self.trainer.module.all_gather(tensor, sync_grads=sync_grads)
+
+    def reduce_boolean_decision(self, decision: bool, all: bool = True) -> bool:  # noqa: A002
+        """Whether every process (``all=True``) or any process decided ``True``."""
+        if not self._distributed:
+            return bool(decision)
+        rt = self._runtime
+        return not rt.any(not decision) if all else rt.any(decision)
 
 
 class SingleDeviceStrategy(Strategy):

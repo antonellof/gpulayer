@@ -226,7 +226,7 @@ def test_trainer_members(tmp_path, capsys):
     assert t.progress_bar_callback is None
     t.test(Lin(), DataLoader(ds(16), batch_size=8))
     t.predict(Lin(), DataLoader(ds(24), batch_size=8))
-    assert t.num_test_batches == 2 and t.num_predict_batches == [3]
+    assert t.num_test_batches == [2] and t.num_predict_batches == [3]
     t.print("from rank zero")
     assert "from rank zero" in capsys.readouterr().out
 
