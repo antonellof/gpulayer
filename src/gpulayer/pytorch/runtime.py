@@ -26,6 +26,7 @@ from torch import nn
 from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, SequentialSampler
 
 from gpulayer.errors import ValidationFailed
+from gpulayer.pytorch.storage import as_path
 
 PRECISIONS = ("32-true", "bf16-mixed", "16-mixed", "bf16-true", "16-true", "64-true")
 # Lightning's short forms, accepted with the same meaning.
@@ -880,8 +881,8 @@ class Runtime:
 
     # ------------------------------------------------------------- outputs
 
-    def output_dir(self, default: str | Path = "gpulayer_runs/local") -> Path:
+    def output_dir(self, default: Any = "gpulayer_runs/local") -> Any:
         """$GPULAYER_OUTPUT_DIR inside a job (returned as artifacts), else ``default``."""
-        p = Path(os.environ.get("GPULAYER_OUTPUT_DIR") or default)
+        p = as_path(os.environ.get("GPULAYER_OUTPUT_DIR") or default)
         p.mkdir(parents=True, exist_ok=True)
         return p

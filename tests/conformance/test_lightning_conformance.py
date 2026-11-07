@@ -67,6 +67,32 @@ QUIET = {
 }
 
 
+HOOKS = [
+    "setup",
+    "on_fit_start",
+    "on_sanity_check_start",
+    "on_sanity_check_end",
+    "on_train_start",
+    "on_train_end",
+    "on_train_epoch_start",
+    "on_train_epoch_end",
+    "on_train_batch_start",
+    "on_train_batch_end",
+    "on_validation_start",
+    "on_validation_end",
+    "on_validation_epoch_start",
+    "on_validation_epoch_end",
+    "on_validation_batch_start",
+    "on_validation_batch_end",
+    "on_before_backward",
+    "on_after_backward",
+    "on_before_optimizer_step",
+    "on_before_zero_grad",
+    "on_fit_end",
+    "teardown",
+]
+
+
 def data(n: int = 40, batch_size: int = 4, shuffle: bool = False) -> DataLoader:
     x = torch.randn(n, 8, generator=torch.Generator().manual_seed(0))
     return DataLoader(
@@ -221,12 +247,7 @@ def test_datamodule_from_datasets():
 def test_hook_order():
     def scenario(fw):
         trace: list[str] = []
-        names = """setup on_fit_start on_sanity_check_start on_sanity_check_end on_train_start
-        on_train_end on_train_epoch_start on_train_epoch_end on_train_batch_start
-        on_train_batch_end on_validation_start on_validation_end on_validation_epoch_start
-        on_validation_epoch_end on_validation_batch_start on_validation_batch_end
-        on_before_backward on_after_backward on_before_optimizer_step on_before_zero_grad
-        on_fit_end teardown""".split()
+        names = HOOKS
         base = model_class(fw)
 
         def callback_hook(name):
@@ -546,7 +567,6 @@ def test_gpulayer_checkpoint_loads_on_lightning(tmp_path):
     assert restored.hparams.lr == 0.05
 
 
-@pytest.mark.xfail(strict=True, reason="item 4: remote paths are written locally")
 def test_object_store_paths(tmp_path, monkeypatch):
     fsspec = pytest.importorskip("fsspec")
     monkeypatch.chdir(tmp_path)

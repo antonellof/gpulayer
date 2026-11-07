@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from gpulayer.errors import ValidationFailed
+from gpulayer.pytorch.storage import RemotePath, as_path, is_remote
 
 T = TypeVar("T")
 
@@ -93,7 +94,7 @@ class Logger:
         """Called after each checkpoint is written (for loggers that upload them)."""
 
 
-def _next_version(root: Path) -> int:
+def _next_version(root: Path | RemotePath) -> int:
     if not root.is_dir():
         return 0
     found = [
@@ -123,7 +124,7 @@ class CSVLogger(Logger):
         prefix: str = "",
         flush_logs_every_n_steps: int = 100,
     ) -> None:
-        self._root = Path(save_dir)
+        self._root = as_path(save_dir)
         self._name = name or ""
         self._version = version
         self._prefix = prefix
@@ -154,10 +155,10 @@ class CSVLogger(Logger):
     @property
     def log_dir(self) -> str:
         v = self.version
-        return str(Path(self.root_dir) / (v if isinstance(v, str) else f"version_{v}"))
+        return str(as_path(self.root_dir) / (v if isinstance(v, str) else f"version_{v}"))
 
     def log_hyperparams(self, params: dict[str, Any]) -> None:
-        d = Path(self.log_dir)
+        d = as_path(self.log_dir)
         d.mkdir(parents=True, exist_ok=True)
         lines = [f"{k}: {json.dumps(v)}" for k, v in _plain(params).items()]
         (d / "hparams.yaml").write_text("\n".join(lines) + ("\n" if lines else ""))
@@ -174,7 +175,7 @@ class CSVLogger(Logger):
         cols = list(self._columns)
         for r in self._rows:
             cols += [k for k in r if k not in cols]
-        d = Path(self.log_dir)
+        d = as_path(self.log_dir)
         d.mkdir(parents=True, exist_ok=True)
         with (d / "metrics.csv").open("w", newline="") as f:
             w = csv.DictWriter(f, fieldnames=cols)
@@ -198,6 +199,11 @@ class TensorBoardLogger(Logger):
         sub_dir: str | Path | None = None,
         **kwargs: Any,
     ) -> None:
+        if is_remote(save_dir):
+            raise ValidationFailed(
+                f"TensorBoardLogger writes local event files; got {save_dir}. Use a local "
+                "save_dir, or CSVLogger for a remote one"
+            )
         self._root = Path(save_dir)
         self._name = name or ""
         self._version = version

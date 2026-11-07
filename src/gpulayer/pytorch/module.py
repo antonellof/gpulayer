@@ -17,6 +17,7 @@ import torch
 from torch import nn
 
 from gpulayer.errors import ValidationFailed
+from gpulayer.pytorch.storage import load_file
 
 REDUCE_FX = ("mean", "sum", "max", "min")
 _FX_ALIASES = {"amax": "max", "amin": "min"}
@@ -731,7 +732,7 @@ class DataModule(HyperparametersMixin):
         override the saved ones. ``map_location`` defaults to the CPU; ``weights_only``
         defaults to False because GPUlayer checkpoints hold more than tensors."""
         location = map_location if map_location is not None else "cpu"
-        ckpt = torch.load(checkpoint_path, map_location=location, weights_only=bool(weights_only))
+        ckpt = load_file(checkpoint_path, map_location=location, weights_only=bool(weights_only))
         hparams = dict(ckpt.get("datamodule_hyper_parameters") or {})
         if hparams_file is not None:
             import json

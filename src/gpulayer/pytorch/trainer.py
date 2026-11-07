@@ -52,6 +52,7 @@ from gpulayer.pytorch.runtime import (
     normalize_precision,
     resolve_accelerator,
 )
+from gpulayer.pytorch.storage import as_path, is_remote
 from gpulayer.pytorch.strategies import (
     DDPStrategy,
     DeepSpeedStrategy,
@@ -372,7 +373,7 @@ class Trainer:
         if reload_dataloaders_every_n_epochs < 0:
             raise ValidationFailed("reload_dataloaders_every_n_epochs must be >= 0")
         self.reload_dataloaders_every_n_epochs = reload_dataloaders_every_n_epochs
-        self.default_root_dir = Path(default_root_dir)
+        self.default_root_dir = as_path(default_root_dir)
         self.launch_options = launch_options or {}
         self.profiler: Profiler | None = resolve_profiler(profiler)
 
@@ -758,6 +759,13 @@ class Trainer:
                     raise
                 # Should not happen after the merge above; keep the metrics if it does.
                 self._say(f"[gpulayer] sharded checkpoint not loaded here ({e}); metrics only")
+        elif is_remote(self.default_root_dir) or any(
+            is_remote(getattr(cb, "dirpath", None)) for cb in self.checkpoint_callbacks
+        ):
+            # The workers wrote checkpoints to the store, so they are not among the outputs.
+            self.checkpoint_path = self._last_checkpoint()
+            if self.checkpoint_path is not None:
+                state = self.checkpoint_io.load_checkpoint(self.checkpoint_path)
         if state is not None:
             model.load_state_dict(state["state_dict"], strict=model.strict_loading)
             self.history = state.get("history", [])
@@ -776,7 +784,7 @@ class Trainer:
     def _launch_job(self, ckpt_path: str | Path | None = None) -> LaunchResult:
         """Submit this script as a job on GPUlayer workers and wait for it."""
         options = dict(self.launch_options)
-        if ckpt_path is not None:
+        if ckpt_path is not None and not is_remote(ckpt_path):
             # The checkpoint is on this machine: ship it with the job as an input; the copy of
             # this script on the workers finds it there (see _resume_path).
             local = Path(ckpt_path)
@@ -808,7 +816,7 @@ class Trainer:
             accelerator=accel,
             target=target,
             client=client,
-            output_dir=self.default_root_dir,
+            output_dir=None if is_remote(self.default_root_dir) else self.default_root_dir,
             exit=False,
             **options,
         )
@@ -1357,7 +1365,8 @@ class Trainer:
         self._ddp = ddp if rt.distributed else None
         if not rt.distributed and self._ds_engine is None:
             model.to(rt.device)
-        out_dir = rt.output_dir(self.default_root_dir / _run_name())
+        root = self.default_root_dir
+        out_dir = rt.output_dir(root if is_remote(root) else root / _run_name())
         self._out_dir = out_dir
         self._build_hooks(model)
         if self.profiler is not None:
@@ -2108,18 +2117,18 @@ class Trainer:
             return last
         return ckpt_path
 
-    def _last_checkpoint(self) -> Path | None:
+    def _last_checkpoint(self) -> Any:
         """The newest ``last*.ckpt`` of this Trainer, its ``ModelCheckpoint`` folders and the
         run folder, so a rerun of a script can continue with ``fit(ckpt_path="last")``."""
         root = self.default_root_dir
         folders = {root / "checkpoints", root / _run_name() / "checkpoints"}
-        found: list[Path] = [] if self.checkpoint_path is None else [Path(self.checkpoint_path)]
+        found: list[Any] = [] if self.checkpoint_path is None else [as_path(self.checkpoint_path)]
         for cb in self.checkpoint_callbacks:
             if isinstance(cb, ModelCheckpoint):
                 if cb.dirpath is not None:
-                    folders.add(Path(cb.dirpath))
+                    folders.add(as_path(cb.dirpath))
                 if cb.last_model_path:
-                    found.append(Path(cb.last_model_path))
+                    found.append(as_path(cb.last_model_path))
         for folder in folders:
             found += folder.glob("last*.ckpt")
         existing = [p for p in found if p.exists()]
@@ -2405,7 +2414,7 @@ class Trainer:
     # ------------------------------------------------------------- checkpoints
 
     def _restore(self, rt: Runtime, model: Module, ckpt_path: str | Path) -> tuple[int, int]:
-        if Path(ckpt_path).is_dir() and rt.distributed:
+        if as_path(ckpt_path).is_dir() and rt.distributed:
             # A sharded checkpoint: each rank loads its own part in place.
             state = rt.load_sharded(model, self.optimizers, Path(ckpt_path))
             return self._restore_rest(rt, model, state)
@@ -2495,15 +2504,11 @@ class Trainer:
         if rt is not None and rt.xla:
             # XLA tensors would load only on a TPU: save them as CPU tensors, as xm.save does
             model_state, optim_states = _to_cpu(model_state), _to_cpu(optim_states)
-        p = Path(filepath)
+        p = as_path(filepath)
         if p.is_absolute() or len(p.parts) > 1:
             path = p
         else:
-            folder = (
-                Path(dirpath)
-                if dirpath is not None
-                else ((self._out_dir or self.default_root_dir) / "checkpoints")
-            )
+            folder = as_path(dirpath) if dirpath is not None else self._checkpoint_folder()
             path = folder / p
         path.parent.mkdir(parents=True, exist_ok=True)
         from gpulayer import __version__
@@ -2546,6 +2551,8 @@ class Trainer:
             checkpoint.pop("optimizer_states", None)
             checkpoint.pop("optimizer", None)
             checkpoint["sharded"] = True
+            if is_remote(path):
+                raise ValidationFailed(f"sharded checkpoints need a local folder, not {path}")
             path.mkdir(parents=True, exist_ok=True)
             rt.save_sharded(model, self.optimizers, path, checkpoint)
             if not rt.is_global_zero:
@@ -2553,7 +2560,8 @@ class Trainer:
         else:
             self.checkpoint_io.save_checkpoint(checkpoint, path)
         for lg in self.loggers:
-            lg.after_save_checkpoint(path)
+            if not is_remote(path):  # loggers upload a local file
+                lg.after_save_checkpoint(path)
         return path
 
     def _sharded_checkpoints(self) -> bool:
@@ -2566,6 +2574,12 @@ class Trainer:
             and rt.distributed
             and getattr(self._strategy, "state_dict_type", "full") == "sharded"
         )
+
+    def _checkpoint_folder(self) -> Any:
+        """With a remote ``default_root_dir`` checkpoints go there, also from inside a job,
+        whose run folder is a local one on the worker."""
+        root = self.default_root_dir
+        return root / "checkpoints" if is_remote(root) else (self._out_dir or root) / "checkpoints"
 
     def _write_metrics(self, out_dir: Path) -> None:
         out_dir.mkdir(parents=True, exist_ok=True)
