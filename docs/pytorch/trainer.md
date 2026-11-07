@@ -159,7 +159,10 @@ trainer.fit(model, train_loader, ckpt_path="gpulayer_runs/my_project-train/check
 ```
 
 `ckpt_path` restores the model, optimizers, schedulers, callbacks and step counters; a local
-checkpoint is uploaded with a launched job. After `fit`, `trainer.callback_metrics`,
+checkpoint is uploaded with a launched job. `ckpt_path="last"` picks the newest `last*.ckpt` of
+this Trainer, its `ModelCheckpoint` folders and the run folder, or starts from scratch if there
+is none, so one script can both start and continue a run; `"best"` needs a `ModelCheckpoint`.
+A rerun of a launched script finds its checkpoint in `gpulayer_runs/<job-id>/`: pass that path. After `fit`, `trainer.callback_metrics`,
 `trainer.history`, `trainer.checkpoint_path` and `trainer.launch_result` hold the results.
 
 ## Validate, test and predict
