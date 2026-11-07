@@ -29,6 +29,8 @@ from gpulayer.contracts import (
     JobStatus,
     PlacementPolicy,
     ResourceRequest,
+    ResumePolicy,
+    RetryPolicy,
 )
 from gpulayer.errors import ValidationFailed
 from gpulayer.sdk.client import Client, Job
@@ -73,6 +75,7 @@ def launch(
     env: dict[str, str] | None = None,
     inputs: dict[str, str | Path] | None = None,
     timeout_seconds: float | None = None,
+    max_attempts: int = 1,
     requirements: list[str] | None = None,
     requirements_file: str | None = None,
     name: str | None = None,
@@ -85,6 +88,11 @@ def launch(
 
     ``inputs`` maps a path under ``$GPULAYER_INPUT_DIR`` in the job to a local file, which is
     uploaded and placed there on every node (for example a checkpoint to resume from).
+
+    ``max_attempts`` above 1 runs the job again when a worker is lost or preempted (SIGTERM),
+    from the newest ``checkpoints/last.ckpt``, which is kept on the control plane while the job
+    runs; a group of machines restarts as a whole (ADR-0025). A crash in the script is not
+    retried.
 
     ``requirements`` / ``requirements_file`` (relative to the script's directory) add packages
     the workers do not have; each worker installs them once and reuses them (ADR-0022)."""
@@ -144,6 +152,16 @@ def launch(
             for dest, local in (inputs or {}).items()
         ],
         timeout_seconds=timeout_seconds,
+        **(
+            {
+                "retry": RetryPolicy(
+                    max_attempts=max_attempts, retry_on=["worker_lost", "preempted"]
+                ),
+                "resume": ResumePolicy(),
+            }
+            if max_attempts > 1
+            else {}
+        ),
         environment=EnvironmentSpec(
             requirements=list(requirements or []), requirements_file=requirements_file
         )

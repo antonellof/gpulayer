@@ -47,6 +47,7 @@ All but `register` use the session token, which can also upload and download art
 | `POST /v1/worker/acquire` | `{wait}` (seconds, max 30): long poll for the next assignment, or `null` |
 | `POST /v1/worker/tasks/{id}/start` | mark running (before artifacts are fetched and the environment is built) |
 | `POST /v1/worker/tasks/{id}/executing` | the process has started: the control plane's timeout backstop counts `timeout_seconds` from here (0.9.2; older workers do not call it and get the longer backstop) |
+| `POST /v1/worker/tasks/{id}/checkpoint` | `ArtifactReference`: the job's newest checkpoint, for its next attempt (0.10; a job with `resume` only) |
 | `POST /v1/worker/tasks/{id}/rendezvous` | node rank 0 publishes `{addr, port}` |
 | `POST /v1/worker/tasks/{id}/logs` | `{lines: [[stream, line], ...]}`; optional third element: global rank |
 | `POST /v1/worker/tasks/{id}/finish` | `TaskOutcome` |

@@ -102,7 +102,7 @@ Each of Lightning's performance mechanisms, found in its source, and GPUlayer's 
 | `benchmark=` for cuDNN autotuning | on by default for CUDA runs of 1,000 steps or more |
 | `torch.compile`, `AsyncCheckpointIO`, `MpDeviceLoader` on TPUs | same |
 | FSDP, activation checkpointing, tensor parallelism, 4-bit and FP8 plugins | same (validated on T4s except FP8, which needs Hopper or Ada GPUs) |
-| SLURM auto-requeue on SIGUSR1 | not needed: GPUlayer retries tasks itself; SIGTERM saves a checkpoint |
+| SLURM auto-requeue on SIGUSR1 | `launch_options={"max_attempts": N}`: GPUlayer keeps the newest `last.ckpt` and restarts from it after a lost worker or a SIGTERM, also a group of machines ([details](trainer.md#surviving-preemption)). Off by default; tested on one machine, not yet on a reclaimed VM |
 
 Each row has a behaviour test in `tests/pytorch/test_speed_mechanisms.py` (for example, the
 number of host-device synchronisations does not grow with the number of steps). The

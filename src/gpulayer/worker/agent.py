@@ -35,6 +35,7 @@ from gpulayer.contracts import (
     TaskState,
     WorkerCapabilities,
 )
+from gpulayer.contracts.models import CHECKPOINT_MARKER
 from gpulayer.errors import (
     Conflict,
     Forbidden,
@@ -69,9 +70,63 @@ MAX_OUTPUT_FILES = 1000
 # mid-size models are hundreds of MB (a 67M-parameter model with AdamW state is about 800 MB).
 MAX_OUTPUT_BYTES = 4 * 1024**3
 MAX_OUTPUT_FILE_BYTES = 2 * 1024**3  # the control plane's limit for one artifact
+CHECKPOINT_FLUSH_SECONDS = 120.0  # to store a preempted attempt's last checkpoint
 
 
 _RANK_PREFIX = re.compile(r"^\[default(\d+)\]:(.*)$", re.S)
+
+
+class _CheckpointStream:
+    """Stores the job's newest checkpoint on the control plane, on its own thread, so the job
+    never waits for the upload (ADR-0025). The job announces each checkpoint with a line on
+    stdout; while one uploads, only the newest announced after it is sent next."""
+
+    def __init__(self, channel: WorkerChannel, task_id: str, path: Path) -> None:
+        self.channel, self.task_id, self.path = channel, task_id, path
+        self._pending = threading.Event()
+        self._stop = False
+        self._sent: tuple[float, int] | None = None
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    def notify(self) -> None:
+        self._pending.set()
+
+    def close(self, timeout: float = CHECKPOINT_FLUSH_SECONDS) -> None:
+        """After the process ended: finish what was announced, such as the checkpoint saved
+        on SIGTERM, which is what a preempted attempt leaves to the next one."""
+        self._stop = True
+        self._pending.set()
+        self._thread.join(timeout)
+
+    def _loop(self) -> None:
+        while True:
+            self._pending.wait()
+            self._pending.clear()
+            stop = self._stop
+            try:
+                self._send()
+            except NotFound:  # a control plane without this call: the job keeps running
+                log.info("the control plane does not keep checkpoints")
+                return
+            except Exception as e:
+                log.warning("could not store a checkpoint of task %s: %s", self.task_id, e)
+            if stop:
+                return
+
+    def _send(self) -> None:
+        if not self.path.is_file():  # a sharded checkpoint is a folder, and is not streamed
+            return
+        stat = self.path.stat()
+        if (stat.st_mtime, stat.st_size) == self._sent:
+            return
+        if stat.st_size > MAX_OUTPUT_FILE_BYTES:
+            log.warning("checkpoint of task %s is too large to keep", self.task_id)
+            return
+        # The Trainer replaces this file with a rename, so reading it never sees half a file.
+        ref = self.channel.put_artifact(self.path.read_bytes(), self.path.name, ArtifactKind.OUTPUT)
+        self.channel.checkpoint(self.task_id, ref)
+        self._sent = (stat.st_mtime, stat.st_size)
 
 
 class _LogBuffer:
@@ -412,6 +467,8 @@ class WorkerAgent:
                 "PYTHONUNBUFFERED": "1",
             }
         )
+        if spec.resume is not None:
+            env["GPULAYER_CHECKPOINT_STREAM"] = spec.resume.path
         if spec.resources.accelerator == Accelerator.CUDA:
             # The devices the control plane reserved for this task, so concurrent tasks on a
             # multi-GPU worker never share a GPU. Older control planes do not send them.
@@ -474,6 +531,7 @@ class WorkerAgent:
         env, secret_values = self._environment(a, ws)
         sink = _LogBuffer(self.channel, a.task_id, secret_values)
         line_sink: Callable[[str, str], None] = sink
+        stream: _CheckpointStream | None = None
         try:
             python = self._prepare_environment(a, src if source is not None else None, env, sink)
             cwd = str(src if source is not None else ws)
@@ -559,6 +617,20 @@ class WorkerAgent:
             else:  # pragma: no cover - exhaustiveness
                 raise GpuLayerError(f"unsupported workload {type(w).__name__}")
 
+            if spec.resume is not None and a.node_rank == 0:
+                stream = _CheckpointStream(
+                    self.channel, a.task_id, ws / "outputs" / spec.resume.path
+                )
+                plain_sink = line_sink
+
+                def watch_checkpoints(kind: str, line: str) -> None:
+                    if CHECKPOINT_MARKER in line:
+                        stream.notify()  # for the worker, not a line of the job's log
+                    else:
+                        plain_sink(kind, line)
+
+                line_sink = watch_checkpoints
+
             reported = threading.Event()
 
             def started(pid: int) -> None:
@@ -587,6 +659,8 @@ class WorkerAgent:
                 with self._cancel_lock:
                     self._pgids.pop(a.task_id, None)
         finally:
+            if stream is not None:
+                stream.close()
             sink.close()
         outputs, skipped = self._upload_outputs(ws / "outputs", a)
         if skipped:

@@ -14,8 +14,20 @@ from enum import Enum
 from pathlib import PurePosixPath
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
+# Where a job's kept checkpoint arrives, under $GPULAYER_INPUT_DIR; the line a job prints to
+# say it wrote one; and the exit codes of a process ended by SIGTERM (ADR-0025).
+RESUME_INPUT = "gpulayer-resume.ckpt"
+CHECKPOINT_MARKER = "::gpulayer-checkpoint::"
+SIGTERM_EXIT_CODES = (143, -15)
 API_VERSION = "gpulayer.dev/v1alpha1"
 PROTOCOL_VERSION = "1"
 
@@ -300,15 +312,35 @@ class PlacementPolicy(_Model):
         return [self.target, *self.fallback_targets]
 
 
-RetryReason = Literal["worker_lost", "failed"]
+RetryReason = Literal["worker_lost", "failed", "preempted"]
 _WORKER_LOST: RetryReason = "worker_lost"
 
 
 class RetryPolicy(_Model):
-    """Retries are opt-in. A retry may duplicate side effects (no exactly-once)."""
+    """Retries are opt-in. A retry may duplicate side effects (no exactly-once).
+    ``preempted`` is a task that ended on SIGTERM (exit code 143) without being cancelled."""
 
     max_attempts: int = Field(1, ge=1, le=10)
     retry_on: list[RetryReason] = Field(default_factory=lambda: [_WORKER_LOST])
+
+
+class ResumePolicy(_Model):
+    """Keep the job's newest checkpoint on the control plane while it runs and give it to the
+    next attempt (ADR-0025). Lets a distributed job retry: the whole group restarts from the
+    checkpoint."""
+
+    path: str = Field(
+        "checkpoints/last.ckpt",
+        description="The checkpoint, relative to $GPULAYER_OUTPUT_DIR on the first node.",
+    )
+
+    @field_validator("path")
+    @classmethod
+    def _relative(cls, v: str) -> str:
+        p = PurePosixPath(v)
+        if p.is_absolute() or ".." in p.parts or not p.parts:
+            raise ValueError("resume.path must be relative, inside the job's output folder")
+        return v
 
 
 class SecretRef(_Model):
@@ -518,6 +550,7 @@ class JobSpec(_Model):
     inputs: list[InputArtifact] = Field(default_factory=list)
     timeout_seconds: float | None = Field(None, gt=0)
     retry: RetryPolicy = Field(default_factory=RetryPolicy)
+    resume: ResumePolicy | None = None
     labels: dict[str, str] = Field(default_factory=dict)
     environment: EnvironmentSpec | None = Field(
         None, description="Extra Python packages, installed once per worker and cached."
@@ -540,14 +573,23 @@ class JobSpec(_Model):
                 raise ValueError(f"environment variable {k!r} is reserved")
         return v
 
+    @model_serializer(mode="wrap")
+    def _without_unset_resume(self, handler: Any) -> dict[str, Any]:
+        # Workers reject unknown fields, so a key older workers do not know is sent only
+        # when it is used (a job without resume runs on any worker).
+        data: dict[str, Any] = handler(self)
+        if data.get("resume") is None:
+            data.pop("resume", None)
+        return data
+
     @model_validator(mode="after")
     def _check(self) -> JobSpec:
         w = self.workload
         if isinstance(w, DistributedJob):
-            if self.retry.max_attempts > 1:
+            if self.retry.max_attempts > 1 and self.resume is None:
                 raise ValueError(
-                    "automatic retry of distributed jobs is not supported: a partially "
-                    "executed worker group is not safe to replay"
+                    "automatic retry of a distributed job needs resume: a partially executed "
+                    "worker group is not safe to replay, so the group restarts from a checkpoint"
                 )
             if self.resources.accelerator == Accelerator.MPS:
                 raise ValueError("distributed execution on MPS is unsupported (ADR-0006)")
@@ -562,6 +604,8 @@ class JobSpec(_Model):
             ):
                 raise ValueError("procs_per_worker cannot exceed gpu_count per worker")
         if isinstance(w, ServiceJob):
+            if self.resume is not None:
+                raise ValueError("resume is for jobs that end, not for services")
             if "PORT" in self.env and w.port:
                 raise ValueError("PORT is set by the worker for services with port=True")
             if "retry" not in self.model_fields_set:
