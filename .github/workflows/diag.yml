@@ -1,0 +1,38 @@
+name: diag
+on:
+  push:
+    branches: ["diag/**"]
+jobs:
+  wheel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: free space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL; df -h / | tail -1
+      - name: install the real ROCm wheel
+        run: |
+          uv pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/rocm7.2
+          uv pip install -e '.[dev]' numpy
+      - name: what it reports with no AMD GPU
+        run: |
+          uv run --no-sync python -c "import torch; print('RESULT', torch.__version__, 'hip', torch.version.hip, 'cuda', torch.version.cuda, 'available', torch.cuda.is_available())"
+          uv run --no-sync gpulayer resources detect | tail -12
+      - name: validation script fails cleanly
+        run: uv run --no-sync python scripts/validate_rocm.py 2>/dev/null | grep -E "^CHECK|passed" || true
+      - name: training on the CPU with this build
+        run: uv run --no-sync pytest -q tests/unit/test_discovery.py tests/pytorch/test_loop_semantics.py tests/pytorch/test_exact_resume.py -p no:cacheprovider
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: free space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL; df -h / | tail -1
+      - name: build on rocm/pytorch
+        run: docker build -t gpulayer:rocm --build-arg BASE=rocm/pytorch:latest --build-arg EXTRAS=base-torch .
+      - name: run it
+        run: docker run --rm gpulayer:rocm python -c "import torch, gpulayer; print('RESULT', gpulayer.__version__, torch.__version__, torch.version.hip)"
