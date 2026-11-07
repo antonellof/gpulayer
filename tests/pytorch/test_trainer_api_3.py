@@ -619,7 +619,7 @@ def test_tensor_core_hint(monkeypatch):
     monkeypatch.setattr(trainer_mod, "_HINTED", {"workers"})
     monkeypatch.setattr(torch.cuda, "get_device_capability", lambda d=None: (8, 0))
     monkeypatch.setattr(torch.cuda, "get_device_name", lambda d=None: "A100")
-    rt = types.SimpleNamespace(device=torch.device("cuda", 0))
+    rt = types.SimpleNamespace(device=torch.device("cuda", 0), accelerator="cuda")
     with pytest.warns(UserWarning, match="A100 has Tensor Cores"):
         trainer_mod._performance_hints(rt, [], 1)
     monkeypatch.setattr(trainer_mod, "_HINTED", {"workers"})
