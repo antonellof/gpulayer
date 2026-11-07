@@ -988,7 +988,7 @@ class Trainer:
         ):
             raise ValidationFailed("pass either dataloaders or a datamodule, not both")
         self.datamodule = datamodule
-        self.ckpt_path = ckpt_path
+        ckpt_path = self.ckpt_path = self._fit_checkpoint(ckpt_path)
         if self._xla_spawn_needed():
             self._merge_model_callbacks(model)
             self._fit_xla_spawn(model, train_dataloaders, val_dataloaders, datamodule, ckpt_path)
@@ -2102,10 +2102,40 @@ class Trainer:
                 raise ValidationFailed("ckpt_path='best' needs a ModelCheckpoint that saved a file")
             return cb.best_model_path
         if ckpt_path == "last":
-            if self.checkpoint_path is None:
+            last = self._last_checkpoint()
+            if last is None:
                 raise ValidationFailed("ckpt_path='last': no checkpoint was saved")
-            return self.checkpoint_path
+            return last
         return ckpt_path
+
+    def _last_checkpoint(self) -> Path | None:
+        """The newest ``last*.ckpt`` of this Trainer, its ``ModelCheckpoint`` folders and the
+        run folder, so a rerun of a script can continue with ``fit(ckpt_path="last")``."""
+        root = self.default_root_dir
+        folders = {root / "checkpoints", root / _run_name() / "checkpoints"}
+        found: list[Path] = [] if self.checkpoint_path is None else [Path(self.checkpoint_path)]
+        for cb in self.checkpoint_callbacks:
+            if isinstance(cb, ModelCheckpoint):
+                if cb.dirpath is not None:
+                    folders.add(Path(cb.dirpath))
+                if cb.last_model_path:
+                    found.append(Path(cb.last_model_path))
+        for folder in folders:
+            found += folder.glob("last*.ckpt")
+        existing = [p for p in found if p.exists()]
+        return max(existing, key=lambda p: p.stat().st_mtime) if existing else None
+
+    def _fit_checkpoint(self, ckpt_path: str | Path | None) -> str | Path | None:
+        """Resolve ``fit``'s ``ckpt_path``. Inside a launched job the checkpoint found by the
+        launching process has arrived as an input; the job must use it. With ``"last"`` and
+        nothing to resume from, training starts from the beginning, as in Lightning."""
+        shipped = _resume_path(ckpt_path)
+        if shipped != ckpt_path:
+            return shipped
+        if ckpt_path == "last" and self._last_checkpoint() is None:
+            self._say("[gpulayer] ckpt_path='last': no checkpoint found, starting from scratch")
+            return None
+        return self._resolve_ckpt(ckpt_path)
 
     def _eval_entry(
         self,

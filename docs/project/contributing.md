@@ -23,6 +23,7 @@ uv venv && uv pip install -e '.[dev,examples]'
 | `tests/integration` | real subprocess execution via SDK/CLI; HTTP server + worker in a separate process | nothing beyond the package |
 | `tests/distributed` | real torchrun/gloo multi-process run, 2-node topology on one host | `torch` (skips otherwise) |
 | `tests/hardware` | MPS / CUDA smoke tests | Apple Silicon or NVIDIA GPU (skip otherwise) |
+| `tests/conformance` | the same code on PyTorch Lightning and the Trainer must behave the same (CPU, one process); strict `xfail`s list what differs | `.[conformance]` (skips otherwise) |
 
 The markers are `integration`, `distributed`, `hardware_mps` and `hardware_cuda`. CPU-only CI
 runs everything, and hardware tests skip themselves. A passing unit test says nothing about real

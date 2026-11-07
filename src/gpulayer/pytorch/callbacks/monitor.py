@@ -200,7 +200,7 @@ class ModelCheckpoint(_Monitor, Checkpoint):
         self,
         dirpath: str | Path | None = None,
         filename: str | None = None,
-        monitor: str | None = "val_loss",
+        monitor: str | None = None,
         verbose: bool = False,
         save_last: bool | None = None,
         save_top_k: int = 1,

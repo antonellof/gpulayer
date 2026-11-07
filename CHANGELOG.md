@@ -15,6 +15,15 @@ before 1.0, minor versions may change public APIs, with migration notes here.
   `max_steps` larger than one epoch now train longer; `max_epochs=None` passed explicitly
   meant 1000 epochs and now follows these rules (pass `max_epochs=1000`); `max_epochs=-1`
   meant 1000 and now means no limit, as in Lightning.
+- Fix: `fit(ckpt_path="last")` and `"best"` raised `FileNotFoundError`. `"last"` is now the
+  newest `last*.ckpt` of the Trainer, its `ModelCheckpoint` folders and the run folder (also
+  on a rerun, and in launched jobs); with none, training starts from scratch, as in Lightning.
+- Fix: `ModelCheckpoint()` monitored `val_loss` by default, and failed in a model that logged
+  another name. The default is now `monitor=None` (keep the latest), as in Lightning.
+  **Migration:** pass `monitor="val_loss"` to keep the best by that name.
+- New CI job and `tests/conformance`: the same code runs on PyTorch Lightning and on the
+  Trainer and must behave the same; differences not fixed yet are listed as strict `xfail`s.
+  `pip install -e '.[conformance]'` adds what it needs.
 
 ## 0.9.2 (2026-11-04)
 

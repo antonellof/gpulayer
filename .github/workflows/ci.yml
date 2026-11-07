@@ -38,6 +38,22 @@ jobs:
       - name: Tests (CPU only; CUDA and MPS tests skip themselves)
         run: uv run --no-sync pytest -q
 
+  conformance:
+    name: same behaviour as PyTorch Lightning
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Install (CPU-only torch)
+        run: |
+          uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+          uv pip install -e '.[dev,conformance]' numpy
+      - name: Conformance tests
+        run: uv run --no-sync pytest -q tests/conformance tests/pytorch/test_metric_objects.py
+
   installer:
     runs-on: ubuntu-latest
     timeout-minutes: 15
