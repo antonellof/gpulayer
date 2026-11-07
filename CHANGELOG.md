@@ -50,6 +50,13 @@ before 1.0, minor versions may change public APIs, with migration notes here.
   workers; other jobs run on any worker. Tested with real processes on one machine; not yet on
   a reclaimed cloud VM. `from-lightning.md` said SLURM's requeue was not needed, which
   overstated what 0.9 did: retries started over.
+- New: exact resume. Checkpoints hold the random number generators and, in one process, a
+  resumed run gives bit-identical weights to one that never stopped (tested on CPU with dropout
+  and shuffling, at epoch ends and within an epoch). A run resumed within an epoch used to read
+  the trained batches again, in a new order, so some samples repeated and others were skipped;
+  it now rebuilds the order and skips them in the sampler, without reading them. `torchdata`'s
+  `StatefulDataLoader` is saved and restored, as in Lightning. Across processes the data order
+  is exact; each rank's own random numbers are not restored.
 - New CI job and `tests/conformance`: the same code runs on PyTorch Lightning and on the
   Trainer and must behave the same; differences not fixed yet are listed as strict `xfail`s.
   `pip install -e '.[conformance]'` adds what it needs.

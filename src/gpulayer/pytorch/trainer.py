@@ -10,11 +10,14 @@ from __future__ import annotations
 
 import contextlib
 import csv
+import itertools
 import json
 import math
 import os
+import random
 import shutil
 import signal
+import sys
 import threading
 import time
 from collections import defaultdict
@@ -25,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from torch.utils.data import DataLoader, DistributedSampler, SequentialSampler
+from torch.utils.data import DataLoader, DistributedSampler, IterableDataset, SequentialSampler
 
 from gpulayer.contracts.models import CHECKPOINT_MARKER, RESUME_INPUT
 from gpulayer.errors import ValidationFailed
@@ -432,6 +435,9 @@ class Trainer:
         self._is_log_step = False
         self._stepped = False
         self._train_epoch_log: dict[str, float] = {}
+        self._epoch_rng: dict[str, Any] | None = None
+        self._restored_rng: dict[str, Any] | None = None
+        self._restored_loaders: list[Any] | None = None
         self._eval_log_step = 0
         self._weights_changed_at_end = False
         self._predictions: list[Any] = []
@@ -1624,7 +1630,19 @@ class Trainer:
         val_epoch = every is None or (epoch + 1) % every == 0
         count_across = every is None and isinstance(self.val_check_interval, int)
         validated_last: dict[str, float] | None = None
-        batches: Any = self._device_batches(rt, model, train, self.prefetch)
+        restored_rng, self._restored_rng = self._restored_rng, None
+        if restored_rng is not None:
+            set_rng_states(restored_rng["epoch_start" if skip_batches else "now"])
+        self._epoch_rng = restored_rng["epoch_start"] if skip_batches and restored_rng else (
+            None if rt.distributed or rt.xla else _rng_states()
+        )  # fmt: skip
+        source, first_idx = self._resumed_source(train, skip_batches)
+        stateful = any(_is_stateful(d) for d in loaders_of(train))
+        batches: Any = self._device_batches(rt, model, source, self.prefetch and not stateful)
+        if skip_batches and restored_rng is not None:
+            # The sampler drew its permutation on the first batch; training continues with
+            # the numbers it had when the checkpoint was written.
+            batches = _after_first(batches, lambda: set_rng_states(restored_rng["now"]))
         if prof is not None:
             batches = _profiled(batches, prof, "train_dataloader_next")
         # A loader without a length gives no batch count: look one batch ahead to know the
@@ -1636,11 +1654,11 @@ class Trainer:
         out: Any = None
         last = False
         self._batch_counter = 0
-        for batch_idx, batch in enumerate(batches):
+        for batch_idx, batch in enumerate(batches, first_idx):
             if limit is not None and batch_idx >= limit:
                 break
             if batch_idx < skip_batches:
-                continue  # resuming within an epoch: these batches were trained already
+                continue  # resuming within an epoch, and the loader could not skip for us
             last = (n_batches is not None and batch_idx + 1 == n_batches) or (
                 ahead is not None and ahead.last
             )
@@ -1793,6 +1811,22 @@ class Trainer:
         elif val is not None and val_every is None and self._epoch_end_validation(epoch, last):
             metrics.update(self._run_validation(rt, model, val))
         return metrics
+
+    def _resumed_source(self, train: Any, skip_batches: int) -> tuple[Any, int]:
+        """What to iterate in the first epoch of a run resumed within an epoch, and the index
+        of its first batch: a stateful loader continues by itself, and any other ``DataLoader``
+        skips in its sampler, so trained batches are never read again. Other loaders are read
+        and thrown away, by the caller."""
+        restored, self._restored_loaders = self._restored_loaders, None
+        if not skip_batches:
+            return train, 0
+        loaders = [d for d in loaders_of(train) if _is_stateful(d)]
+        if restored and len(restored) == len(loaders):
+            for loader, state in zip(loaders, restored, strict=True):
+                loader.load_state_dict(state)
+            return train, skip_batches
+        skipping = _skipping_loader(train, skip_batches)
+        return (train, 0) if skipping is None else (skipping, skip_batches)
 
     def _epoch_end_validation(self, epoch: int, last_batch: bool) -> bool:
         """Validate after the last batch of an epoch ``check_val_every_n_epoch`` selects, or
@@ -2547,6 +2581,8 @@ class Trainer:
             self.datamodule.load_state_dict(state["datamodule"])
         self.global_step = state.get("global_step", 0)
         self.history = state.get("history", [])
+        self._restored_rng = state.get("rng_states")
+        self._restored_loaders = state.get("dataloaders")
         epoch = state["epoch"]
         if state.get("batches_done"):
             return epoch, int(state["batches_done"])  # saved within an epoch
@@ -2619,6 +2655,11 @@ class Trainer:
         if self.state.stage == "train" and done and done < self.num_training_batches:
             # Saved within an epoch: resuming skips the batches already trained.
             checkpoint["batches_done"] = done
+            stateful = [
+                d.state_dict() for d in loaders_of(self.train_dataloader) if _is_stateful(d)
+            ]
+            if stateful:
+                checkpoint["dataloaders"] = stateful
         if not weights_only:
             checkpoint["optimizer_states"] = optim_states
             checkpoint["optimizer"] = optim_states[0] if optim_states else {}
@@ -2632,6 +2673,10 @@ class Trainer:
             }
             if self.datamodule is not None:
                 checkpoint["datamodule"] = self.datamodule.state_dict()
+            if rt is not None and not rt.distributed and not rt.xla:
+                # One process: enough to continue with the same random numbers. Several: the
+                # data order is exact (DistributedSampler), each rank's own stream is not.
+                checkpoint["rng_states"] = {"now": _rng_states(), "epoch_start": self._epoch_rng}
         if model.hparams:
             checkpoint["hyper_parameters"] = dict(model.hparams)
         if self.datamodule is not None and self.datamodule.hparams:
@@ -2870,6 +2915,92 @@ def _without_shuffle(loader: DataLoader) -> DataLoader:
     )
 
 
+class _SkipFirst:
+    """A batch sampler without its first ``n`` batches: same order, no data read for them."""
+
+    def __init__(self, sampler: Any, n: int) -> None:
+        self.sampler, self.n = sampler, n
+
+    def __iter__(self) -> Iterator[Any]:
+        return itertools.islice(iter(self.sampler), self.n, None)
+
+    def __len__(self) -> int:
+        return max(0, len(self.sampler) - self.n)
+
+
+def _skipping_loader(loader: Any, n: int) -> DataLoader | None:
+    """``loader`` from batch ``n`` on, with its settings, or None when it cannot skip: an
+    iterable dataset has no sampler, and a ``DataLoader`` subclass may do anything."""
+    if (
+        type(loader) is not DataLoader
+        or loader.batch_sampler is None
+        or isinstance(loader.dataset, IterableDataset)
+    ):
+        return None
+    extra: dict[str, Any] = (
+        {"prefetch_factor": loader.prefetch_factor} if loader.num_workers else {}
+    )
+    return DataLoader(
+        loader.dataset,
+        batch_sampler=_SkipFirst(loader.batch_sampler, n),
+        num_workers=loader.num_workers,
+        collate_fn=loader.collate_fn,
+        pin_memory=loader.pin_memory,
+        generator=loader.generator,
+        worker_init_fn=loader.worker_init_fn,
+        timeout=loader.timeout,
+        multiprocessing_context=loader.multiprocessing_context,
+        pin_memory_device=getattr(loader, "pin_memory_device", ""),
+        **extra,
+    )
+
+
+def _after_first(batches: Iterable[Any], then: Callable[[], None]) -> Iterator[Any]:
+    it = iter(batches)
+    first = next(it, _NOOP)
+    then()
+    if first is not _NOOP:
+        yield first
+        yield from it
+
+
+def _is_stateful(loader: Any) -> bool:
+    return callable(getattr(loader, "state_dict", None)) and callable(
+        getattr(loader, "load_state_dict", None)
+    )
+
+
+def _rng_states() -> dict[str, Any]:
+    """Every random number generator training uses, as plain values, so a checkpoint still
+    loads with ``weights_only=True``."""
+    states: dict[str, Any] = {"torch": torch.get_rng_state(), "python": random.getstate()}
+    numpy = sys.modules.get("numpy")
+    if numpy is not None:
+        name, keys, pos, has_gauss, cached = numpy.random.get_state()
+        states["numpy"] = (name, keys.tolist(), pos, has_gauss, cached)
+    if torch.cuda.is_available() and torch.cuda.is_initialized():
+        states["cuda"] = torch.cuda.get_rng_state_all()
+    if torch.backends.mps.is_available():
+        states["mps"] = torch.mps.get_rng_state()
+    return states
+
+
+def set_rng_states(states: dict[str, Any]) -> None:
+    """Restore ``_rng_states``. A generator this machine lacks is left alone."""
+    torch.set_rng_state(states["torch"])
+    random.setstate(states["python"])
+    numpy = sys.modules.get("numpy")
+    if numpy is not None and "numpy" in states:
+        name, keys, pos, has_gauss, cached = states["numpy"]
+        numpy.random.set_state(
+            (name, numpy.array(keys, dtype=numpy.uint32), pos, has_gauss, cached)
+        )
+    if "cuda" in states and len(states["cuda"]) == torch.cuda.device_count():
+        torch.cuda.set_rng_state_all(states["cuda"])
+    if "mps" in states and torch.backends.mps.is_available():
+        torch.mps.set_rng_state(states["mps"])
+
+
 def _materialize(loader: Any) -> Any:
     """A loader given as a function (to build it only where training runs) is called here."""
     if callable(loader) and not hasattr(loader, "__iter__"):
@@ -3083,8 +3214,6 @@ def _to_cpu(value: Any) -> Any:
 def _run_name() -> str:
     """Folder for in-process runs, named after the script and its directory,
     e.g. gpulayer_runs/my_project-train for my_project/train.py."""
-    import sys
-
     if not sys.argv or not sys.argv[0] or sys.argv[0] in ("-c", "-m"):
         return "local"
     script = Path(sys.argv[0]).resolve()

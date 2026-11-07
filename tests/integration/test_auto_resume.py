@@ -50,8 +50,7 @@ SCRIPT = """
                         num_sanity_val_steps=0, callbacks=[Stop()], DEVICES,
                         launch_options={"max_attempts": ATTEMPTS})
         t.fit(Model(), loader)
-        print("RESULT", json.dumps({"step": t.global_step, "attempts": t.launch_result.status.attempts
-                                    if t.launch_result else None}), flush=True)
+        print("RESULT", json.dumps({"step": t.global_step}), flush=True)
 """
 
 
