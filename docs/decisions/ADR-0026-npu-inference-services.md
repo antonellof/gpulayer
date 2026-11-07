@@ -1,6 +1,6 @@
 # ADR-0026: Ryzen AI NPUs as a place to serve models
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-07
 
 ## Context
@@ -18,23 +18,38 @@ unmodified. The pages read do not say whether you can convert your own model.
 So an NPU is neither a GPU nor a place to run the Trainer, and must not be reported as one
 (ADR-0005: never infer support from a backend's name).
 
-## Decision proposed
+FastFlowLM's source settles what its pages left open: `flm validate --json` exits 0 and sets
+`ready` when driver, firmware, columns and memlock are all right; `flm version --json` gives the
+version; `flm serve` takes `--host` (default `127.0.0.1`) and `--port`, and starts listening only
+after the model is loaded. It has no authentication, runs one NPU request at a time, and its lock
+is per process, so two servers would fight over one NPU.
 
-1. **An NPU is its own kind of device.** A new `Accelerator.NPU` with vendor AMD, a capability such
-   as `npu.xdna2`, and no `torch.*` pseudo-framework. A job asking for a GPU is never placed on it,
-   and an NPU never counts towards `gpu_count`.
+## Decision
+
+1. **An NPU is its own kind of device:** `Accelerator.NPU`, vendor AMD, with memory unknown, a
+   `flm` framework version and no `torch.*` capability. Jobs ask for it by accelerator, so a job
+   asking for a GPU is never placed on it, and it is reserved like a GPU, one job at a time. It adds
+   a task slot, so a machine can serve on its NPU and train on its GPU.
 2. **It runs services, through `ServiceJob`** (ADR-0019), which already has replicas, `$PORT`,
-   endpoints and restarts: `flm serve` is one command. No new job type.
-3. **Detection comes from FastFlowLM itself** (`flm validate`), in a subprocess, as for torch; if
-   its output cannot be read, the worker says so in a note and reports no NPU.
-4. **The Trainer rejects it** with a message that says why, instead of falling back to CPU.
-5. **GPUlayer does not ship FastFlowLM**: it is a package on the worker, like torch.
+   endpoints and restarts: `gl.flm_service(model)` builds one, restarting on failure, a limited
+   number of times, because an unknown model fails on every start. No new job type. Command jobs
+   may use it too; distributed jobs are refused.
+3. **Detection comes from FastFlowLM itself** (`flm validate --json`), as for torch. An NPU is
+   reported only when `ready` is true; otherwise the worker says why in a note. No NPU is guessed
+   from `/dev/accel`, because GPUlayer cannot drive one without FastFlowLM.
+4. **The Trainer and `launch` refuse it** with a message that says why, instead of falling back to
+   the CPU.
+5. **GPUlayer does not ship FastFlowLM**: it is software on the worker, like torch.
+6. **A service listens on loopback unless told otherwise** (`expose=True`), because FastFlowLM has
+   no authentication.
 
 ## Consequences
 
-An enum value that older workers do not know must not reach them; as with `resume`, it appears
-only in jobs that ask for it. It widens the product past training, which ADR-0023 narrowed, so
-it should be a small addition and take no work from ROCm validation.
+An enum value that older components do not know must not reach them. It appears only in NPU jobs
+and in the capabilities of a worker that has a ready NPU, so such a worker needs a 0.11 server.
+Machines without FastFlowLM are unaffected, beyond one failed `flm` lookup when a worker starts.
+The endpoint of a loopback service names the worker's address but works only on the worker.
+This widens the product past training, which ADR-0023 narrowed, so it stays a small addition.
 
 ## Alternatives
 
@@ -47,11 +62,14 @@ it should be a small addition and take no work from ROCm validation.
 
 ## Security and operational implications
 
-`flm serve` is an unauthenticated local server as far as the pages read show, so a service must not
-expose it beyond what GPUlayer's endpoints already allow. To be reviewed before implementation,
-along with model downloads on workers.
+`flm serve` has no authentication, hence point 6, and the source sends permissive CORS headers on
+every response, also with `--cors 0`, so a web page opened on the same machine can call a loopback
+server. FastFlowLM downloads models from Hugging Face on the worker, checked against digests, so
+a service needs network access there. The tag passed to `flm_service` is validated, and passed as
+an argument, not through a shell string. `flm validate` may raise its own memlock limit.
 
 ## Follow-up
 
-Needs a decision from the maintainer, and an XDNA2 machine to run `flm validate` on: its output is
-not documented on the pages read.
+Run it on an XDNA2 machine: the reports here come from reading the source. An HTTP readiness
+check is not needed while FastFlowLM listens only after loading a model; if that changes, a
+service health check will be.

@@ -7,6 +7,7 @@ Detection is split into independent probes so each can be mocked in CPU-only CI:
 * torch probe     -- runs in a *subprocess* so a broken/missing torch install can never
                      crash or slow the worker; reports torch version, CUDA/MPS availability
                      and torch.distributed backends
+* flm             -- AMD Ryzen AI NPUs, from FastFlowLM's own report (ADR-0026)
 * rocm-smi        -- AMD GPUs without a ROCm torch, for a note. AMD deprecates it for amd-smi,
                      and publishes the JSON of neither, so the names and memory of GPUs that
                      can run come from a ROCm build of torch, which is what will drive them
@@ -345,6 +346,47 @@ def detect_rocm(runner: CommandRunner = run_command) -> list[AcceleratorDevice]:
     return devices
 
 
+def detect_npu(
+    runner: CommandRunner = run_command,
+) -> tuple[list[AcceleratorDevice], str | None, list[str]]:
+    """NPUs FastFlowLM can use, its version, and notes. ``flm validate --json`` exits 0 and
+    sets ``ready`` when the whole stack works (driver, firmware, columns, memlock), so an
+    NPU is reported only then: it is not a device GPUlayer can drive by itself. Without
+    ``flm`` there is nothing to say."""
+    code, out = runner(["flm", "validate", "--json"], 30)
+    if code == 127:
+        return [], None, []
+    try:
+        report = json.loads(out[out.index("{") : out.rindex("}") + 1])
+    except (ValueError, TypeError):
+        return [], None, ["FastFlowLM found, but its validation could not be read"]
+    if not isinstance(report, dict) or code != 0 or report.get("ready") is not True:
+        checks = ("kernel_ok", "amd_device_found", "all_fw_ok", "enough_cols", "memlock_ok")
+        failed = [k for k in checks if isinstance(report, dict) and report.get(k) is False]
+        why = f" ({', '.join(failed)})" if failed else ""
+        return [], None, [f"FastFlowLM found, but its NPU stack is not ready{why}"]
+    listed = [d for d in report.get("devices") or [{}] if not d.get("busy")]
+    driver = report.get("drm_version")
+    platform_name = report.get("npu_platform")
+    devices = [
+        AcceleratorDevice(
+            index=i,
+            accelerator=Accelerator.NPU,
+            vendor=GpuVendor.AMD,
+            name=f"AMD NPU ({platform_name})" if platform_name else "AMD NPU",
+            memory_kind=MemoryKind.UNIFIED,
+            driver_version=str(driver) if driver else None,
+        )
+        for i in range(len(listed))
+    ]
+    version = None
+    code, out = runner(["flm", "version", "--json"], 15)
+    if code == 0:
+        with contextlib.suppress(ValueError, TypeError, AttributeError):
+            version = str(json.loads(out)["version"])
+    return devices, version, []
+
+
 def _amd_driver_present(runner: CommandRunner) -> bool:
     """An AMD GPU that ``rocm-smi`` did not report: newer ROCm ships ``amd-smi`` instead."""
     return os.path.exists("/dev/kfd") or runner(["amd-smi", "version"], 15)[0] == 0
@@ -519,6 +561,9 @@ def detect_capabilities(
     elif rocm or _amd_driver_present(runner):
         notes.append("AMD GPU detected, but torch in this environment has no ROCm support")
     accelerators.extend(rocm)
+    npus, flm_version, npu_notes = detect_npu(runner)
+    accelerators.extend(npus)
+    notes.extend(npu_notes)
 
     if gpus is not None:
         discrete = (Accelerator.CUDA, Accelerator.ROCM)
@@ -533,7 +578,7 @@ def detect_capabilities(
         ]
         notes.append(f"limited to GPUs {sorted(gpus)}" if gpus else "GPUs not offered")
 
-    frameworks: dict[str, str] = {}
+    frameworks: dict[str, str] = {"flm": flm_version} if flm_version else {}
     for dist, version in tp.packages.items():
         name = GPU_PACKAGES.get(dist)
         if name:

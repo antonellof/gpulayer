@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from gpulayer.contracts import (
@@ -18,6 +19,7 @@ from gpulayer.contracts import (
     SecretRef,
     ServiceJob,
 )
+from gpulayer.errors import ValidationFailed
 
 
 def pop_environment(kw: dict[str, Any]) -> EnvironmentSpec | None:
@@ -62,6 +64,50 @@ def _spec(
         placement=placement,
         secrets=secrets,
         **{k: v for k, v in kw.items() if v is not None},
+    )
+
+
+_FLM_TAG = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*(:[A-Za-z0-9._-]+)?")
+_FLM_SERVE = (
+    'model=$1; host=$2; shift 2; exec flm serve "$model" --host "$host" --port "$PORT" "$@"'
+)
+
+
+def flm_service(
+    model: str,
+    *,
+    expose: bool = False,
+    args: list[str] | None = None,
+    replicas: int = 1,
+    max_restarts: int | None = 5,
+    name: str = "flm",
+    target: str = "local",
+    placement: PlacementPolicy | None = None,
+    **kw: Any,
+) -> JobSpec:
+    """Serve ``model`` (a FastFlowLM tag such as ``llama3.2:1b``) on an AMD Ryzen AI NPU, with
+    FastFlowLM's OpenAI-compatible API (ADR-0026). Each replica takes one NPU for itself, on
+    a worker where ``flm validate`` passes. ``args`` go to ``flm serve``.
+
+    FastFlowLM has no authentication, so by default a replica listens on the worker's
+    loopback only. ``expose=True`` binds every interface: anyone who can reach the worker can
+    then use the model; use it only on a network you trust."""
+    if not _FLM_TAG.fullmatch(model):
+        raise ValidationFailed(f"not a FastFlowLM model tag: {model!r}")
+    resources = ResourceRequest(
+        accelerator=Accelerator.NPU, gpu_count=1, frameworks={"flm": ">=1.0"}
+    )
+    host = "0.0.0.0" if expose else "127.0.0.1"  # noqa: S104 - opt-in, see the docstring
+    return service(
+        ["sh", "-c", _FLM_SERVE, "flm", model, host, *(args or [])],
+        replicas=replicas,
+        restart="on_failure",  # an unknown model exits with an error; don't retry for ever
+        max_restarts=max_restarts,
+        name=name,
+        target=target,
+        resources=resources,
+        placement=placement,
+        **kw,
     )
 
 

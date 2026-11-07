@@ -62,6 +62,7 @@ class Accelerator(str, Enum):
     CUDA = "cuda"
     MPS = "mps"
     ROCM = "rocm"
+    NPU = "npu"  # AMD Ryzen AI through FastFlowLM: serves models, never trains (ADR-0026)
 
 
 class GpuVendor(str, Enum):
@@ -593,6 +594,8 @@ class JobSpec(_Model):
                 )
             if self.resources.accelerator == Accelerator.MPS:
                 raise ValueError("distributed execution on MPS is unsupported (ADR-0006)")
+            if self.resources.accelerator == Accelerator.NPU:
+                raise ValueError("an NPU serves models, it does not train (ADR-0026)")
             if w.comm_backend == "nccl" and self.resources.accelerator not in (
                 Accelerator.CUDA,
                 Accelerator.ROCM,

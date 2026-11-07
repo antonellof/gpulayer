@@ -107,6 +107,11 @@ def resolve_accelerator(accelerator: str = "auto") -> str:
             "accelerator='hpu' (Habana Gaudi) is not supported, as in PyTorch Lightning, "
             "which removed it; use 'cuda', 'rocm', 'mps', 'tpu' or 'cpu'"
         )
+    if accelerator == "npu":
+        raise ValidationFailed(
+            "accelerator='npu': the Trainer cannot train on an NPU, because FastFlowLM does "
+            "inference only. Serve a model on it with gpulayer.flm_service (ADR-0026)"
+        )
     if accelerator not in ("cpu", "cuda", "rocm", "mps", "tpu"):
         raise ValidationFailed(f"unknown accelerator {accelerator!r}")
     return accelerator

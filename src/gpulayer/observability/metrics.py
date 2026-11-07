@@ -155,7 +155,7 @@ def render(cp: ControlPlane, now: datetime | None = None) -> str:
         for origin in WorkerOrigin:
             n = workers.get((wstate.value, origin.value), 0)
             gauges.append(("gpulayer_workers", {"state": wstate.value, "origin": origin.value}, n))
-    for accel in ("cuda", "mps", "rocm"):
+    for accel in ("cuda", "mps", "rocm", "npu"):
         gauges.append(("gpulayer_accelerators", {"accelerator": accel}, devices.get(accel, 0)))
 
     # Per-worker resource gauges from each worker's latest sample (last minute only).

@@ -48,6 +48,12 @@ SUPPORT: dict[Accelerator, BackendSupport] = {
         "AMD GPUs through a ROCm build of PyTorch (torch.cuda API, RCCL as the nccl backend); "
         "GPUs are given to jobs with HIP_VISIBLE_DEVICES. Not yet run on AMD hardware.",
     ),
+    Accelerator.NPU: BackendSupport(
+        SupportLevel.IMPLEMENTED,
+        SupportLevel.UNSUPPORTED,
+        "AMD Ryzen AI NPUs through FastFlowLM, to serve models (ADR-0026). Training is not "
+        "available: FastFlowLM does inference only. Not yet run on an NPU.",
+    ),
 }
 
 EXECUTABLE = {SupportLevel.HARDWARE_VALIDATED, SupportLevel.TESTED, SupportLevel.IMPLEMENTED}
