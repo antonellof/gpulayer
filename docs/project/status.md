@@ -20,7 +20,7 @@ machines named. Everything else says what is missing.
 | NCCL across machines | validated on 2, 4 and 8 AWS machines with one Tesla T4 each: DDP with `sync_batchnorm`, manual optimization, FSDP ([results](../../benchmarks/results/2026-11-01-aws-8xt4/README.md)) |
 | GPUlayer Trainer speed against Lightning | measured (0.8, 2026-11-01): faster in 13 of 17 GPU cases and every CPU case; Lightning faster on a CNN on one RTX 3070 and on a CNN across machines over NCCL ([details](../get-started/performance-and-comparison.md)) |
 | Apple Silicon (PyTorch MPS, MLX) | validated on an M2 Pro |
-| AMD ROCm | implemented (devices, `HIP_VISIBLE_DEVICES`, Trainer `accelerator="rocm"`, RCCL); not run on AMD hardware |
+| AMD ROCm | implemented (GPUs found through a ROCm build of torch, `HIP_VISIBLE_DEVICES`, Trainer `accelerator="rocm"`); not run on AMD hardware. `backend="nccl"` on ROCm is assumed, not documented by AMD. [`scripts/validate_rocm.sh`](../guides/amd-rocm.md#validating-a-machine) is ready for the first machine |
 | Other GPU libraries (JAX, CuPy, TensorFlow, ONNX Runtime, Transformers) | detected on workers; not validated on a GPU (a validation run was stopped before it finished) |
 | Trainer FSDP (`strategy="fsdp"`) | experimental; validated over NCCL on 2 and 8 T4 machines (32-true; each rank held 1/N of the parameters) |
 | Trainer Lightning parity (ADR-0024): hooks, manual optimization, DataModule, scheduler forms, "-true" precisions, DDP options, callbacks (checkpointing, early stopping, SWA, EMA, fine-tuning, pruning, timers, monitors), CSV logger, profilers, tuner | tested on CPU, one process and two DDP processes; step time within 1.4% of 0.7 on an M2 Pro CPU |

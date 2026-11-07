@@ -115,6 +115,10 @@
           "title": "NVIDIA CUDA"
         },
         {
+          "slug": "guides/amd-rocm",
+          "title": "AMD ROCm"
+        },
+        {
           "slug": "guides/cloud-providers",
           "title": "Cloud and providers"
         },

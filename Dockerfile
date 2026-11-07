@@ -5,6 +5,8 @@
 #     --build-arg BASE=nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 \
 #     --build-arg EXTRAS=pytorch-cuda .                          # NVIDIA worker with torch
 #   docker build -t gpulayer:torch-cpu --build-arg EXTRAS=torch-cpu .  # CPU worker with torch
+#   docker build -t gpulayer:rocm --build-arg BASE=rocm/pytorch:latest \
+#     --build-arg EXTRAS=base-torch .                            # AMD worker, the base's torch
 #
 # State lives in /data (GPULAYER_HOME). The image runs as an unprivileged user.
 ARG BASE=python:3.12-slim
@@ -17,17 +19,18 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     GPULAYER_HOME=/data \
     PATH=/opt/gpulayer/bin:$PATH
 
-# CUDA base images ship without Python; python:* images already have it.
-RUN if ! command -v python3 >/dev/null 2>&1; then \
+# CUDA base images ship without Python and rocm/pytorch without venv; python:* images have both.
+RUN if ! python3 -c "import ensurepip" >/dev/null 2>&1; then \
       apt-get update && apt-get install -y --no-install-recommends python3 python3-venv \
       && rm -rf /var/lib/apt/lists/*; \
     fi \
- && python3 -m venv /opt/gpulayer
+ && if [ "$EXTRAS" = "base-torch" ]; then python3 -m venv --system-site-packages /opt/gpulayer; \
+    else python3 -m venv /opt/gpulayer; fi
 
 WORKDIR /src
 COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
-RUN if [ -z "$EXTRAS" ]; then pip install . ; \
+RUN if [ -z "$EXTRAS" ] || [ "$EXTRAS" = "base-torch" ]; then pip install . ; \
     elif [ "$EXTRAS" = "pytorch-cuda" ]; then pip install . torch numpy ; \
     elif [ "$EXTRAS" = "torch-cpu" ]; then pip install . numpy \
       && pip install torch --index-url https://download.pytorch.org/whl/cpu ; \

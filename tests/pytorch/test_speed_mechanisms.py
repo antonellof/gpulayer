@@ -3,6 +3,7 @@ features"): each checks the behaviour, not only that a name exists. The device-d
 run on every accelerator present: the CPU always, the Apple GPU (MPS) or CUDA GPUs when the
 machine has them (hardware-gated; skipped elsewhere)."""
 
+import sys
 import types
 
 import pytest
@@ -207,3 +208,23 @@ def test_gradients_stay_readable_in_on_train_batch_end(tmp_path, accel):
 
     trainer(tmp_path, accel, max_epochs=1, callbacks=[Read()]).fit(Lin(), data())
     assert seen and all(seen)
+
+
+def test_amd_gpus_are_not_told_about_tensor_cores(monkeypatch):
+    """They share CUDA's device type and torch.cuda API, and none of its hardware."""
+    from types import SimpleNamespace
+
+    def fail(*args):
+        raise AssertionError("get_device_capability must not run on AMD")
+
+    monkeypatch.setattr(torch.cuda, "get_device_capability", fail)
+    rt = SimpleNamespace(device=torch.device("cuda", 0), accelerator="rocm")
+    sys.modules["gpulayer.pytorch.trainer"]._performance_hints(rt, [], 1)
+
+
+def test_gpu_means_the_gpus_of_this_torch(monkeypatch):
+    trainer_module = sys.modules["gpulayer.pytorch.trainer"]
+    monkeypatch.setattr(trainer_module, "_rocm_build", lambda: True)
+    assert glt.Trainer(accelerator="gpu").accelerator == "rocm"
+    monkeypatch.setattr(trainer_module, "_rocm_build", lambda: False)
+    assert glt.Trainer(accelerator="gpu").accelerator == "cuda"

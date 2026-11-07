@@ -7,7 +7,9 @@ Detection is split into independent probes so each can be mocked in CPU-only CI:
 * torch probe     -- runs in a *subprocess* so a broken/missing torch install can never
                      crash or slow the worker; reports torch version, CUDA/MPS availability
                      and torch.distributed backends
-* rocm-smi        -- presence only; ROCm execution is not supported (detection-only)
+* rocm-smi        -- AMD GPUs without a ROCm torch, for a note. AMD deprecates it for amd-smi,
+                     and publishes the JSON of neither, so the names and memory of GPUs that
+                     can run come from a ROCm build of torch, which is what will drive them
 
 Discovery reports uncertainty in ``WorkerCapabilities.notes`` instead of guessing.
 """
@@ -343,6 +345,11 @@ def detect_rocm(runner: CommandRunner = run_command) -> list[AcceleratorDevice]:
     return devices
 
 
+def _amd_driver_present(runner: CommandRunner) -> bool:
+    """An AMD GPU that ``rocm-smi`` did not report: newer ROCm ships ``amd-smi`` instead."""
+    return os.path.exists("/dev/kfd") or runner(["amd-smi", "version"], 15)[0] == 0
+
+
 def host_memory_gb(runner: CommandRunner = run_command) -> float | None:
     system = platform.system()
     try:
@@ -493,24 +500,23 @@ def detect_capabilities(
             notes.append("Apple GPU present, but torch in this environment cannot use MPS")
 
     rocm = detect_rocm(runner)
-    if tp.hip and tp.cuda_available:
-        # ROCm build of torch: it drives the AMD GPUs through the torch.cuda API. The devices
-        # are executable; they are reported as rocm (vendor AMD), never as CUDA.
-        if not rocm:
-            rocm = [
-                AcceleratorDevice(
-                    index=i,
-                    accelerator=Accelerator.ROCM,
-                    vendor=GpuVendor.AMD,
-                    name=str(cd.get("name", "AMD GPU")),
-                    memory_gb=round(cd["memory_bytes"] / 1024**3, 2)
-                    if cd.get("memory_bytes")
-                    else None,
-                )
-                for i, cd in enumerate(tp.cuda_devices)
-            ]
-        rocm = [d.model_copy(update={"execution_supported": True}) for d in rocm]
-    elif rocm:
+    if tp.hip and tp.cuda_available and tp.cuda_devices:
+        # ROCm build of torch: it drives the AMD GPUs through the torch.cuda API. These are the
+        # devices a job will see, with their memory, which scheduling needs. They are reported
+        # as rocm (vendor AMD), never as CUDA.
+        rocm = [
+            AcceleratorDevice(
+                index=i,
+                accelerator=Accelerator.ROCM,
+                vendor=GpuVendor.AMD,
+                name=str(cd.get("name", "AMD GPU")),
+                memory_gb=round(cd["memory_bytes"] / 1024**3, 2)
+                if cd.get("memory_bytes")
+                else None,
+            )
+            for i, cd in enumerate(tp.cuda_devices)
+        ]
+    elif rocm or _amd_driver_present(runner):
         notes.append("AMD GPU detected, but torch in this environment has no ROCm support")
     accelerators.extend(rocm)
 

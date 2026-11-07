@@ -63,6 +63,7 @@ from gpulayer.pytorch.runtime import (
     GRADIENT_SYNC,
     XLA_SPAWNED_ENV,
     Runtime,
+    _rocm_build,
     normalize_precision,
     resolve_accelerator,
 )
@@ -256,8 +257,8 @@ class Trainer:
                 "GPUlayer does not use; checkpoints come back to default_root_dir"
             )
         accelerator = accelerator_name(accelerator)
-        if accelerator == "gpu":  # Lightning's alias
-            accelerator = "cuda"
+        if accelerator == "gpu":  # Lightning's alias: whichever GPUs this torch drives
+            accelerator = "rocm" if _rocm_build() else "cuda"
         plugged = apply_plugins(plugins) if plugins is not None else {}
         precision = plugged.get("precision", precision)
         sync_batchnorm = plugged.get("sync_batchnorm", sync_batchnorm)
@@ -3506,7 +3507,7 @@ def _performance_hints(rt: Runtime, loaders: list[Any], local_processes: int) ->
 
     if (
         "tf32" not in _HINTED
-        and rt.device.type == "cuda"
+        and rt.accelerator == "cuda"  # AMD GPUs share the device type, not Tensor Cores
         and torch.cuda.get_device_capability(rt.device)[0] >= 8
         and torch.get_float32_matmul_precision() == "highest"
     ):

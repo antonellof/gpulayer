@@ -120,7 +120,8 @@ def test_apple_gpu_without_torch(monkeypatch):
     assert caps.frameworks == {"mlx": "0.20.0"}
 
 
-def test_rocm_is_detection_only():
+def test_amd_gpu_without_a_rocm_torch_cannot_run():
+    # AMD publishes no JSON sample: "Card series" is an assumption, read only for this note.
     rocm = json.dumps({"card0": {"Card series": "MI300X"}})
     caps = detect_capabilities(
         runner=runner_for({"rocm-smi": (0, rocm)}), torch_probe=lambda: TorchProbe(error="none")
@@ -373,4 +374,42 @@ def test_amd_gpu_without_a_rocm_torch_is_not_executable(monkeypatch):
         c_compiler=lambda: None,
     )
     assert [d.execution_supported for d in caps.devices(Accelerator.ROCM)] == [False, False]
+    assert any("no ROCm support" in n for n in caps.notes)
+
+
+def rocm_build(**kw):
+    return TorchProbe(
+        torch_version="2.15.0",
+        cuda_available=True,
+        hip="6.4",
+        cuda_devices=[
+            {"name": "AMD Instinct MI300X", "memory_bytes": 192 * 1024**3},
+            {"name": "AMD Instinct MI300X", "memory_bytes": 192 * 1024**3},
+        ],
+        **kw,
+    )
+
+
+def test_amd_gpus_report_torchs_memory_for_scheduling():
+    """rocm-smi gives no memory here: a job asking for GPU memory must still fit."""
+    caps = detect_capabilities(
+        runner=runner_for({"rocm-smi": (0, ROCM_SMI)}), torch_probe=rocm_build
+    )
+    rocm = caps.devices(Accelerator.ROCM)
+    assert [d.memory_gb for d in rocm] == [192.0, 192.0]
+    assert all(d.execution_supported for d in rocm)
+
+
+def test_amd_gpus_without_rocm_smi():
+    """AMD removes rocm-smi from newer ROCm builds: torch alone must be enough."""
+    caps = detect_capabilities(runner=runner_for({}), torch_probe=rocm_build)
+    assert [d.name for d in caps.devices(Accelerator.ROCM)] == ["AMD Instinct MI300X"] * 2
+
+
+def test_amd_smi_alone_gives_a_note():
+    caps = detect_capabilities(
+        runner=runner_for({"amd-smi": (0, "AMDSMI Tool")}),
+        torch_probe=lambda: TorchProbe(error="none"),
+    )
+    assert not caps.devices(Accelerator.ROCM)
     assert any("no ROCm support" in n for n in caps.notes)
