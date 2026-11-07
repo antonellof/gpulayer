@@ -246,7 +246,6 @@ def test_datamodule_from_datasets():
 # ------------------------------------------------------------------ the training loop
 
 
-@pytest.mark.xfail(strict=True, reason="item 6: on_before_zero_grad fires after the step")
 def test_hook_order():
     def scenario(fw):
         trace: list[str] = []
@@ -285,7 +284,6 @@ def test_hook_order():
     same(scenario)
 
 
-@pytest.mark.xfail(strict=True, reason="item 6: dataloader_iter form of training_step")
 def test_dataloader_iter_step():
     def scenario(fw):
         class Model(model_class(fw)):
@@ -300,7 +298,6 @@ def test_dataloader_iter_step():
     same(scenario)
 
 
-@pytest.mark.xfail(strict=True, reason="item 6: None from training_step")
 def test_training_step_returning_none():
     def scenario(fw):
         seen: list[Any] = []
@@ -321,7 +318,6 @@ def test_training_step_returning_none():
     same(scenario)
 
 
-@pytest.mark.xfail(strict=True, reason="item 6: a second fit trains again")
 def test_second_fit_with_the_same_limits():
     def scenario(fw):
         model = model_class(fw)()
@@ -500,7 +496,6 @@ def test_csv_logger_rows(tmp_path):
     same(scenario)
 
 
-@pytest.mark.xfail(strict=True, reason="item 6: self.log misuse is accepted")
 @pytest.mark.parametrize("misuse", ["vector", "in_configure_optimizers", "repeated_key"])
 def test_log_misuse_is_an_error(misuse):
     def scenario(fw):

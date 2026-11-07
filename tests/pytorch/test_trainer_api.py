@@ -158,7 +158,7 @@ def test_hooks_follow_the_reference_order(tmp_path):
     t.fit(Hooked(), *loaders())
     assert calls == [
         "setup:fit", "fit_start", "train_start", "epoch_start", "batch_start",
-        "before_backward", "after_backward", "before_opt", "zero_grad",
+        "zero_grad", "before_backward", "after_backward", "before_opt",
         "val_start", "val_end", "epoch_end", "train_end", "fit_end", "teardown:fit",
     ]  # fmt: skip
     assert t.callback_metrics["from_val_end"] == 7.0  # logged in an epoch-end hook
@@ -188,7 +188,8 @@ def test_returning_none_skips_and_minus_one_ends_the_epoch(tmp_path):
 
     t = trainer(tmp_path, max_epochs=1)
     t.fit(Skips(), loaders()[0])
-    assert t.global_step == 2  # batches 0 and 2 stepped, 1 and 3 skipped, 4 ended the epoch
+    # Skipped batches count as steps, as in Lightning, with no gradients to apply; 4 ended it.
+    assert t.global_step == 4
 
 
 def test_manual_optimization_with_two_optimizers(tmp_path):

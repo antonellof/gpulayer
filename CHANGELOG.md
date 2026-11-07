@@ -63,6 +63,24 @@ before 1.0, minor versions may change public APIs, with migration notes here.
   `gpulayer.pytorch.utilities.to_lightning_checkpoint` writes one for Lightning's `fit`.
   **Migration:** after `fit`, and in `on_train_end`, `trainer.current_epoch` now counts the
   epochs run (Lightning's meaning): one more than before. New checkpoints have `next_epoch`.
+- Fix (Trainer, Lightning semantics):
+  - `training_step(self, dataloader_iter)` raised `TypeError`; the step now pulls its own
+    batches as `(batch, batch_idx, dataloader_idx)`. In `training_step` only.
+  - `None` from `training_step` skipped `on_train_batch_end`, which now runs with empty
+    outputs, and the batch counts in `global_step`. **Migration:** step counts of models that
+    skip batches go up; schedulers and `max_steps` count those steps too.
+  - `on_before_zero_grad` ran after the optimizer step; it now runs before backward. When no
+    model or callback overrides it or `optimizer_zero_grad`, gradients are still freed after
+    `on_train_batch_end`, before the next forward pass, which Lightning does not do: peak memory
+    stays lower and nothing can observe the difference except code reading `.grad` inside
+    `training_step`.
+  - A second `fit` with the same Trainer trained again. It now continues from where the first
+    stopped, so with its limits reached it does nothing, as in Lightning. **Migration:** raise
+    `max_epochs`, or use a new Trainer.
+  - `self.log` errors as in Lightning: a tensor of several values (it was averaged), a call in
+    a hook nothing collects from (`setup`, `configure_optimizers`, `on_fit_start`,
+    `on_fit_end`, `on_train_end`, `on_validation_end`, `on_test_end`, `teardown`, ...), and the
+    same name twice in a step with different options.
 - New CI job and `tests/conformance`: the same code runs on PyTorch Lightning and on the
   Trainer and must behave the same; differences not fixed yet are listed as strict `xfail`s.
   `pip install -e '.[conformance]'` adds what it needs.

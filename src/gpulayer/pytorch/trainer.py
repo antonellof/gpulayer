@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import csv
+import inspect
 import itertools
 import json
 import math
@@ -865,8 +866,9 @@ class Trainer:
         )
 
     def _call_hook(self, name: str, *args: Any) -> None:
-        for fn in self._hook_cache.get(name, ()):
-            fn(*args)
+        with _no_log(self._model, name):
+            for fn in self._hook_cache.get(name, ()):
+                fn(*args)
 
     def _call_epoch_end(self, name: str, model: Module) -> dict[str, float]:
         """``on_*_epoch_end``: other callbacks, then the model (whose ``self.log`` calls are
@@ -1083,6 +1085,7 @@ class Trainer:
         finally:
             if previous_sigterm is not None:
                 signal.signal(signal.SIGTERM, previous_sigterm)
+            model.__dict__.pop("training_step", None)
             self.checkpoint_io.teardown()
             self._finalize_loggers("success" if self.state.status == "finished" else "failed")
             rt.teardown()
@@ -1140,7 +1143,8 @@ class Trainer:
     def _optimizers(
         self, model: Module
     ) -> tuple[list[torch.optim.Optimizer], list[LRSchedulerConfig]]:
-        cfg = model.configure_optimizers()
+        with _no_log(model, "configure_optimizers"):
+            cfg = model.configure_optimizers()
         monitor = None
         if isinstance(cfg, torch.optim.Optimizer):
             opts, scheds = [cfg], []
@@ -1229,20 +1233,22 @@ class Trainer:
             if overridden(model, "prepare_data", Module):
                 model.prepare_data()
         rt.barrier()
-        if dm is not None:
-            dm.setup(stage)
-        for cb in self.callbacks:
-            if overrides(cb, "setup"):
-                cb.setup(self, model, stage)
-        model.setup(stage)
+        with _no_log(model, "setup"):
+            if dm is not None:
+                dm.setup(stage)
+            for cb in self.callbacks:
+                if overrides(cb, "setup"):
+                    cb.setup(self, model, stage)
+            model.setup(stage)
 
     def _teardown_model(self, model: Module, stage: str) -> None:
         if self.datamodule is not None:
             self.datamodule.teardown(stage)
-        for cb in self.callbacks:
-            if overrides(cb, "teardown"):
-                cb.teardown(self, model, stage)
-        model.teardown(stage)
+        with _no_log(model, "teardown"):
+            for cb in self.callbacks:
+                if overrides(cb, "teardown"):
+                    cb.teardown(self, model, stage)
+            model.teardown(stage)
 
     def _run_fit(
         self,
@@ -1363,6 +1369,7 @@ class Trainer:
             optimizers = _post_local_sgd(optimizers, self._strategy, rt)
         self.optimizers, self.lr_scheduler_configs = optimizers, sched_configs
         self._model, self.should_stop = model, False
+        _take_dataloader_iter(model)
         automatic = model.automatic_optimization
         self._manual_opts = [_ManualOptimizer(o, self) for o in optimizers]
 
@@ -1395,7 +1402,7 @@ class Trainer:
             self.profiler.setup("fit", rt.local_rank, str(out_dir))
 
         # Resume.
-        start_epoch, skip_batches = 0, 0
+        start_epoch, skip_batches = self.current_epoch, 0  # a second fit continues
         if ckpt_path:
             start_epoch, skip_batches = self._restore(rt, model, ckpt_path)
 
@@ -1437,8 +1444,17 @@ class Trainer:
                 "(dropout and BatchNorm updates are off); call model.train() before fit if "
                 "that is not intended"
             )
-        self._call_hook("on_train_start")
         finished = self.current_epoch = start_epoch
+        done = start_epoch >= self.max_epochs or (
+            self.max_steps is not None and self.global_step >= self.max_steps
+        )
+        if done:
+            self._say("[gpulayer] nothing to train: the limits were reached already")
+            self.state.stage = None
+            self._call_hook("on_fit_end")
+            self._teardown_model(model, "fit")
+            return
+        self._call_hook("on_train_start")
         for epoch in range(start_epoch, self.max_epochs):
             self.current_epoch = epoch
             finished = epoch + 1
@@ -1618,6 +1634,10 @@ class Trainer:
         before_backward = hooks.get("on_before_backward", [])
         after_backward = hooks.get("on_after_backward", [])
         single = not rt.distributed
+        # Lightning clears gradients before backward. That is the order when a model or callback
+        # can see it. Otherwise they are freed as soon as nothing can read them, after
+        # on_train_batch_end, so the next forward pass runs with less memory in use.
+        zero_in_step = automatic and (bool(hooks.get("on_before_zero_grad")) or self._custom_opt[2])
         # Lightning steps schedulers only with automatic optimization; with manual
         # optimization the model calls sch.step() itself.
         self._step_scheds = automatic and any(
@@ -1652,7 +1672,10 @@ class Trainer:
             batches = _profiled(batches, prof, "train_dataloader_next")
         # A loader without a length gives no batch count: look one batch ahead to know the
         # last batch, so its accumulated gradients are applied in this epoch (Lightning).
-        ahead = _LookAhead(batches) if n_total is None else None
+        iter_step = "training_step" in model.__dict__  # takes dataloader_iter
+        if iter_step:
+            batches = _IterSteps(batches)
+        ahead = _LookAhead(batches) if n_total is None and not iter_step else None
         if ahead is not None:
             batches = ahead
         loss: Any = None
@@ -1679,6 +1702,8 @@ class Trainer:
                     break  # on_train_batch_start returned -1: end the epoch (as in Lightning)
             self._batch_counter = batch_idx + 1
             model._gl_step_logs = {}
+            if batch_end:
+                model._gl_in_step = True
             self._stepped = False
             if prof is not None:
                 prof.start("run_training_batch")
@@ -1706,28 +1731,29 @@ class Trainer:
                     with rt.autocast():
                         out = step_fn(batch, batch_idx)
                     loss = out["loss"] if isinstance(out, dict) else out
-                    if loss is None:
-                        # Lightning: returning None skips this batch's optimization.
-                        if prof is not None:
-                            prof.stop("run_training_batch")
-                        continue
-                    if not isinstance(loss, torch.Tensor):
+                    if loss is not None and not isinstance(loss, torch.Tensor):
                         raise ValidationFailed(
                             "training_step must return the loss tensor (or a dict with 'loss')"
                         )
-                    for fn in before_backward:
-                        fn(loss)
-                    if prof is not None:
-                        prof.start("backward")
-                    rt.backward(loss / accumulate if accumulate > 1 else loss)
-                    if prof is not None:
-                        prof.stop("backward")
-                    for fn in after_backward:
-                        fn()
+                    if zero_in_step and batch_idx % accumulate == 0:
+                        self._zero_grad(model, self.optimizers[0], batch_idx)
+                    if loss is not None:
+                        for fn in before_backward:
+                            fn(loss)
+                        if prof is not None:
+                            prof.start("backward")
+                        rt.backward(loss / accumulate if accumulate > 1 else loss)
+                        if prof is not None:
+                            prof.stop("backward")
+                        for fn in after_backward:
+                            fn()
                 if apply:
                     if prof is not None:
                         prof.start("optimizer_step")
-                    self._optimizer_step(rt, model, self.optimizers[0], batch_idx)
+                    # None skips the batch, as in Lightning: the step still counts, and with
+                    # no gradients an optimizer changes nothing. A GradScaler refuses to run.
+                    if loss is not None or rt.scaler is None:
+                        self._optimizer_step(rt, model, self.optimizers[0], batch_idx)
                     if prof is not None:
                         prof.stop("optimizer_step")
                     self._stepped = True
@@ -1765,13 +1791,17 @@ class Trainer:
                 sent = self._publish_step(values, opts)
                 self._step_rows.append({"epoch": epoch, "step": self.global_step, **sent})
             if batch_end:
-                outputs = (
-                    out
-                    if isinstance(out, dict)
-                    else {"loss": loss.detach() if isinstance(loss, torch.Tensor) else loss}
-                )
+                model._gl_in_step = False
+                if loss is None and automatic:
+                    outputs: Any = {}
+                elif isinstance(out, dict):
+                    outputs = out
+                else:
+                    outputs = {"loss": loss.detach() if isinstance(loss, torch.Tensor) else loss}
                 for fn in batch_end:
                     fn(outputs, batch, batch_idx)
+            if self._stepped and not zero_in_step and automatic:
+                self.optimizers[0].zero_grad(set_to_none=True)
             if val_every and val_epoch:
                 if count_across:
                     seen = epoch * n_batches + batch_idx + 1 if n_batches else self._total_batches
@@ -1922,7 +1952,7 @@ class Trainer:
     ) -> None:
         hooks = self._hook_cache
         before = hooks.get("on_before_optimizer_step", [])
-        custom_clip, custom_step, custom_zero = self._custom_opt
+        custom_clip, custom_step, _ = self._custom_opt
         if not (before or custom_clip or custom_step):
             rt.step(
                 optimizer, model.parameters(), self.gradient_clip_val, self.gradient_clip_algorithm
@@ -1949,9 +1979,12 @@ class Trainer:
                 scaler.update()
             else:
                 optimizer.step()
-        for fn in hooks.get("on_before_zero_grad", ()):
+
+    def _zero_grad(self, model: Module, optimizer: torch.optim.Optimizer, batch_idx: int) -> None:
+        """Before backward, on the first batch of an accumulation, as in Lightning."""
+        for fn in self._hook_cache.get("on_before_zero_grad", ()):
             fn(optimizer)
-        if custom_zero:
+        if self._custom_opt[2]:
             model.optimizer_zero_grad(self.current_epoch, batch_idx, optimizer)
         else:
             optimizer.zero_grad(set_to_none=True)
@@ -3018,6 +3051,102 @@ def _materialize(loader: Any) -> Any:
     if callable(loader) and not hasattr(loader, "__iter__"):
         return loader()
     return loader
+
+
+_LOG_FORBIDDEN = frozenset(
+    {
+        "on_fit_start",
+        "on_fit_end",
+        "on_sanity_check_start",
+        "on_sanity_check_end",
+        "on_train_end",
+        "on_validation_end",
+        "on_test_end",
+    }
+)
+
+
+@contextlib.contextmanager
+def _no_log(model: Module | None, hook: str) -> Iterator[None]:
+    """``self.log`` is an error during ``hook``, as in Lightning: nothing would collect the
+    value. The check costs nothing where logging is allowed."""
+    if model is None or (hook in _HOOKS_WITH_LOG and hook not in _LOG_FORBIDDEN):
+        yield
+        return
+
+    def forbidden(*args: Any, **kwargs: Any) -> None:
+        raise ValidationFailed(f"self.log cannot be called in {hook}")
+
+    model.__dict__["log"] = forbidden
+    try:
+        yield
+    finally:
+        model.__dict__.pop("log", None)
+
+
+_HOOKS_WITH_LOG = frozenset(
+    {
+        "on_train_start",
+        "on_train_epoch_start",
+        "on_validation_start",
+        "on_validation_epoch_start",
+        "on_test_start",
+        "on_test_epoch_start",
+        "on_predict_start",
+        "on_predict_epoch_start",
+        "on_predict_end",
+        "on_predict_epoch_end",
+    }
+)
+
+
+def _take_dataloader_iter(model: Module) -> None:
+    """Support ``training_step(self, dataloader_iter)``: the step pulls its own batches. Until
+    the end of ``fit`` the Module's ``training_step`` takes what the loop passes."""
+    step = model.training_step
+    if "dataloader_iter" not in inspect.signature(step).parameters:
+        return
+
+    def from_iterator(dataloader_iter: Any, batch_idx: int) -> Any:
+        try:
+            return step(dataloader_iter)  # type: ignore[call-arg]
+        except StopIteration:  # the step asked for more batches than were left
+            return None
+
+    model.__dict__["training_step"] = from_iterator
+
+
+class _DataloaderIter:
+    """What ``training_step(self, dataloader_iter)`` receives: ``next`` gives ``(batch,
+    batch_idx, dataloader_idx)``."""
+
+    def __init__(self, batches: Iterable[Any]) -> None:
+        self._it = iter(batches)
+        self._peeked: list[Any] = []
+        self._index = -1
+
+    def __iter__(self) -> _DataloaderIter:
+        return self
+
+    def __next__(self) -> tuple[Any, int, int]:
+        batch = self._peeked.pop() if self._peeked else next(self._it)
+        self._index += 1
+        return batch, self._index, 0
+
+    def has_next(self) -> bool:
+        if not self._peeked:
+            try:
+                self._peeked.append(next(self._it))
+            except StopIteration:
+                return False
+        return True
+
+
+def _IterSteps(batches: Iterable[Any]) -> Iterator[_DataloaderIter]:  # noqa: N802
+    """One training step for as long as the loader has batches."""
+    feed = _DataloaderIter(batches)
+    while feed.has_next():
+        yield feed
 
 
 def _lightning_position(fit_loop: dict[str, Any]) -> tuple[int, int]:

@@ -44,7 +44,8 @@ if __name__ == "__main__":
 
 `glt.Module` is an `nn.Module` with Lightning's methods:
 
-- `training_step` returns the loss (or a dict with `"loss"`; `None` skips the batch).
+- `training_step` returns the loss (or a dict with `"loss"`; `None` skips the batch, which
+  still counts as a step). `training_step(self, dataloader_iter)` pulls its own batches.
   `validation_step`, `test_step` and `predict_step` are optional.
 - `configure_optimizers` returns an optimizer or any of Lightning's forms
   ([below](#optimizers-and-schedulers)).
