@@ -795,14 +795,7 @@ class Trainer:
         ]
         for rank in ranks:
             rank.start()
-        failed = None
-        while failed is None and any(r.is_alive() for r in ranks):
-            multiprocessing.connection.wait([r.sentinel for r in ranks if r.is_alive()])
-            failed = next((r for r in ranks if r.exitcode not in (None, 0)), None)
-        for rank in ranks:
-            if failed is not None:
-                rank.terminate()
-            rank.join()
+        failed = _wait_for_ranks(ranks)
         if failed is not None:
             raise GpuLayerError(f"a forked training process failed (exit {failed.exitcode})")
         self._load_outputs(out, model)
@@ -3002,6 +2995,24 @@ def _fsdp_wrapped(module: Any) -> bool:
     from torch.nn.parallel import DistributedDataParallel as DDP
 
     return not isinstance(module, DDP)
+
+
+def _wait_for_ranks(ranks: list[Any]) -> Any:
+    """Wait until every process ended, or stop the rest when one fails; returns the failed
+    one. Sentinels stay readable after a process ends, so each is waited on exactly once, and
+    a process ending at any moment cannot leave this waiting on nothing."""
+    pending = {r.sentinel: r for r in ranks}
+    failed = None
+    while pending and failed is None:
+        for sentinel in multiprocessing.connection.wait(list(pending)):
+            rank = pending.pop(sentinel)
+            rank.join()
+            if rank.exitcode != 0:
+                failed = rank
+    for rank in pending.values():
+        rank.terminate()
+        rank.join()
+    return failed
 
 
 def _notebook_rank(

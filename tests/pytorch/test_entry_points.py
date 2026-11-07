@@ -216,6 +216,24 @@ print("RESULT", json.dumps({"changed": model.net.weight.item() != before,
 """
 
 
+@pytest.mark.parametrize("exits", [(0, 0), (0, 3), (3, 0)], ids=str)
+def test_waiting_for_ranks_never_waits_on_nothing(exits):
+    """Processes that end at once, again and again: a wait built from those still alive could
+    end up with an empty list and block for ever, after a run that had succeeded."""
+    import multiprocessing
+
+    from gpulayer.pytorch.trainer import _wait_for_ranks
+
+    context = multiprocessing.get_context("fork" if sys.platform != "darwin" else "spawn")
+    for _ in range(100 if sys.platform != "darwin" else 2):
+        ranks = [context.Process(target=sys.exit, args=(code,)) for code in exits]
+        for rank in ranks:
+            rank.start()
+        failed = _wait_for_ranks(ranks)
+        assert (failed is None) == (exits == (0, 0))
+        assert all(not r.is_alive() for r in ranks)
+
+
 linux_only = pytest.mark.skipif(sys.platform == "darwin", reason="forks crash on macOS")
 
 
