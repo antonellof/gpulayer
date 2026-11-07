@@ -19,8 +19,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     GPULAYER_HOME=/data \
     PATH=/opt/gpulayer/bin:$PATH
 
-# CUDA base images ship without Python; python:* images already have it.
-RUN if ! command -v python3 >/dev/null 2>&1; then \
+# CUDA base images ship without Python and rocm/pytorch without venv; python:* images have both.
+RUN if ! python3 -c "import ensurepip" >/dev/null 2>&1; then \
       apt-get update && apt-get install -y --no-install-recommends python3 python3-venv \
       && rm -rf /var/lib/apt/lists/*; \
     fi \

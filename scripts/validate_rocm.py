@@ -26,6 +26,7 @@ from gpulayer.contracts import Accelerator
 from gpulayer.gpu.discovery import detect_capabilities
 
 RESULTS: list[tuple[str, bool, str]] = []
+SKIP = "SKIP"
 
 
 def check(name: str):
@@ -33,6 +34,9 @@ def check(name: str):
         t0 = time.perf_counter()
         try:
             detail = fn() or ""
+            if detail == SKIP:
+                print(f"CHECK {name} SKIP needs two GPUs", flush=True)
+                return fn
             RESULTS.append((name, True, f"{detail} ({time.perf_counter() - t0:.1f}s)"))
         except Exception as e:  # noqa: BLE001 - report every failure and carry on
             traceback.print_exc()
@@ -160,7 +164,7 @@ for backend in ("nccl", "gloo"):
     def _ddp(backend=backend):
         """nccl is RCCL under torch's name: AMD's pages do not say this works."""
         if COUNT < 2:
-            return "skipped: one GPU"
+            return SKIP
         with tempfile.TemporaryDirectory() as root:
             script = Path(root) / "ddp.py"
             script.write_text(textwrap.dedent(DDP))
