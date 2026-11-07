@@ -68,7 +68,7 @@ Lightning's speed-related choices are few, and the GPUlayer Trainer already had 
      `to_lightning_checkpoint` for the way back (`optimizer_states`, `lr_schedulers`, `callbacks`,
      `hyper_parameters`, scaler), resuming within an epoch from step checkpoints, and
      Ctrl+C ending `fit` gracefully after `on_exception` hooks.
-2. **Still not adopted:** DeepSpeed, TPU/HPU/XLA accelerators, `plugins=`, `LightningCLI`,
+2. **Still not adopted (at the time; see the status page):** DeepSpeed, TPU/HPU/XLA accelerators, `plugins=`, `LightningCLI`,
    several dataloaders per stage, distributed `predict`, Lightning Fabric. Users who need
    them keep Lightning and run it with `launch()`.
 3. **Defaults that differ from Lightning, on purpose:** one epoch when no limit is given (Lightning: 1000),

@@ -3,7 +3,11 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
-## Unreleased
+## 0.10.0 (2026-11-07)
+
+Makes the Trainer behave like PyTorch Lightning, not only look like it: `tests/conformance` runs
+the same code on both. Step time is unchanged on an M2 Pro CPU, -1.7% to +0.3% over four runs
+(`benchmarks/results/2026-11-07-m2pro-parity-fixes/`). Read the **Migration** notes.
 
 - Fix: `self.log(name, metric)` with a `torchmetrics.Metric` raised `TypeError`. The Trainer
   now computes the metric once at the end of the epoch or evaluation and resets it; the
