@@ -66,6 +66,7 @@ CHECKPOINT = "checkpoints/last.ckpt"
 # cuDNN autotuning pays off from about this many optimizer steps (see Trainer.fit).
 AUTOTUNE_MIN_STEPS = 1000
 RESUME_INPUT = "gpulayer-resume.ckpt"
+UNLIMITED_EPOCHS = 10**9
 
 
 @dataclass
@@ -192,7 +193,7 @@ class Trainer:
         logger: Logger | list[Logger] | bool | None = None,
         callbacks: Callback | list[Callback] | None = None,
         fast_dev_run: bool | int = False,
-        max_epochs: int | None = 1,
+        max_epochs: int | None = None,
         min_epochs: int | None = None,
         max_steps: int | None = None,
         min_steps: int | None = None,
@@ -247,10 +248,14 @@ class Trainer:
         self.checkpoint_io: CheckpointIO = plugged.get("checkpoint_io") or TorchCheckpointIO()
         self._custom_scaler = plugged.get("scaler")
         self._precision_plugin = plugged.get("precision_plugin")
-        if max_epochs is None or max_epochs == -1:
-            max_epochs = 1000 if max_steps in (None, -1) else 10**9
         if max_steps == -1:
             max_steps = None
+        if max_epochs == -1 or (
+            max_epochs is None and (max_steps is not None or max_time is not None)
+        ):
+            max_epochs = UNLIMITED_EPOCHS  # another limit ends the run
+        elif max_epochs is None:
+            max_epochs = max(1, min_epochs or 1)  # Lightning's default is 1000
         # On TPUs, "auto" means every TPU device of the VM (counted by torch_xla when the
         # processes start).
         self._all_devices = devices in ("auto", -1)
@@ -1368,9 +1373,10 @@ class Trainer:
         )
         if sharded is None and rt.uses_two_level_sync():
             where += f", two-level gradient sync ({rt.local_world_size} per machine)"
-        self._say(
-            f"[gpulayer] training on {where}, precision {rt.precision}, {self.max_epochs} epoch(s)"
-        )
+        planned = f"{self.max_epochs} epoch(s)"
+        if self.max_epochs == UNLIMITED_EPOCHS:
+            planned = f"{self.max_steps} step(s)" if self.max_steps else "until stopped"
+        self._say(f"[gpulayer] training on {where}, precision {rt.precision}, {planned}")
         if rt.is_global_zero and self.loggers and self.enable_autolog_hparams:
             hp = {
                 **dict(model.hparams),

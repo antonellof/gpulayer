@@ -258,3 +258,46 @@ def test_ddp_epoch_values_follow_reduce_fx_and_tolerate_rank_only_names(tmp_path
     )
     assert p.returncode == 0, p.stdout + p.stderr
     assert "RESULT 64.0 1.0 7.0" in p.stdout, p.stdout
+
+
+# ------------------------------------------------------------------ when training stops
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "steps"),
+    [
+        ({}, 10),
+        ({"max_steps": 15}, 15),
+        ({"max_steps": 4}, 4),
+        ({"max_steps": 15, "max_epochs": 1}, 10),  # the first limit reached wins
+        ({"max_steps": -1}, 10),
+        ({"min_epochs": 3}, 30),
+        ({"max_epochs": 2}, 20),
+    ],
+)
+def test_limits_on_training(tmp_path, kwargs, steps):
+    x = torch.randn(10, 2)
+    loader = DataLoader(TensorDataset(x, x), batch_size=1)
+
+    class Model(glt.Module):
+        def __init__(self):
+            super().__init__()
+            self.net = nn.Linear(2, 2)
+
+        def training_step(self, batch, batch_idx):
+            return nn.functional.mse_loss(self.net(batch[0]), batch[1])
+
+        def configure_optimizers(self):
+            return torch.optim.SGD(self.parameters(), lr=1e-3)
+
+    t = glt.Trainer(
+        accelerator="cpu", default_root_dir=tmp_path, enable_checkpointing=False, **kwargs
+    )
+    t.fit(Model(), loader)
+    assert t.global_step == steps
+
+
+def test_max_time_is_not_capped_at_one_epoch():
+    assert glt.Trainer(max_time="00:00:00:10").max_epochs > 1000
+    assert glt.Trainer(max_epochs=-1).max_epochs > 1000
+    assert glt.Trainer().max_epochs == 1
