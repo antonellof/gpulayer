@@ -3,6 +3,19 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
+## Unreleased
+
+- Fix (AMD, found by reading the code; not run on AMD hardware): AMD GPUs had no memory when
+  `rocm-smi` worked, so a job with `gpu_memory_gb` rejected them; names and memory now come
+  from the ROCm build of torch, also where AMD no longer ships `rocm-smi`. `accelerator="gpu"`
+  raised on a ROCm build and now means its GPUs. A fit on AMD asked for a CUDA capability and could
+  say the GPU has NVIDIA's Tensor Cores. Machines with `amd-smi` or `/dev/kfd` and no ROCm torch
+  now get a note.
+- New: `scripts/validate_rocm.sh` for the first AMD machine, which also records `amd-smi` and
+  `rocm-smi` output, since AMD publishes neither JSON format; `docs/guides/amd-rocm.md`; Docker
+  `EXTRAS=base-torch` for images on `rocm/pytorch` (not built yet).
+- Docs: ADR-0026 proposes how Ryzen AI NPUs fit in, as a service for inference.
+
 ## 0.10.0 (2026-11-07)
 
 Makes the Trainer behave like PyTorch Lightning, not only look like it: `tests/conformance` runs
