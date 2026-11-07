@@ -255,3 +255,31 @@ __all__ = [
     "set_shared_parameters",
     "suggested_max_num_workers",
 ]
+
+
+def to_lightning_checkpoint(source: str | Path, target: str | Path) -> Path:
+    """Write a copy of a GPUlayer checkpoint for PyTorch Lightning's ``Trainer.fit``, without
+    what only GPUlayer reads: callback states (their fields differ), run history and random
+    states. Weights, optimizers, schedulers and hyperparameters stay; Lightning restarts its
+    epoch count, as for any checkpoint without loop state. ``load_from_checkpoint`` needs no
+    export. Returns ``target``."""
+    from gpulayer.pytorch.storage import as_path, load_file
+
+    state = load_file(source, map_location="cpu", weights_only=False)
+    for key in (
+        "gpulayer_version",
+        "history",
+        "callback_metrics",
+        "rng_states",
+        "next_epoch",
+        "batches_done",
+        "dataloaders",
+        "optimizer",
+    ):
+        state.pop(key, None)
+    state["callbacks"] = {}
+    out = as_path(target)
+    from gpulayer.pytorch.plugins import TorchCheckpointIO
+
+    TorchCheckpointIO().save_checkpoint(state, out)
+    return Path(out) if isinstance(out, Path) else out

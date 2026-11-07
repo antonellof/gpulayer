@@ -539,7 +539,6 @@ def test_missing_monitor_is_an_error():
     same(scenario)
 
 
-@pytest.mark.xfail(strict=True, reason="item 5: the epoch after fit, in the rows of test")
 def test_logger_rows_and_stored_values():
     """Every row a logger receives, its step and values, across fit, test and validate."""
 
@@ -640,12 +639,23 @@ def test_ckpt_path_names(tmp_path):
     same(scenario)
 
 
-@pytest.mark.xfail(strict=True, reason="item 5: current_epoch after fit")
-def test_current_epoch_after_fit():
+@pytest.mark.parametrize(
+    "limits", [{"max_epochs": 2}, {"max_steps": 13}, {"max_steps": 20}], ids=str
+)
+def test_current_epoch_after_fit(limits):
     def scenario(fw):
-        t = fw.Trainer(max_epochs=2, limit_train_batches=2, **QUIET)
-        t.fit(model_class(fw)(), data())
-        return t.current_epoch, t.global_step
+        seen: list[int] = []
+
+        class Model(model_class(fw)):
+            def on_train_epoch_end(self):
+                seen.append(self.current_epoch)
+
+            def on_train_end(self):
+                seen.append(self.current_epoch)
+
+        t = fw.Trainer(**limits, **QUIET)
+        t.fit(Model(), data())
+        return t.current_epoch, t.global_step, seen
 
     same(scenario)
 
@@ -659,7 +669,6 @@ def _stop_at(fw: Any, step: int, path: Path) -> Any:
     return Saver()
 
 
-@pytest.mark.xfail(strict=True, reason="item 5: Lightning's loop state is not read")
 def test_lightning_checkpoint_resumes_mid_epoch_on_gpulayer(tmp_path):
     fw = FRAMEWORKS["lightning"]
     path = tmp_path / "mid.ckpt"
@@ -672,17 +681,60 @@ def test_lightning_checkpoint_resumes_mid_epoch_on_gpulayer(tmp_path):
     assert resumed.global_step == 20  # the 3 batches left in epoch 0, then 10
 
 
-@pytest.mark.xfail(strict=True, reason="item 5: no way back to Lightning yet")
 def test_gpulayer_checkpoint_loads_on_lightning(tmp_path):
     g = FRAMEWORKS["gpulayer"]
     path = tmp_path / "out.ckpt"
     t = g.Trainer(max_epochs=1, limit_train_batches=2, **QUIET)
-    t.fit(model_class(g)(), data())
+    model = model_class(g)()
+    t.fit(model, data())
     t.save_checkpoint(path)
 
     fw = FRAMEWORKS["lightning"]
     restored = model_class(fw).load_from_checkpoint(path)
     assert restored.hparams.lr == 0.05
+    assert torch.equal(restored.net.weight, model.net.weight.cpu())
+
+
+def test_exported_checkpoint_resumes_on_lightning(tmp_path):
+    from gpulayer.pytorch.utilities import to_lightning_checkpoint
+
+    g = FRAMEWORKS["gpulayer"]
+    source = tmp_path / "out.ckpt"
+    t = g.Trainer(
+        max_epochs=1,
+        limit_train_batches=2,
+        callbacks=[g.ModelCheckpoint()],
+        **{**QUIET, "enable_checkpointing": True},
+    )
+    t.default_root_dir = tmp_path
+    model = model_class(g)()
+    t.fit(model, data())
+    t.save_checkpoint(source)
+    exported = to_lightning_checkpoint(source, tmp_path / "lightning.ckpt")
+
+    fw = FRAMEWORKS["lightning"]
+    seen = []
+
+    class Model(model_class(fw)):
+        def on_train_start(self):
+            seen.append(self.net.weight.clone())
+
+    resumed = fw.Trainer(max_epochs=1, limit_train_batches=1, **QUIET)
+    resumed.fit(Model(), data(), ckpt_path=exported)
+    assert torch.equal(seen[0], model.net.weight.cpu())
+
+
+def test_lightning_checkpoint_saved_at_the_end_resumes_on_gpulayer(tmp_path):
+    fw = FRAMEWORKS["lightning"]
+    path = tmp_path / "end.ckpt"
+    t = fw.Trainer(max_epochs=2, **QUIET)
+    t.fit(model_class(fw)(), data())
+    t.save_checkpoint(path)
+
+    g = FRAMEWORKS["gpulayer"]
+    resumed = g.Trainer(max_epochs=3, **QUIET)
+    resumed.fit(model_class(g)(), data(), ckpt_path=path)
+    assert (resumed.global_step, resumed.current_epoch) == (30, 3)
 
 
 def test_object_store_paths(tmp_path, monkeypatch):

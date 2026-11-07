@@ -52,6 +52,8 @@ Lightning needs torchrun, SLURM or a cluster to start processes on each machine.
 | `L.LightningModule`, `L.LightningDataModule` | `glt.Module`, `glt.DataModule` |
 | `LightningCLI`, `LightningArgumentParser` | `glt.GPULayerCLI`, `glt.GPULayerArgumentParser` |
 | `trainer.lightning_module` | `trainer.module` |
+| a checkpoint from Lightning | `fit(ckpt_path=...)` reads it, also one saved within an epoch |
+| going back to Lightning | `load_from_checkpoint` reads GPUlayer checkpoints; for `fit`, first `gpulayer.pytorch.utilities.to_lightning_checkpoint(source, target)` |
 | `accelerator="gpu"` | accepted; GPUlayer's name is `"cuda"` (or `"rocm"`, `"mps"`) |
 | no limit given means 1000 epochs | no limit given means one epoch; `max_steps` and `max_time` work as in Lightning |
 | progress bar and model summary on by default | off by default: `enable_progress_bar=True`, `enable_model_summary=True` |

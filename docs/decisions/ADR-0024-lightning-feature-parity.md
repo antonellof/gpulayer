@@ -64,7 +64,8 @@ Lightning's speed-related choices are few, and the GPUlayer Trainer already had 
    - Loggers: `CSVLogger`, `TensorBoardLogger`, `WandbLogger`, `MLFlowLogger` (the last three
      need their packages). Profilers: `SimpleProfiler`, `AdvancedProfiler`, `PyTorchProfiler`.
    - `Tuner.lr_find` and `Tuner.scale_batch_size`.
-   - Checkpoints in Lightning's layout (`optimizer_states`, `lr_schedulers`, `callbacks`,
+   - Checkpoints close to Lightning's layout, without its loop state (read when present); see
+     `to_lightning_checkpoint` for the way back (`optimizer_states`, `lr_schedulers`, `callbacks`,
      `hyper_parameters`, scaler), resuming within an epoch from step checkpoints, and
      Ctrl+C ending `fit` gracefully after `on_exception` hooks.
 2. **Still not adopted:** DeepSpeed, TPU/HPU/XLA accelerators, `plugins=`, `LightningCLI`,
