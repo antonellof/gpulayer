@@ -52,7 +52,10 @@ jobs:
           uv pip install torch --index-url https://download.pytorch.org/whl/cpu
           uv pip install -e '.[dev,conformance]' numpy
       - name: Conformance tests
-        run: uv run --no-sync pytest -q tests/conformance tests/pytorch/test_metric_objects.py
+        run: |
+          uv run --no-sync pytest -q tests/conformance tests/pytorch/test_metric_objects.py \
+            tests/pytorch/test_exact_resume.py tests/pytorch/test_remote_paths.py \
+            tests/pytorch/test_entry_points.py
 
   installer:
     runs-on: ubuntu-latest

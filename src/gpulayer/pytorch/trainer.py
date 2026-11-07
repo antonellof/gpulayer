@@ -14,6 +14,8 @@ import inspect
 import itertools
 import json
 import math
+import multiprocessing
+import multiprocessing.connection
 import os
 import random
 import shutil
@@ -32,7 +34,7 @@ import torch
 from torch.utils.data import DataLoader, DistributedSampler, IterableDataset, SequentialSampler
 
 from gpulayer.contracts.models import CHECKPOINT_MARKER, RESUME_INPUT
-from gpulayer.errors import ValidationFailed
+from gpulayer.errors import GpuLayerError, ValidationFailed
 from gpulayer.pytorch.accelerators import Accelerator, accelerator_name
 from gpulayer.pytorch.callbacks import Callback, Checkpoint
 from gpulayer.pytorch.callbacks.base import legacy_batch_end, overrides
@@ -45,7 +47,14 @@ from gpulayer.pytorch.callbacks.utility import (
     _parse_duration,
 )
 from gpulayer.pytorch.combined import CombinedLoader, loaders_of
-from gpulayer.pytorch.launch import LaunchResult, in_gpulayer_job, is_launcher_process, launch
+from gpulayer.pytorch.launch import (
+    LaunchResult,
+    in_gpulayer_job,
+    in_notebook,
+    in_slurm_task,
+    is_launcher_process,
+    launch,
+)
 from gpulayer.pytorch.loggers import Logger
 from gpulayer.pytorch.module import DataModule, Module, _TrainingStep, overridden
 from gpulayer.pytorch.plugins import CheckpointIO, TorchCheckpointIO, apply_plugins
@@ -701,7 +710,10 @@ class Trainer:
         if not self.will_launch and not self._uses_tpu() and not self._xla_spawn_wanted():
             accel = resolve_accelerator(self.accelerator)
             if accel in ("cuda", "rocm"):
-                device = torch.device("cuda", int(os.environ.get("LOCAL_RANK", "0")))
+                count = torch.cuda.device_count()
+                device = torch.device(
+                    "cuda", int(os.environ.get("LOCAL_RANK", "0")) if count > 1 else 0
+                )
             elif accel == "mps":
                 device = torch.device("mps")
         from gpulayer.pytorch.runtime import _TRUE_DTYPES
@@ -733,9 +745,67 @@ class Trainer:
         """True when ``fit`` will run on GPUlayer workers instead of this process."""
         if self._uses_tpu():
             return False  # several TPU devices: xmp.spawn in this process (_fit_xla_spawn)
-        return is_launcher_process() and (
-            self.target is not None or self.devices * self.num_nodes > 1
+        return (
+            is_launcher_process()
+            and not self._notebook_fork()
+            and (self.target is not None or self.devices * self.num_nodes > 1)
         )
+
+    def _notebook_fork(self) -> bool:
+        """Several devices of this machine from a notebook: its ranks are forked, since cells
+        cannot be submitted as a script."""
+        return (
+            self.target is None
+            and self.devices > 1
+            and self.num_nodes == 1
+            and is_launcher_process()
+            and in_notebook()
+        )
+
+    def _fit_notebook(self, model: Module, *args: Any) -> None:
+        """Train in one forked process per device, then load what rank 0 saved, as after a
+        launched job. A fork inherits the cells' classes and data, so nothing is pickled."""
+        accelerator = resolve_accelerator(self.accelerator)
+        if accelerator == "mps":
+            raise ValidationFailed("forked processes cannot use MPS; use accelerator='cpu'")
+        if sys.platform == "darwin":
+            # A Jupyter kernel has threads, and on macOS a child forked from one crashes in
+            # gloo: an Objective-C abort, or with OBJC_DISABLE_INITIALIZE_FORK_SAFETY a segfault.
+            raise ValidationFailed(
+                "macOS crashes processes forked from a Jupyter kernel: use devices=1 here, or "
+                "export the notebook to a .py file and run it, which starts real processes"
+            )
+        if torch.cuda.is_initialized():
+            raise ValidationFailed(
+                "CUDA was already used in this notebook, and a forked process cannot use it: "
+                "restart the kernel and keep CUDA calls out of the cells before fit"
+            )
+        out = Path(self.default_root_dir) / "notebook"
+        shutil.rmtree(out / "checkpoints", ignore_errors=True)
+        out.mkdir(parents=True, exist_ok=True)
+        from gpulayer.runtime.distributed import free_port
+
+        port = free_port("127.0.0.1")
+        context = multiprocessing.get_context("fork")
+        ranks = [
+            context.Process(
+                target=_notebook_rank, args=(r, self.devices, port, out, self, model, args)
+            )
+            for r in range(self.devices)
+        ]
+        for rank in ranks:
+            rank.start()
+        failed = None
+        while failed is None and any(r.is_alive() for r in ranks):
+            multiprocessing.connection.wait([r.sentinel for r in ranks if r.is_alive()])
+            failed = next((r for r in ranks if r.exitcode not in (None, 0)), None)
+        for rank in ranks:
+            if failed is not None:
+                rank.terminate()
+            rank.join()
+        if failed is not None:
+            raise GpuLayerError(f"a forked training process failed (exit {failed.exitcode})")
+        self._load_outputs(out, model)
 
     def _uses_tpu(self) -> bool:
         return self.accelerator in ("tpu", "xla") or (
@@ -1063,13 +1133,20 @@ class Trainer:
             raise ValidationFailed("pass either dataloaders or a datamodule, not both")
         self.datamodule = datamodule
         ckpt_path = self.ckpt_path = self._fit_checkpoint(ckpt_path)
-        if self._xla_spawn_needed():
+        if self._xla_spawn_needed() or self._notebook_fork():
             self._merge_model_callbacks(model)
-            self._fit_xla_spawn(model, train_dataloaders, val_dataloaders, datamodule, ckpt_path)
+            start = self._fit_xla_spawn if self._xla_spawn_needed() else self._fit_notebook
+            start(model, train_dataloaders, val_dataloaders, datamodule, ckpt_path)
             for cb in self.callbacks:
                 if overrides(cb, "on_fit_end"):
                     cb.on_fit_end(self, model)
             return
+        if in_slurm_task() and self.devices * self.num_nodes != int(os.environ["SLURM_NTASKS"]):
+            raise ValidationFailed(
+                f"srun started {os.environ['SLURM_NTASKS']} tasks, but devices={self.devices} "
+                f"and num_nodes={self.num_nodes} make {self.devices * self.num_nodes}: match "
+                "them, with --ntasks-per-node=devices and --nodes=num_nodes"
+            )
         if self.will_launch:
             # Training runs on workers (the callbacks run there); here only on_fit_end runs,
             # so callbacks can pick up what came back (e.g. ModelCheckpoint's best file).
@@ -2925,6 +3002,24 @@ def _fsdp_wrapped(module: Any) -> bool:
     from torch.nn.parallel import DistributedDataParallel as DDP
 
     return not isinstance(module, DDP)
+
+
+def _notebook_rank(
+    rank: int, world: int, port: int, out: Path, trainer: Trainer, model: Module, args: Any
+) -> None:
+    """Entry point of a process forked by ``Trainer._fit_notebook``."""
+    os.environ.update(
+        RANK=str(rank),
+        WORLD_SIZE=str(world),
+        LOCAL_RANK=str(rank),
+        LOCAL_WORLD_SIZE=str(world),
+        GPULAYER_NODE_RANK="0",
+        MASTER_ADDR="127.0.0.1",
+        MASTER_PORT=str(port),
+        GPULAYER_OUTPUT_DIR=str(out),
+    )
+    os.environ.setdefault("GLOO_SOCKET_IFNAME", "lo0" if sys.platform == "darwin" else "lo")
+    trainer.fit(model, *args)
 
 
 def _xla_spawned_fit(index: int, trainer: Trainer, model: Module, *args: Any) -> None:

@@ -22,6 +22,25 @@ If any node fails, the job fails and the other nodes stop; a partly finished gro
 retried. Ranks, rendezvous and launch are described in
 [Distributed execution](../architecture/distributed.md).
 
+## On SLURM and in notebooks
+
+Under `srun`, tasks train in place: the ranks come from SLURM, the first node is the rendezvous,
+and nothing is submitted. `devices` and `num_nodes` must match the tasks. To survive a time
+limit, let SLURM warn the job and requeue it, and have the script continue:
+
+```bash
+#SBATCH --nodes=2 --ntasks-per-node=4 --gpus-per-node=4 --requeue --signal=TERM@120
+srun python train.py        # with trainer.fit(model, loader, ckpt_path="last")
+```
+
+Simulated with SLURM's variables on one machine; not run on a cluster.
+
+In a notebook on Linux, `Trainer(devices=N)` forks one process per device and returns the
+weights to the notebook, which needs checkpoints on (the default). The processes inherit your
+cells, so nothing has to be pickled, but CUDA must not have been used before `fit`. Tested in a
+real Jupyter kernel on CPU, not on a GPU. On macOS it stops with an explanation, because forks of
+a kernel crash there. `launch()` has no script to send from a notebook: export it to a `.py` file.
+
 ## Requirements
 
 - All nodes need the same torch version and the requested backend.
