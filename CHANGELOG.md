@@ -3,7 +3,10 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
-## Unreleased
+## 0.10.1 (2026-11-07)
+
+Prepares for AMD GPUs. **Nothing here has run on AMD hardware yet:** ROCm stays implemented, not
+validated. A real ROCm wheel and the `rocm/pytorch` image were tested on x86 without a GPU.
 
 - Fix (AMD, found by reading the code; not run on AMD hardware): AMD GPUs had no memory when
   `rocm-smi` worked, so a job with `gpu_memory_gb` rejected them; names and memory now come
