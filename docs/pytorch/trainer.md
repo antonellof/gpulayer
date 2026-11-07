@@ -88,7 +88,7 @@ The common ones; all of them, with Lightning's names, are in the [API reference]
 
 | Argument | Default | Meaning |
 |---|---|---|
-| `max_epochs`, `max_steps`, `max_time` | `1`, `None`, `None` | when to stop (Lightning's `max_epochs` default is 1000) |
+| `max_epochs`, `max_steps`, `max_time` | `None`, `None`, `None` | when to stop. With `max_steps` or `max_time`, epochs are not limited; with none of the three, one epoch (or `min_epochs`; Lightning's default is 1000). `-1` means no limit |
 | `accelerator` | `"auto"` | `"cpu"`, `"cuda"`, `"mps"`, `"rocm"`, `"tpu"` or `"auto"` (the device granted to the job, else CUDA, then MPS, then CPU) |
 | `devices`, `num_nodes` | `1`, `1` | processes per machine (one GPU each) and machines; more than one launches a job |
 | `strategy` | `"ddp"` | `"ddp"`, `glt.DDPStrategy(...)`, `"fsdp"` or `glt.FSDPStrategy(...)` ([experimental](#fsdp-experimental)), `glt.ModelParallelStrategy(...)` ([tensor parallelism](#tensor-parallelism-experimental)), `"deepspeed_stage_2"` and the other DeepSpeed names ([validated on T4s](#deepspeed-and-tpu)) |

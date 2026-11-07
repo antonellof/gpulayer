@@ -53,7 +53,7 @@ Lightning needs torchrun, SLURM or a cluster to start processes on each machine.
 | `LightningCLI`, `LightningArgumentParser` | `glt.GPULayerCLI`, `glt.GPULayerArgumentParser` |
 | `trainer.lightning_module` | `trainer.module` |
 | `accelerator="gpu"` | accepted; GPUlayer's name is `"cuda"` (or `"rocm"`, `"mps"`) |
-| `max_epochs=None` means 1000 | the default is `max_epochs=1`; pass a number |
+| no limit given means 1000 epochs | no limit given means one epoch; `max_steps` and `max_time` work as in Lightning |
 | progress bar and model summary on by default | off by default: `enable_progress_bar=True`, `enable_model_summary=True` |
 | `logger=True` means TensorBoard (or CSV) | `logger=None` writes `metrics.csv` in the run folder; pass `glt.TensorBoardLogger(...)` |
 | `ModelCheckpoint()` names files `epoch=..-step=..ckpt` | `best.ckpt`; pass `filename="{epoch}-{step}"` for Lightning's names |

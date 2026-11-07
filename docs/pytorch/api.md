@@ -21,7 +21,7 @@ glt.Trainer(
     logger: Logger | list[Logger] | bool | None = None,
     callbacks: Callback | list[Callback] | None = None,
     fast_dev_run: bool | int = False,
-    max_epochs: int | None = 1,
+    max_epochs: int | None = None,
     min_epochs: int | None = None,
     max_steps: int | None = None,
     min_steps: int | None = None,

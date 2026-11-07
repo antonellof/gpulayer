@@ -8,6 +8,13 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 - Fix: `self.log(name, metric)` with a `torchmetrics.Metric` raised `TypeError`. The Trainer
   now computes the metric once at the end of the epoch or evaluation and resets it; the
   metric syncs across processes itself. No new dependency, and no added cost for tensors.
+- Fix: `Trainer(max_steps=N)` and `Trainer(max_time=...)` silently stopped after one epoch,
+  because `max_epochs` defaulted to 1; `Trainer(min_epochs=5)` stopped after one too. The
+  default is now `max_epochs=None`: epochs are unlimited when `max_steps` or `max_time` is
+  set, and otherwise one epoch (or `min_epochs`), as before. **Migration:** runs with
+  `max_steps` larger than one epoch now train longer; `max_epochs=None` passed explicitly
+  meant 1000 epochs and now follows these rules (pass `max_epochs=1000`); `max_epochs=-1`
+  meant 1000 and now means no limit, as in Lightning.
 
 ## 0.9.2 (2026-11-04)
 

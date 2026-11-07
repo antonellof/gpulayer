@@ -70,7 +70,7 @@ Lightning's speed-related choices are few, and the GPUlayer Trainer already had 
 2. **Still not adopted:** DeepSpeed, TPU/HPU/XLA accelerators, `plugins=`, `LightningCLI`,
    several dataloaders per stage, distributed `predict`, Lightning Fabric. Users who need
    them keep Lightning and run it with `launch()`.
-3. **Defaults that differ from Lightning, on purpose:** `max_epochs=1` (Lightning: 1000),
+3. **Defaults that differ from Lightning, on purpose:** one epoch when no limit is given (Lightning: 1000),
    `enable_progress_bar=False` and `enable_model_summary=False` (GPUlayer prints one log line
    per epoch; job logs are not terminals), `benchmark=None` (ADR-0018 amendment),
    `logger=None` keeps the built-in `metrics.csv`. `validate`/`test` return a dict that also
