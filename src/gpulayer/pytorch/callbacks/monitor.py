@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from gpulayer.errors import ValidationFailed
 from gpulayer.pytorch.callbacks.base import Callback, Checkpoint
+from gpulayer.pytorch.storage import as_path, is_remote, load_file
 
 if TYPE_CHECKING:
     from gpulayer.pytorch.module import Module
@@ -228,7 +229,7 @@ class ModelCheckpoint(_Monitor, Checkpoint):
             raise ValidationFailed(
                 "set at most one of every_n_train_steps, train_time_interval and every_n_epochs"
             )
-        self.dirpath = Path(dirpath) if dirpath is not None else None
+        self.dirpath = as_path(dirpath) if dirpath is not None else None
         self.filename = filename
         self.verbose = verbose
         self.save_last = save_last
@@ -454,10 +455,13 @@ class ModelCheckpoint(_Monitor, Checkpoint):
         if self.best_model_path is not None or trainer.launch_result is None:
             return
         # Trained on workers: the checkpoints came back with the job's outputs.
-        import torch
-
-        out = trainer.launch_result.output_dir
-        found: dict[Path, float] = {}
+        out: Any = trainer.launch_result.output_dir
+        root = trainer.default_root_dir
+        if is_remote(self.dirpath):  # the workers wrote to the store, not to job outputs
+            out = self.dirpath
+        elif is_remote(root):
+            out = root / "checkpoints"
+        found: dict[Any, float] = {}
         for path in sorted(out.rglob(f"*{self.FILE_EXTENSION}")):
             if path.name == "last.ckpt" or path.name == RESUME_NAME:
                 continue
@@ -465,7 +469,7 @@ class ModelCheckpoint(_Monitor, Checkpoint):
                 stem = self.filename[: -len(self.FILE_EXTENSION)]
                 if path.name != self.filename and not path.name.startswith(f"{stem}-epoch="):
                     continue
-            state = torch.load(path, map_location="cpu", weights_only=False)
+            state = load_file(path, map_location="cpu", weights_only=False)
             score = (state.get("callbacks") or {}).get(self.state_key, {}).get("scores", {})
             if path.name in score:
                 found[path] = float(score[path.name])
@@ -494,7 +498,7 @@ class OnExceptionCheckpoint(Checkpoint):
     be resumed with ``fit(ckpt_path=...)``."""
 
     def __init__(self, dirpath: str | Path | None = None, filename: str = "on_exception") -> None:
-        self.dirpath = Path(dirpath) if dirpath is not None else None
+        self.dirpath = as_path(dirpath) if dirpath is not None else None
         self.filename = filename if filename.endswith(".ckpt") else filename + ".ckpt"
         self.ckpt_path: Path | None = None
 

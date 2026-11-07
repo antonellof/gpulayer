@@ -62,6 +62,7 @@ Lightning needs torchrun, SLURM or a cluster to start processes on each machine.
 | `L.seed_everything` | `glt.seed_everything` |
 | `lightning.pytorch.utilities` (`grad_norm`, `rank_zero_only`, `measure_flops`, ...) | `gpulayer.pytorch.utilities` |
 | SIGTERM checked every step on every rank | one process: every step; several: at log steps and epoch ends (no extra sync per step) |
+| `TensorBoardLogger(save_dir="s3://...")` | a local `save_dir`; other remote paths work ([object stores](trainer.md#object-stores)) |
 | `model_registry=` (Lightning AI cloud) | rejected: checkpoints come back to `default_root_dir` |
 
 ## Not run on hardware yet, or not available

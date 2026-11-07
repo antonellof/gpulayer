@@ -21,6 +21,7 @@ from typing import Any
 import torch
 
 from gpulayer.errors import ValidationFailed
+from gpulayer.pytorch.storage import RemotePath, as_path, load_file, save_file
 
 # ------------------------------------------------------------------ precision
 
@@ -84,7 +85,7 @@ class CheckpointIO:
 
     def remove_checkpoint(self, path: str | Path) -> None:
         """Delete the checkpoint at ``path`` (used when ModelCheckpoint drops a worse one)."""
-        Path(path).unlink(missing_ok=True)
+        as_path(path).unlink(missing_ok=True)
 
     def teardown(self) -> None:
         """Called when fit ends; finish pending writes here."""
@@ -97,16 +98,22 @@ class TorchCheckpointIO(CheckpointIO):
     def save_checkpoint(
         self, checkpoint: dict[str, Any], path: str | Path, storage_options: Any = None
     ) -> None:
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(path.suffix + ".tmp")
+        target = as_path(path)
+        if isinstance(target, RemotePath):
+            save_file(checkpoint, target)
+            return
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_suffix(target.suffix + ".tmp")
         torch.save(checkpoint, tmp)
-        os.replace(tmp, path)
+        os.replace(tmp, target)
 
     def load_checkpoint(self, path: str | Path, map_location: Any = "cpu") -> dict[str, Any]:
-        if Path(path).is_dir():
-            return load_sharded_as_full(path)
-        return torch.load(path, map_location=map_location, weights_only=False)
+        target = as_path(path)
+        if target.is_dir():
+            if isinstance(target, RemotePath):
+                raise ValidationFailed(f"sharded checkpoints must be local folders: {target}")
+            return load_sharded_as_full(target)
+        return load_file(target, map_location=map_location, weights_only=False)
 
 
 def load_sharded_as_full(path: str | Path) -> dict[str, Any]:

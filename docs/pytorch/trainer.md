@@ -165,6 +165,30 @@ is none, so one script can both start and continue a run; `"best"` needs a `Mode
 A rerun of a launched script finds its checkpoint in `gpulayer_runs/<job-id>/`: pass that path. After `fit`, `trainer.callback_metrics`,
 `trainer.history`, `trainer.checkpoint_path` and `trainer.launch_result` hold the results.
 
+### Object stores
+
+`default_root_dir`, `ModelCheckpoint(dirpath=...)`, `ckpt_path`, `save_checkpoint`,
+`load_from_checkpoint` and `CSVLogger(save_dir=...)` take URLs such as `s3://bucket/run`, through
+[fsspec](https://filesystem-spec.readthedocs.io):
+
+```bash
+pip install 'gpulayer[remote]' s3fs     # or gcsfs, adlfs
+```
+
+```python
+trainer = glt.Trainer(default_root_dir="s3://bucket/run", max_epochs=20)
+trainer.fit(model, loader, ckpt_path="last")       # continues from s3://bucket/run/checkpoints
+```
+
+With a remote `default_root_dir`, checkpoints and `metrics.json` go to `<url>/checkpoints` and
+`<url>`, and a launched job reads its result from there, so workers need `fsspec` and the
+store's package too (`launch_options={"requirements": ["fsspec", "s3fs"]}`) and credentials from
+their environment, never in the URL (a URL with a password is refused, since paths are printed
+in logs). A checkpoint is written to a local file first and uploaded whole. A URL nothing can
+serve is an error when the Trainer is created. Sharded checkpoints need a local folder, and
+`TensorBoardLogger` needs a local `save_dir`. Tested with fsspec's in-memory filesystem; not yet
+run against S3, GCS or Azure.
+
 ## Validate, test and predict
 
 ```python

@@ -53,6 +53,7 @@ import torch
 from gpulayer.errors import ValidationFailed
 from gpulayer.pytorch.callbacks.base import Callback
 from gpulayer.pytorch.module import DataModule, Module, overridden
+from gpulayer.pytorch.storage import as_path
 
 SUBCOMMANDS = ("fit", "validate", "test", "predict")
 _NOT_CONFIG = ("config", "main_config", "print_config", "subcommand", "help")
@@ -589,7 +590,7 @@ def _default_log_dir(trainer: Any) -> str:
     from gpulayer.pytorch.trainer import _run_name
 
     root = getattr(trainer, "default_root_dir", "gpulayer_runs")
-    return os.environ.get("GPULAYER_OUTPUT_DIR") or str(Path(root) / _run_name())
+    return os.environ.get("GPULAYER_OUTPUT_DIR") or str(as_path(root) / _run_name())
 
 
 class SaveConfigCallback(Callback):

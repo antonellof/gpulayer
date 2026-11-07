@@ -21,6 +21,12 @@ before 1.0, minor versions may change public APIs, with migration notes here.
 - Fix: `ModelCheckpoint()` monitored `val_loss` by default, and failed in a model that logged
   another name. The default is now `monitor=None` (keep the latest), as in Lightning.
   **Migration:** pass `monitor="val_loss"` to keep the best by that name.
+- Fix: a URL as `default_root_dir`, `ModelCheckpoint(dirpath=...)` or `save_checkpoint` path
+  was written to a local folder named `s3:`, with no error, so a checkpoint could vanish with
+  the machine. Those paths, `ckpt_path`, `load_from_checkpoint` and `CSVLogger(save_dir=...)`
+  now go through `fsspec` (new extra: `gpulayer[remote]`), and a URL that cannot be served is
+  an error when the object is created. URLs with a password are refused. Tested with fsspec's
+  in-memory filesystem, not yet against S3, GCS or Azure.
 - New CI job and `tests/conformance`: the same code runs on PyTorch Lightning and on the
   Trainer and must behave the same; differences not fixed yet are listed as strict `xfail`s.
   `pip install -e '.[conformance]'` adds what it needs.

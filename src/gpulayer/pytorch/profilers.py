@@ -17,6 +17,7 @@ import inspect
 import io
 import os
 import pstats
+import tempfile
 import time
 from collections import defaultdict
 from collections.abc import Iterator
@@ -25,13 +26,14 @@ from pathlib import Path
 from typing import Any
 
 from gpulayer.errors import ValidationFailed
+from gpulayer.pytorch.storage import RemotePath, as_path
 
 
 class Profiler:
     """Base class: implement ``start(action)``, ``stop(action)`` and ``summary()``."""
 
     def __init__(self, dirpath: str | Path | None = None, filename: str | None = None) -> None:
-        self.dirpath = Path(dirpath) if dirpath is not None else None
+        self.dirpath = as_path(dirpath) if dirpath is not None else None
         self.filename = filename
         self._local_rank: int | None = None
 
@@ -66,7 +68,7 @@ class Profiler:
         """Called when a run starts; ``log_dir`` becomes ``dirpath`` when none was given."""
         self._local_rank = local_rank
         if self.dirpath is None and log_dir is not None:
-            self.dirpath = Path(log_dir)
+            self.dirpath = as_path(log_dir)
 
     def describe(self) -> str:
         """The report, also written to ``dirpath/filename`` when both are set."""
@@ -301,9 +303,13 @@ class PyTorchProfiler(Profiler):
                 self._parent = None
             if self.export_to_chrome and not self._emit_nvtx and self.dirpath is not None:
                 self.dirpath.mkdir(parents=True, exist_ok=True)
-                self._prof.export_chrome_trace(
-                    str(self.dirpath / f"{self.filename or 'trace'}.pt.trace.json")
-                )
+                name = f"{self.filename or 'trace'}.pt.trace.json"
+                if isinstance(self.dirpath, RemotePath):
+                    with tempfile.TemporaryDirectory() as tmp:  # the profiler writes a local file
+                        self._prof.export_chrome_trace(str(Path(tmp) / name))
+                        (self.dirpath / name).put(Path(tmp) / name)
+                else:
+                    self._prof.export_chrome_trace(str(self.dirpath / name))
 
     def summary(self) -> str:
         if self._prof is None or self._emit_nvtx:
