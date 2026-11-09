@@ -44,6 +44,9 @@ for case in CASES:
         for _ in range(REPEAT):
             s.append(wall(fw, case, SHORT))
             lg.append(wall(fw, case, LONG))
+        if os.environ.get("BENCH_VERBOSE"):  # every wall time, to see the noise
+            print(f"{case:10} {fw:8} walls {SHORT}: {[round(v, 2) for v in s]}, "
+                  f"{LONG}: {[round(v, 2) for v in lg]}", flush=True)  # fmt: skip
         step = (statistics.median(lg) - statistics.median(s)) / (LONG - SHORT)
         startup = statistics.median(s) - SHORT * step
         res[fw] = (step, startup)

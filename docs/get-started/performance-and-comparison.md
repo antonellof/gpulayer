@@ -84,6 +84,26 @@ decides the result, and it varies by host: the same case gave 2.50x on one H200 
 on another. Small models, not a measure of large-model training. Logs and the parallel
 strategies run on the same machines: [results](../../benchmarks/results/2026-11-09-hf-strategies-speed/README.md).
 
+## Realistic models
+
+The cases above are small models, where a step takes a few milliseconds and each trainer's
+CPU work matters. These are a GPT-2-size decoder (110M parameters, 12 layers of width 768,
+512 tokens, batch 8) and ResNet-50 (224x224, batch 64), bf16-mixed with AdamW, optionally with
+`torch.compile` in both trainers. Same method, with 20 and 120 steps; a compiled case first
+runs once unmeasured, to fill the compile cache (GPUlayer 0.11.2, Lightning 2.6.6, torch 2.15.0,
+2026-11-09).
+
+| Case | L4: GPUlayer / Lightning ms | Result | H200: GPUlayer / Lightning ms | Result |
+|---|---|---|---|---|
+| GPT, bf16 | 133.4 / 136.8 | GPUlayer 1.03x faster | 16.8 / 19.2 | GPUlayer 1.15x faster |
+| ResNet-50, bf16 | 166.8 / 170.2 | GPUlayer 1.02x faster | 50.7 / 50.1 | Lightning 1.01x faster |
+| GPT, compiled | 126.0 / 130.6 | GPUlayer 1.04x faster | 6.8 / 10.2 | GPUlayer 1.51x faster |
+| ResNet-50, compiled | 128.5 / 132.2 | GPUlayer 1.03x faster | 47.9 / 51.0 | GPUlayer 1.07x faster |
+
+When the GPU does most of the work (an L4, 130 to 170 ms a step), the trainers are within 4%.
+On an H200 the compiled GPT step takes 7 to 10 ms, and the difference is per-step CPU work again.
+[Results and logs](../../benchmarks/results/2026-11-09-hf-models-services/README.md).
+
 ## Across machines with NCCL
 
 ![One GPU per machine, NCCL across machines: GPUlayer and PyTorch Lightning](../assets/perf/nccl-step-light.svg)
