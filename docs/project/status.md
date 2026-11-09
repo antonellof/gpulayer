@@ -16,9 +16,9 @@ machines named. Everything else says what is missing.
 | Distributed PyTorch with gloo | validated on up to 16 machines |
 | Distributed groups kept in one network group, zone or region | validated on GCP: 1.38x faster than a group split across two regions |
 | NVIDIA CUDA | validated on Tesla T4, RTX 3070, A100, L4, H200 and RTX PRO 6000 Blackwell: the test suite, CUDA checks and the Trainer's GPU checks on each ([results](../../benchmarks/results/2026-11-09-hf-gpus/README.md)) |
-| Several GPUs per machine with NCCL, choosing the best-connected GPUs | validated on 4× RTX 3070 (PCIe), 4× L4 (PCIe), 2× A100 SXM4 (NVLink) and 2× H200 (NVLink, `NV18`) |
+| Several GPUs per machine with NCCL, choosing the best-connected GPUs | validated on 4× RTX 3070 (PCIe), 4× L4 (PCIe), 8× RTX PRO 6000 (PCIe, two CPU sockets), 2× A100 SXM4 (NVLink) and 2× H200 (NVLink, `NV18`); DDP, FSDP, tensor parallelism and DeepSpeed ZeRO 1 to 3 on all 8 ([results](../../benchmarks/results/2026-11-09-hf-models-services/README.md)) |
 | NCCL across machines | validated on 2, 4 and 8 AWS machines with one Tesla T4 each: DDP with `sync_batchnorm`, manual optimization, FSDP ([results](../../benchmarks/results/2026-11-01-aws-8xt4/README.md)) |
-| GPUlayer Trainer speed against Lightning | measured: faster in 13 of 17 GPU cases and every CPU case (0.8, 2026-11-01), and in all 14 cases on 1 to 4 L4s and 1 and 2 H200s (0.11.1, 2026-11-09); Lightning faster on a CNN on one RTX 3070 and on a CNN across machines over NCCL ([details](../get-started/performance-and-comparison.md)) |
+| GPUlayer Trainer speed against Lightning | measured: faster in 13 of 17 GPU cases and every CPU case (0.8, 2026-11-01), in all 14 small-model cases on L4s and H200s, and in 10 of 12 cases with a GPT-2-size model and ResNet-50 (0.11, 2026-11-09). Lightning faster on a CNN on one RTX 3070, on a CNN across machines over NCCL, on ResNet-50 on an H200 (1%) and per step on the GPT model on 8 GPUs (1.15x) ([details](../get-started/performance-and-comparison.md)) |
 | Apple Silicon (PyTorch MPS, MLX) | validated on an M2 Pro |
 | AMD ROCm | implemented (GPUs found through a ROCm build of torch, `HIP_VISIBLE_DEVICES`, Trainer `accelerator="rocm"`); not run on AMD hardware. `backend="nccl"` on ROCm is assumed, not documented by AMD. [`scripts/validate_rocm.sh`](../guides/amd-rocm.md#validating-a-machine) is ready for the first machine |
 | AMD Ryzen AI NPUs: serving models through FastFlowLM (`gl.flm_service`, ADR-0026). No training | implemented; tested with a stand-in `flm` on a real worker; not run on an NPU |
@@ -42,7 +42,7 @@ machines named. Everything else says what is missing.
 | Trainer `accelerator="tpu"` (one device, every device of a TPU VM through `xmp.spawn`, or a TPU pod) | implemented and tested with a simulated torch_xla; not run on a TPU |
 | Notebooks: `devices=N` forks one process per device (Linux; refused on macOS, where forks of a kernel crash) | validated in a real Jupyter kernel on 4 NVIDIA L4s; tested in CI on CPU |
 | SLURM: `srun` tasks train in place | simulated with SLURM's variables on one machine; not run on a cluster |
-| Long-running services: replicas, `$PORT`, endpoints, restarts | tested on a local worker and on Kubernetes (kind); no load balancer |
+| Long-running services: replicas, `$PORT`, endpoints, restarts | tested on a local worker and on Kubernetes (kind); a PyTorch model served from an NVIDIA L4, restarted and cancelled; no load balancer |
 | Google Cloud provisioning | validated: a CPU VM and a Spot T4 created for a job, joined, ran it and were deleted |
 | Kubernetes Helm chart | tested in CI on kind (jobs, a distributed job, upgrade, server restart); GPU worker pool not run |
 | Container images on GitHub Container Registry | published with each release (slim and `-torch`; no CUDA image) |
@@ -59,6 +59,7 @@ machines named. Everything else says what is missing.
 - Why the 1-GPU CNN's CPU work ran about 10% slower than Lightning's on one RTX 3070 host (same GPU kernels).
 - NCCL across multi-GPU machines (only 32 vCPUs of AWS G instances are approved: one GPU each).
 - Why Lightning is faster on the CNN over NCCL across machines.
+- Why GPUlayer's DDP step is 1.15x slower than Lightning's on the GPT-2-size model on 8 GPUs in one machine (ResNet-50 is 1.16x faster there).
 - A second cloud provider.
 - A CUDA container image.
 

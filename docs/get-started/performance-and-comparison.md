@@ -14,6 +14,7 @@ the charts are drawn from them by `scripts/make_perf_charts.py`.
 | 2, 4 and 8 CPU machines (gloo) | up to 17.8% faster (8 machines) |
 | 1, 2 and 4 L4s in one machine (NCCL) | 1.04 to 1.68x faster in all 7 cases |
 | 1 and 2 H200s (NVLink) | 1.10 to 2.50x faster in all 7 cases |
+| GPT-2-size model and ResNet-50 on L4, H200 and 8 RTX PRO 6000s | within 4% on an L4; faster in 10 of 12 cases; Lightning 1.15x faster per step on GPT with 8 GPUs |
 | Apple M2 Pro, GPU and CPU | 1.02 to 1.80x faster in all 5 cases |
 
 **Method.** Same model, data, optimizer and logged loss in both trainers, each with its
@@ -102,6 +103,17 @@ runs once unmeasured, to fill the compile cache (GPUlayer 0.11.2, Lightning 2.6.
 
 When the GPU does most of the work (an L4, 130 to 170 ms a step), the trainers are within 4%.
 On an H200 the compiled GPT step takes 7 to 10 ms, and the difference is per-step CPU work again.
+
+| Case (8× RTX PRO 6000, PCIe, two CPU sockets) | GPUlayer ms/step | Lightning ms/step | Result |
+|---|---|---|---|
+| GPT, 1 GPU | 23.8 | 25.3 | GPUlayer 1.06x faster |
+| ResNet-50, 1 GPU | 34.0 | 37.3 | GPUlayer 1.10x faster |
+| GPT, 8 GPUs | 51.8 | 45.1 | Lightning 1.15x faster |
+| ResNet-50, 8 GPUs | 45.2 | 52.2 | GPUlayer 1.16x faster |
+
+The 8-GPU cases ran with 500 steps between the short and long runs. On GPT with 8 GPUs
+GPUlayer started 3.3 s sooner, so 520 steps took the same 39.0 s in both; why its DDP step is
+slower there is not known yet.
 [Results and logs](../../benchmarks/results/2026-11-09-hf-models-services/README.md).
 
 ## Across machines with NCCL

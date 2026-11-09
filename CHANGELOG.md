@@ -3,6 +3,25 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
+## Unreleased
+
+Measured on realistic models, 8 GPUs in one machine, GPU services, FP8 on Hopper and Blackwell,
+and checkpoints to a remote store (`benchmarks/results/2026-11-09-hf-models-services/`).
+
+- Measured: against Lightning with a GPT-2-size model and ResNet-50 (bf16, plain and
+  `torch.compile`), GPUlayer was faster in 10 of 12 cases: within 4% on an L4, 1.07 to 1.51x on
+  an H200 except ResNet-50 (Lightning 1.01x), and on 8 RTX PRO 6000s ResNet-50 1.16x but GPT
+  Lightning 1.15x per step (GPUlayer starts 3.3 s sooner; 520 steps took the same time). The
+  GPT result is not explained yet.
+- Validated: 8 GPUs in one machine (8x RTX PRO 6000, PCIe, two CPU sockets): topology and GPU
+  choice, NCCL, DDP, FSDP, tensor parallelism, DeepSpeed ZeRO 1 to 3.
+- Validated: FP8 (`TransformerEnginePrecision`) on an H200 and an RTX PRO 6000 Blackwell.
+- Validated: a PyTorch model served as a GPUlayer service from an L4, restarted and cancelled.
+- Measured: `AsyncCheckpointIO` against a remote bucket, 600 steps with three 50 MB
+  checkpoints: 10.6 s, against 16.0 s saving in the loop and 6.6 s without checkpoints.
+- New: benchmark cases `gpt-gpuN` and `resnet50-gpuN` (with `-compile`),
+  `benchmarks/remote_checkpoint.py`, `scripts/validate_service_gpu.py`.
+
 ## 0.11.2 (2026-11-09)
 
 Ran on NVIDIA L4 and H200 GPUs and a real object store

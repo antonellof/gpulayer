@@ -95,10 +95,13 @@ The [full quickstart](https://github.com/antonellof/gpulayer/blob/main/docs/get-
 ## Performance
 
 Against PyTorch Lightning, with the same model, data and optimizer and each trainer's
-defaults, the GPUlayer Trainer was faster in 27 of 31 GPU cases and in every CPU case: 13 of 17
-on T4, RTX 3070 and A100 hosts (GPUlayer 0.8, 2026-11-01), and all 14 on L4 and H200 GPUs
-(0.11.1, 2026-11-09). Lightning was faster on one GPU with a CNN on one host, and by 1 to 9% on
-a CNN across 2 to 8 machines over NCCL.
+defaults, the GPUlayer Trainer was faster in 37 of 43 GPU cases and in every CPU case: 13 of 17
+on T4, RTX 3070 and A100 hosts (GPUlayer 0.8, 2026-11-01), all 14 small-model cases on L4 and
+H200 GPUs, and 10 of 12 with a GPT-2-size model and ResNet-50 (0.11, 2026-11-09). On those
+realistic models the margins are small where the GPU does most of the work (within 4% on an
+L4). Lightning was faster on one GPU with a CNN on one host, by 1 to 9% on a CNN across 2 to 8
+machines over NCCL, by 1% on ResNet-50 on an H200, and by 1.15x per step on the GPT model on 8
+GPUs in one machine (where GPUlayer starts 3.3 s sooner, so 520 steps took the same time).
 
 ![Training step time: GPUlayer and PyTorch Lightning](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/perf/training-step-light.svg#gh-light-mode-only)
 ![Training step time: GPUlayer and PyTorch Lightning](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/perf/training-step-dark.svg#gh-dark-mode-only)
@@ -114,6 +117,7 @@ a CNN across 2 to 8 machines over NCCL.
 | 2, 4 and 8 machines with one T4 each (NCCL) | MLP 1.08 to 1.29x faster; CNN 1.01 to 1.09x slower |
 | 1, 2 and 4 L4s in one machine | 1.04 to 1.68x |
 | 1 and 2 H200s (NVLink) | 1.10 to 2.50x; 1.47x and 2.50x on the same case on two hosts |
+| GPT-2-size model and ResNet-50, 1 to 8 GPUs (L4, H200, RTX PRO 6000) | within 4% on an L4; 1.07 to 1.51x on an H200, except ResNet-50 (Lightning 1.01x); on 8 GPUs ResNet-50 1.16x, GPT Lightning 1.15x |
 | Apple M2 Pro, GPU and CPU | 1.02 to 1.80x |
 | 8 CPU machines on AWS (gloo, 4 processes each) | 17.8% faster (Lightning under torchrun) |
 

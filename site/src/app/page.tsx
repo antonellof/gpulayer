@@ -270,7 +270,7 @@ export default function Home() {
             <SectionHeader
               eyebrow="Benchmarks"
               title="GPUlayer Trainer against PyTorch Lightning"
-              lede="Same model, data and optimizer, each trainer's defaults. Faster in 27 of 31 GPU cases and every CPU case; slower on a CNN on one GPU of one host and on a CNN across machines. Every number has a script and a log."
+              lede="Same model, data and optimizer, each trainer's defaults. Faster in 37 of 43 GPU cases and every CPU case; slower on a CNN on one GPU of one host, on a CNN across machines, and on a GPT-2-size model on 8 GPUs. Every number has a script and a log."
             />
             <div className="mt-12 grid gap-6 lg:grid-cols-2">
               {[
