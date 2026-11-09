@@ -304,6 +304,7 @@ def test_cuda_check_asks_nvml_and_restores_the_environment(monkeypatch):
         "is_available",
         lambda: seen.append(os.environ.get("PYTORCH_NVML_BASED_CUDA_CHECK")),
     )
+    monkeypatch.setattr(torch.cuda, "is_initialized", lambda: False)  # as in a fresh kernel
     monkeypatch.delenv("PYTORCH_NVML_BASED_CUDA_CHECK", raising=False)
     cuda_available()
     assert seen == ["1"] and "PYTORCH_NVML_BASED_CUDA_CHECK" not in os.environ

@@ -289,7 +289,7 @@ class BitsandbytesPrecision(Precision):
     the quantization constants), ``"int8"`` (frozen 8-bit weights, for fine-tuning adapters or
     inference) or ``"int8-training"``. ``dtype`` is the compute dtype (bfloat16 by default);
     ``ignore_modules`` names layers to keep, such as the output head. Needs
-    ``pip install bitsandbytes``; implemented, not run on hardware."""
+    ``pip install bitsandbytes``; validated on a Tesla T4."""
 
     MODES = ("nf4", "nf4-dq", "fp4", "fp4-dq", "int8", "int8-training")
 
@@ -355,7 +355,8 @@ class TransformerEnginePrecision(Precision):
     versions and the forward pass runs under ``fp8_autocast``. ``weights_dtype`` keeps the
     weights (bfloat16 by default); ``recipe`` is a ``DelayedScaling`` recipe or its keyword
     arguments. Layers whose sizes are not multiples of 16 are kept, as FP8 needs them. Needs
-    ``transformer_engine``; implemented, not run on hardware."""
+    ``transformer_engine``; validated on an NVIDIA L4. Transformer Engine 2.x loads the FP8 state
+    of a checkpoint only with ``NVTE_ALLOW_UNSAFE_PICKLE_EXTRA_STATE=1``: it is a pickle."""
 
     def __init__(
         self,

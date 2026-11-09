@@ -311,8 +311,11 @@ memory of one GPU ([results](../../benchmarks/results/2026-11-01-aws-2xt4-parall
   (validated on a T4: outputs within 1e-6 of PyTorch).
 
 `BitsandbytesPrecision` was validated on a Tesla T4 (nf4: 145 MB to 27 MB of GPU memory,
-outputs within 0.997 cosine of fp32; [results](../../benchmarks/results/2026-11-01-aws-2xt4-deepspeed/README.md)). `TransformerEnginePrecision` is tested
-with a fake package only.
+outputs within 0.997 cosine of fp32; [results](../../benchmarks/results/2026-11-01-aws-2xt4-deepspeed/README.md)). `TransformerEnginePrecision` was
+validated on an NVIDIA L4 with Transformer Engine 2.20: FP8 was on in the forward pass and the
+loss ended within 2% of bf16-true. That version refuses to load the FP8 scaling state of a
+checkpoint, which is a pickle, unless `NVTE_ALLOW_UNSAFE_PICKLE_EXTRA_STATE=1` is set: set it
+only for checkpoints you trust ([results](../../benchmarks/results/2026-11-09-hf-gpus/README.md)).
 
 ## DeepSpeed and TPU
 

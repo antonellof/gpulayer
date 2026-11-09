@@ -27,11 +27,11 @@ checkpoint, which is kept while it trains.
 NVIDIA CUDA, Apple Metal (MPS) and CPU are validated on hardware. AMD ROCm is implemented and
 not yet validated. Docs: [gpulayer.dev/docs](https://www.gpulayer.dev/docs/).
 
-> **v0.11.0.** Validated on a Tesla T4, 4× RTX 3070, 2× A100 (NVLink), an Apple M2 Pro, and
-> distributed CPU training on up to 16 Google Cloud machines. NCCL across machines is validated
+> **v0.11.0.** Validated on a Tesla T4, 4× RTX 3070, 2× A100 (NVLink), 4× L4, an H200, an RTX PRO
+> 6000 Blackwell, an Apple M2 Pro, and distributed CPU training on up to 16 Google Cloud machines. NCCL across machines is validated
 > on 8 AWS machines with one Tesla T4 each (DDP, `sync_batchnorm`, manual optimization, FSDP),
 > and on T4s: DeepSpeed ZeRO 1 to 3, FSDP options, tensor parallelism, DDP communication hooks,
-> 4/8-bit quantized training and TensorRT export. Not run on hardware yet: FP8, TPUs, AMD. See
+> 4/8-bit quantized training and TensorRT export; FP8 on an L4. Not run on hardware yet: TPUs, AMD. See
 > [Status](https://github.com/antonellof/gpulayer/blob/main/docs/project/status.md).
 
 ## Install
