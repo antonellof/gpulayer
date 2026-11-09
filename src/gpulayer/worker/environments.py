@@ -36,8 +36,8 @@ class PreparedEnvironment:
     bin_dir: str
     seconds: float
     cached: bool
-    # The CUDA libraries the job's own packages installed (``nvidia/*/lib``), for the dynamic
-    # loader: TensorFlow and ONNX Runtime do not find them by themselves.
+    # The CUDA libraries of NVIDIA's pip packages (``nvidia/*/lib``), the job's own first, then
+    # the worker's, for the dynamic loader: TensorFlow and ONNX Runtime do not find them.
     library_dirs: tuple[str, ...] = ()
 
 
@@ -47,6 +47,7 @@ class EnvironmentCache:
         self._locks: dict[str, threading.Lock] = {}
         self._guard = threading.Lock()
         self._python_ids: dict[str, str] = {}
+        self._worker_libs: dict[str, tuple[str, ...]] = {}
 
     def prepare(
         self,
@@ -70,7 +71,7 @@ class EnvironmentCache:
             bin_dir=str(bin_dir),
             seconds=time.perf_counter() - t0,
             cached=cached,
-            library_dirs=nvidia_library_dirs(env_dir),
+            library_dirs=nvidia_library_dirs(env_dir) + self._worker_library_dirs(base_python),
         )
 
     # ------------------------------------------------------------------ internals
@@ -98,6 +99,20 @@ class EnvironmentCache:
             )
             self._python_ids[python] = f"{os.path.realpath(python)} {out.stdout.strip()}"
         return self._python_ids[python]
+
+    def _worker_library_dirs(self, python: str) -> tuple[str, ...]:
+        """The worker interpreter's own ``nvidia/*/lib`` folders (its PyTorch's CUDA libraries),
+        after the job's: ONNX Runtime's extras install only what the worker lacks, such as
+        cuRAND, and then need the worker's cuBLAS and CUDA runtime as well."""
+        if python not in self._worker_libs:
+            code = "import site; print('\\n'.join(site.getsitepackages()))"
+            out = subprocess.run([python, "-c", code], capture_output=True, text=True, timeout=60)
+            found: list[str] = []
+            for site_dir in out.stdout.split():
+                nvidia = Path(site_dir) / "nvidia"
+                found += sorted(str(d) for d in nvidia.glob("*/lib") if d.is_dir())
+            self._worker_libs[python] = tuple(found)
+        return self._worker_libs[python]
 
     def _lock(self, key: str) -> threading.Lock:
         with self._guard:

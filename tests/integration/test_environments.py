@@ -148,3 +148,18 @@ def test_cuda_libraries_of_the_job_environment_are_found(tmp_path):
     dirs = nvidia_library_dirs(tmp_path)
     assert [d.split("nvidia/")[1] for d in dirs] == ["cu13/lib", "cudnn/lib", "cusolver/lib"]
     assert nvidia_library_dirs(tmp_path / "missing") == ()
+
+
+def test_the_worker_cuda_libraries_come_after_the_job_ones(tmp_path):
+    """ONNX Runtime's extras install only what the worker lacks (cuRAND) and need the
+    worker's cuBLAS too: the worker's nvidia/*/lib folders follow the job's."""
+    from gpulayer.worker.environments import EnvironmentCache
+
+    site = tmp_path / "worker-site"
+    (site / "nvidia" / "cu13" / "lib").mkdir(parents=True)
+    fake = tmp_path / "python"
+    fake.write_text(f"#!/bin/sh\necho {site}\n")
+    fake.chmod(0o755)
+    assert EnvironmentCache(tmp_path / "envs")._worker_library_dirs(str(fake)) == (
+        str(site / "nvidia" / "cu13" / "lib"),
+    )
