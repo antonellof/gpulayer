@@ -35,6 +35,10 @@ print(f"{'case':10} {'trainer':8} {'ms/step':>8} {'start-up s':>10}", flush=True
 for case in CASES:
     res = {}
     for fw in TRAINERS:
+        if case.endswith("-compile"):
+            # One run thrown away first: it fills torch.compile's on-disk cache, which later
+            # runs read, so that every measured run starts the same way.
+            wall(fw, case, SHORT)
         # Interleave short and long runs so drift affects both equally.
         s, lg = [], []
         for _ in range(REPEAT):

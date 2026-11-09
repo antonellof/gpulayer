@@ -34,7 +34,7 @@ machines named. Everything else says what is missing.
 | DDP communication hooks (fp16 compression) and post-local SGD | validated on 2 Tesla T4 machines over NCCL ([results](../../benchmarks/results/2026-11-01-aws-2xt4-ddp-hooks/README.md)), and on the 4 L4s of one machine |
 | Trainer `DeepSpeedStrategy` (ZeRO 1 to 3, CPU offload) | validated on Tesla T4s, one machine and two over NCCL ([results](../../benchmarks/results/2026-11-01-aws-2xt4-deepspeed/README.md)), and on 4 L4s in one machine (DeepSpeed 0.19.9) |
 | `BitsandbytesPrecision` (nf4, int8) | validated on a Tesla T4 and an L4 |
-| `TransformerEnginePrecision` (FP8) | validated on an NVIDIA L4: FP8 on in the forward pass, the loss within 2% of bf16-true, checkpoints load (Transformer Engine 2.20 asks for `NVTE_ALLOW_UNSAFE_PICKLE_EXTRA_STATE=1` first) |
+| `TransformerEnginePrecision` (FP8) | validated on an NVIDIA L4, H200 and RTX PRO 6000 Blackwell: FP8 on in the forward pass, the loss within 2% of bf16-true, checkpoints load (Transformer Engine 2.20 asks for `NVTE_ALLOW_UNSAFE_PICKLE_EXTRA_STATE=1` first) |
 | `XLAProfiler`, Comet, W&B, MLflow, TensorBoard and Lit loggers | implemented; tested against fake packages only |
 | Trainer `sync_batchnorm`, `torch.compile` with Inductor, 16-mixed with manual optimization, "-true" precisions, `PyTorchProfiler` on CUDA | validated on Tesla T4 (one GPU, and up to 8 machines for `sync_batchnorm` and manual optimization) |
 | TensorBoard, Weights & Biases and MLflow loggers | implemented; not tested (optional packages) |

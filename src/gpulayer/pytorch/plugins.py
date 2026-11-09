@@ -355,8 +355,9 @@ class TransformerEnginePrecision(Precision):
     versions and the forward pass runs under ``fp8_autocast``. ``weights_dtype`` keeps the
     weights (bfloat16 by default); ``recipe`` is a ``DelayedScaling`` recipe or its keyword
     arguments. Layers whose sizes are not multiples of 16 are kept, as FP8 needs them. Needs
-    ``transformer_engine``; validated on an NVIDIA L4. Transformer Engine 2.x loads the FP8 state
-    of a checkpoint only with ``NVTE_ALLOW_UNSAFE_PICKLE_EXTRA_STATE=1``: it is a pickle."""
+    ``transformer_engine``; validated on NVIDIA L4, H200 and RTX PRO 6000 GPUs. Transformer
+    Engine 2.x loads the FP8 state of a checkpoint only with
+    ``NVTE_ALLOW_UNSAFE_PICKLE_EXTRA_STATE=1``: it is a pickle."""
 
     def __init__(
         self,

@@ -226,9 +226,11 @@ serve is an error when the Trainer is created. Sharded checkpoints need a local 
 (`hf://buckets/...`, `huggingface_hub` 2.4): checkpoints, the CSV log, resuming from a URL and
 from `"last"`, `load_from_checkpoint`, and two DDP processes
 (`scripts/validate_object_store.py <url>` checks a store). Not yet run against S3, GCS or Azure.
-Saving waits for the upload: three short epochs with three checkpoints took 35 s against a
-remote bucket from a laptop, so checkpoint less often, or use `AsyncCheckpointIO`, when the
-store is far away.
+Saving waits for the upload unless `plugins=[glt.AsyncCheckpointIO()]` is set, which uploads
+on a background thread while training goes on; `fit` still waits for the last one. Measured
+from an M2 Pro to a Hugging Face bucket, 600 CPU steps with three 50 MB checkpoints: 6.6 s
+without checkpoints, 16.0 s saving in the loop, 10.6 s with `AsyncCheckpointIO`
+([results](../../benchmarks/results/2026-11-09-hf-models-services/README.md)).
 
 ## Validate, test and predict
 
@@ -317,7 +319,7 @@ memory of one GPU ([results](../../benchmarks/results/2026-11-01-aws-2xt4-parall
 
 `BitsandbytesPrecision` was validated on a Tesla T4 (nf4: 145 MB to 27 MB of GPU memory,
 outputs within 0.997 cosine of fp32; [results](../../benchmarks/results/2026-11-01-aws-2xt4-deepspeed/README.md)). `TransformerEnginePrecision` was
-validated on an NVIDIA L4 with Transformer Engine 2.20: FP8 was on in the forward pass and the
+validated on an NVIDIA L4, H200 and RTX PRO 6000 Blackwell with Transformer Engine 2.20: FP8 was on in the forward pass and the
 loss ended within 2% of bf16-true. That version refuses to load the FP8 scaling state of a
 checkpoint, which is a pickle, unless `NVTE_ALLOW_UNSAFE_PICKLE_EXTRA_STATE=1` is set: set it
 only for checkpoints you trust ([results](../../benchmarks/results/2026-11-09-hf-gpus/README.md)).
