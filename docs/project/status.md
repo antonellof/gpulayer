@@ -42,7 +42,7 @@ machines named. Everything else says what is missing.
 | Trainer `accelerator="tpu"` (one device, every device of a TPU VM through `xmp.spawn`, or a TPU pod) | implemented and tested with a simulated torch_xla; not run on a TPU |
 | Notebooks: `devices=N` forks one process per device (Linux; refused on macOS, where forks of a kernel crash) | validated in a real Jupyter kernel on 4 NVIDIA L4s; tested in CI on CPU |
 | SLURM: `srun` tasks train in place | simulated with SLURM's variables on one machine; not run on a cluster |
-| Long-running services: replicas, `$PORT`, endpoints, restarts | tested on a local worker and on Kubernetes (kind); a PyTorch model served from an NVIDIA L4, restarted and cancelled; no load balancer |
+| Long-running services: replicas, `$PORT`, endpoints, restarts | tested on a local worker and on Kubernetes (kind); a PyTorch model and vLLM served from an NVIDIA L4 (vLLM installed per job), restarted and cancelled; no load balancer |
 | Google Cloud provisioning | validated: a CPU VM and a Spot T4 created for a job, joined, ran it and were deleted |
 | Kubernetes Helm chart | tested in CI on kind (jobs, a distributed job, upgrade, server restart); GPU worker pool not run |
 | Container images on GitHub Container Registry | published with each release (slim and `-torch`; no CUDA image) |

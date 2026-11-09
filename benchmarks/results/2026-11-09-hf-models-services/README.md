@@ -71,7 +71,13 @@ the L4 and answered 200 sequential requests (0.92 ms median, 1.11 ms p95, 0.28 m
 Killed, it was started again on a new port within seconds, with `service exited with code -15;
 restart 1 in 1s` in the job's log; cancelled, its port closed.
 
-VLLM
+vLLM, as `gl.service(["sh", "-c", 'exec vllm serve Qwen/Qwen2.5-0.5B-Instruct --port "$PORT" ...'],
+requirements=["vllm"], env={"VLLM_USE_FLASHINFER_SAMPLER": "0"})`: installed per job on top of
+the worker's environment, it listened after 236 s (install, model download and load) and
+answered a completion (16 tokens in 86 ms). The first two runs failed: vLLM's FlashInfer sampler
+compiles a kernel at first use and needs `nvcc`, which a CUDA runtime without the toolkit (as in
+the `python:3.12` image) does not have; `VLLM_USE_FLASHINFER_SAMPLER=0` uses its PyTorch
+sampler instead.
 
 ## 4. FP8 on Hopper and Blackwell
 

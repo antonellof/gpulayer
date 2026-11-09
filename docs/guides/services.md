@@ -25,6 +25,20 @@ job.cancel()                     # stops every replica
 On an AMD Ryzen AI NPU, `gl.flm_service("llama3.2:1b")` does this for you: see
 [AMD Ryzen AI NPUs](amd-npu.md).
 
+vLLM can be installed with the job instead of on the worker:
+
+```python
+cmd = 'exec vllm serve Qwen/Qwen2.5-0.5B-Instruct --port "$PORT" --max-model-len 2048'
+job = client.submit(gl.service(["sh", "-c", cmd], accelerator="cuda", gpus=1,
+                               requirements=["vllm"],
+                               env={"VLLM_USE_FLASHINFER_SAMPLER": "0"}))
+```
+
+The first start installs vLLM in a per-job environment and downloads the model (236 s on an
+NVIDIA L4); later starts reuse the environment. `VLLM_USE_FLASHINFER_SAMPLER=0` is needed on a
+worker without the CUDA toolkit: vLLM's FlashInfer sampler compiles a kernel at first use and
+needs `nvcc`.
+
 ## Behaviour
 
 | Setting | Default | Meaning |
@@ -56,4 +70,6 @@ On an AMD Ryzen AI NPU, `gl.flm_service("llama3.2:1b")` does this for you: see
 `tests/integration/test_services.py` runs a real HTTP service on a local worker and checks
 restart on a new port and cancel. Control plane tests cover distinct-worker placement, endpoints
 and re-placement after worker loss (simulated workers). The Kubernetes smoke test requests a
-service on a worker pod from the server pod.
+service on a worker pod from the server pod. `scripts/validate_service_gpu.py` serves a PyTorch
+model and vLLM from an NVIDIA GPU, kills and cancels them; it passed on an L4
+([results](../../benchmarks/results/2026-11-09-hf-models-services/README.md)).

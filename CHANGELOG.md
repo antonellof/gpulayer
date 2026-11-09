@@ -16,7 +16,8 @@ and checkpoints to a remote store (`benchmarks/results/2026-11-09-hf-models-serv
 - Validated: 8 GPUs in one machine (8x RTX PRO 6000, PCIe, two CPU sockets): topology and GPU
   choice, NCCL, DDP, FSDP, tensor parallelism, DeepSpeed ZeRO 1 to 3.
 - Validated: FP8 (`TransformerEnginePrecision`) on an H200 and an RTX PRO 6000 Blackwell.
-- Validated: a PyTorch model served as a GPUlayer service from an L4, restarted and cancelled.
+- Validated: a PyTorch model and vLLM (installed per job) served as GPUlayer services from an L4;
+  restart and cancel. Without the CUDA toolkit, vLLM needs `VLLM_USE_FLASHINFER_SAMPLER=0`.
 - Measured: `AsyncCheckpointIO` against a remote bucket, 600 steps with three 50 MB
   checkpoints: 10.6 s, against 16.0 s saving in the loop and 6.6 s without checkpoints.
 - New: benchmark cases `gpt-gpuN` and `resnet50-gpuN` (with `-compile`),
