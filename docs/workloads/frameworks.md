@@ -81,6 +81,9 @@ trainer = glt.Trainer(..., launch_options={"requirements": ["timm"]})
 PyTorch on NVIDIA CUDA, Apple MPS and CPU is validated on hardware, with automated tests. MLX on
 the Apple GPU ([`examples/mlx_metal`](../../examples/mlx_metal/matmul.py)) has been run on Apple
 Silicon; NumPy batch ([`examples/numpy_batch`](../../examples/numpy_batch/estimate.py)) and shell
-tools ([`examples/shell_job`](../../examples/shell_job)) have been run. Other reported packages
-(JAX, CuPy, TensorFlow, ONNX Runtime and others) have not been run as GPUlayer jobs on a GPU.
+tools ([`examples/shell_job`](../../examples/shell_job)) have been run. JAX, CuPy and
+Transformers ran as GPUlayer jobs on an NVIDIA L4, each installed with per-job requirements
+([results](../../benchmarks/results/2026-11-09-hf-gpus/README.md)). TensorFlow and ONNX Runtime,
+installed the same way next to torch's CUDA 13 libraries, did not find the CUDA libraries they
+need and ran on the CPU. Other reported packages have not been run as GPUlayer jobs on a GPU.
 Distributed jobs start PyTorch process groups only.

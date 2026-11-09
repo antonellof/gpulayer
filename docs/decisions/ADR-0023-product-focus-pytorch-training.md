@@ -13,6 +13,8 @@ with the same model, data and optimizer, its Trainer was faster in 10 of 11 GPU 
 machines from one `Trainer(num_nodes=N)` call; and placement by zone (1.38x) and by GPU
 interconnect serve distributed training. Claims about other libraries were weaker: JAX, CuPy,
 TensorFlow, ONNX Runtime and Transformers are detected on workers but were not run on a GPU.
+(Update 2026-11-09: JAX, CuPy and Transformers have since run as jobs on an NVIDIA L4;
+TensorFlow and ONNX Runtime did not find their CUDA libraries there.)
 
 ## Decision
 

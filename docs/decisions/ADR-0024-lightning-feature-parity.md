@@ -183,6 +183,9 @@ parallelism and `to_tensorrt` (`benchmarks/results/2026-11-01-aws-2xt4-parallel/
 that outputs over the worker's size cap were dropped silently (fixed). A third run validated
 DDP communication hooks and post-local SGD (`benchmarks/results/2026-11-01-aws-2xt4-ddp-hooks/`).
 Transformer Engine (FP8 needs Hopper or Ada GPUs) and TPUs have not run on hardware.
+(Update 2026-11-09: FP8 through Transformer Engine was validated on an NVIDIA L4, and exact
+resume, notebook forks and metric sync over NCCL on L4s; see
+`benchmarks/results/2026-11-09-hf-gpus/`.)
 
 **No Lightning names in GPUlayer's code (0.9.0, 2026-11-01).** The aliases
 `LightningModule`, `LightningDataModule`, `LightningCLI` and `LightningArgumentParser`, the
