@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import re
 import subprocess
 import sys
 import tempfile
@@ -202,7 +203,7 @@ def ddp_resume() -> None:
 # ------------------------------------------------------------------ 3. notebook fork
 
 CELL = """
-import json, torch
+import json, sys, torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 import gpulayer.pytorch as glt
@@ -214,8 +215,9 @@ class Model(glt.Module):
         self.net = nn.Linear(1, 1)
     def training_step(self, batch, batch_idx):
         if batch_idx == 0:
-            name = torch.cuda.get_device_name(self.device)
-            print("RANKDEVICE", self.global_rank, self.device, name, flush=True)
+            # one write per line: the forked ranks share the kernel's output stream
+            sys.stdout.write(f"<RANKDEVICE {self.global_rank} {self.device}>\n")
+            sys.stdout.flush()
         return (self.net(batch[0]) - 2 * batch[0]).pow(2).mean()
     def configure_optimizers(self):
         return torch.optim.SGD(self.parameters(), lr=1e-3)
@@ -276,8 +278,8 @@ def notebook_fork() -> None:
         return
     result = json.loads(text.split("RESULT ", 1)[1].splitlines()[0])
     steps = 2 * (16 // N)  # 16 batches split across the ranks, two epochs
-    ranks = sorted(ln for ln in text.splitlines() if ln.startswith("RANKDEVICE"))
-    devices = {ln.split()[2] for ln in ranks}
+    ranks = dict(re.findall(r"<RANKDEVICE (\d+) (cuda:\d+)>", text))
+    devices = set(ranks.values())
     ok = (
         result == {"changed": True, "step": steps, "epoch": 2, "cuda_in_kernel": False}
         and len(ranks) >= N and len(devices) == N
