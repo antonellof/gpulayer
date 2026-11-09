@@ -30,6 +30,7 @@ ap.add_argument("--case", choices=["deepspeed", "bnb"], default="deepspeed")
 ap.add_argument("--stage", type=int, default=2)
 ap.add_argument("--offload", action="store_true")
 ap.add_argument("--nodes", type=int, default=1)
+ap.add_argument("--devices", type=int, default=1, help="GPUs of this machine (a local job)")
 ap.add_argument("--steps", type=int, default=200)
 ap.add_argument("--mode", default="nf4", help="bnb case: nf4, nf4-dq, fp4, int8")
 args = ap.parse_args()
@@ -99,7 +100,12 @@ def run_deepspeed() -> None:
         offload_parameters=args.offload and args.stage == 3,
     )
     trainer = glt.Trainer(
-        accelerator="cuda", devices=1, num_nodes=args.nodes, target="remote",
+        accelerator="cuda",
+        **(
+            dict(target="local", num_nodes=1, devices=args.devices)
+            if args.devices > 1
+            else dict(target="remote", num_nodes=args.nodes, devices=1)
+        ),
         strategy=strategy, precision="16-mixed", max_steps=args.steps, max_epochs=1000,
         log_every_n_steps=0, num_sanity_val_steps=0, callbacks=[report],
     )  # fmt: skip
@@ -127,16 +133,17 @@ def run_deepspeed() -> None:
     )
     full = sum(p.numel() for p in fresh.parameters())
     in_ckpt = sum(v.numel() for v in ckpt["state_dict"].values())
-    label = f"stage{args.stage}{'-offload' if args.offload else ''}/{args.nodes}"
+    world = args.devices if args.devices > 1 else args.nodes
+    label = f"stage{args.stage}{'-offload' if args.offload else ''}/{world}"
     result = {
-        "case": label, "nodes": args.nodes, "world_size": r["world"],
+        "case": label, "nodes": args.nodes, "devices": args.devices, "world_size": r["world"],
         "gpu_peak_mb_rank0": round(r["peak_mb"]), "ms_per_step": round(r["ms"], 2),
         "losses": [round(v, 4) for v in r["losses"]], "params": full,
         "checkpoint_params": in_ckpt, "gpulayer_job": trainer.launch_result.job.id,
     }  # fmt: skip
     print("RESULT " + json.dumps(result))
     checks = {
-        "world size": r["world"] == args.nodes,
+        "world size": r["world"] == world,
         "loss falls": r["losses"][-1] < r["losses"][0],
         "full weights in the checkpoint": in_ckpt == full and not missing and not unexpected,
         "trained weights came back": torch.allclose(

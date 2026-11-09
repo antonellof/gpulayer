@@ -1,5 +1,6 @@
 """Validate FSDP options, tensor parallelism and TensorRT export on GPU machines, from a
-GPUlayer server's shell (one GPU per machine, NCCL across machines):
+GPUlayer server's shell (one GPU per machine, NCCL across machines), or with `--devices N` on
+the GPUs of this machine:
 
     python scripts/validate_parallel.py --case fsdp --nodes 2 [--ac] [--offload] [--sharding SHARD_GRAD_OP]
     python scripts/validate_parallel.py --case fsdp --nodes 2 --sharded --steps 100
@@ -29,6 +30,7 @@ ap.add_argument("--case", choices=["fsdp", "tp", "single", "tensorrt", "ddp"], d
 ap.add_argument("--hook", choices=["none", "fp16", "postlocal"], default="none",
                 help="ddp: a communication hook (fp16 compression, post-local SGD)")  # fmt: skip
 ap.add_argument("--nodes", type=int, default=2)
+ap.add_argument("--devices", type=int, default=1, help="GPUs of this machine, as a local job")
 ap.add_argument("--steps", type=int, default=200)
 ap.add_argument("--ac", action="store_true", help="fsdp: activation checkpointing per Block")
 ap.add_argument("--offload", action="store_true", help="fsdp: cpu_offload=True")
@@ -36,6 +38,13 @@ ap.add_argument("--sharding", default="FULL_SHARD")
 ap.add_argument("--sharded", action="store_true", help="fsdp: state_dict_type='sharded'")
 ap.add_argument("--resume", default=None, help="fsdp: resume from this checkpoint folder")
 args = ap.parse_args()
+# Several GPUs of this machine run as a local job; otherwise one GPU on each of --nodes workers.
+WORLD = args.devices if args.devices > 1 else args.nodes
+PLACE: dict = (
+    dict(target="local", num_nodes=1, devices=args.devices)
+    if args.devices > 1
+    else dict(target="remote", num_nodes=args.nodes, devices=1)
+)
 
 WIDTH, BLOCKS, BATCH = 1024, 8, 512
 
@@ -153,7 +162,7 @@ class Report(glt.Callback):
 
 def train() -> tuple[glt.Trainer, glt.Module]:
     report = Report()
-    common = dict(accelerator="cuda", devices=1, max_steps=args.steps, max_epochs=1000,
+    common = dict(accelerator="cuda", max_steps=args.steps, max_epochs=1000,
                   log_every_n_steps=0, num_sanity_val_steps=0, callbacks=[report])  # fmt: skip
     if args.case == "fsdp":
         strategy = glt.FSDPStrategy(
@@ -161,7 +170,7 @@ def train() -> tuple[glt.Trainer, glt.Module]:
             activation_checkpointing_policy={Block} if args.ac else None,
             cpu_offload=args.offload, state_dict_type="sharded" if args.sharded else "full",
         )  # fmt: skip
-        t = glt.Trainer(num_nodes=args.nodes, target="remote", strategy=strategy, **common)
+        t = glt.Trainer(strategy=strategy, **PLACE, **common)
         model: glt.Module = Net()
     elif args.case == "ddp":
         hook: dict = {}
@@ -182,18 +191,16 @@ def train() -> tuple[glt.Trainer, glt.Module]:
                 "ddp_comm_hook": post_localSGD_hook,
                 "model_averaging_period": 4,
             }
-        t = glt.Trainer(
-            num_nodes=args.nodes, target="remote", strategy=glt.DDPStrategy(**hook), **common
-        )
+        t = glt.Trainer(strategy=glt.DDPStrategy(**hook), **PLACE, **common)
         model = Net()
     elif args.case == "tp":
         strategy = glt.ModelParallelStrategy(
-            data_parallel_size=1, tensor_parallel_size=args.nodes, save_distributed_checkpoint=False
+            data_parallel_size=1, tensor_parallel_size=WORLD, save_distributed_checkpoint=False
         )
-        t = glt.Trainer(num_nodes=args.nodes, target="remote", strategy=strategy, **common)
+        t = glt.Trainer(strategy=strategy, **PLACE, **common)
         model = TP()
     else:  # single GPU, same model and data: the baseline for tp
-        t = glt.Trainer(num_nodes=1, target="remote", **common)
+        t = glt.Trainer(**{**PLACE, "num_nodes": 1, "devices": 1}, **common)
         model = Net()
     t.fit(model, data, ckpt_path=args.resume)
     return t, model
@@ -249,7 +256,7 @@ else:
         label += "-offload" if args.offload else ""
         label += "-sharded" if args.sharded else ""
         label += "-resumed" if args.resume else ""
-        label += f"/{args.nodes if args.case != 'single' else 1}"
+        label += f"/{WORLD if args.case != 'single' else 1}"
         ckpt = trainer.checkpoint_path
         result = {
             "case": label, "world": r["world"], "step": r["step"],
@@ -286,12 +293,12 @@ else:
             )
         if args.case == "ddp":
             sums = r["rank_weight_sums"]
-            spread = max(sums) - min(sums) if len(sums) == args.nodes else float("inf")
+            spread = max(sums) - min(sums) if len(sums) == WORLD else float("inf")
             # Post-local SGD averages the models every 4 steps after step 20 (counted from 0):
             # the replicas are identical only when the last step averaged.
             last_averaged = args.hook != "postlocal" or (args.steps - 1 - 20) % 4 == 0
             if last_averaged:
-                checks["identical weights on both ranks"] = spread <= 1e-3 * max(1.0, abs(sums[0]))
+                checks["identical weights on every rank"] = spread <= 1e-3 * max(1.0, abs(sums[0]))
             else:
                 checks["replicas within 1% (local steps after the last averaging)"] = (
                     spread <= 0.01 * abs(sums[0])
@@ -307,7 +314,7 @@ else:
                 )
         if args.case == "tp":
             checks["fc1 split across GPUs"] = r["fc1_local_shape"] == [
-                4 * WIDTH // args.nodes,
+                4 * WIDTH // WORLD,
                 WIDTH,
             ]
         check(label, checks)

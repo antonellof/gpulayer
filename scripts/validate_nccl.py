@@ -29,12 +29,19 @@ import gpulayer.pytorch as glt
 ap = argparse.ArgumentParser()
 ap.add_argument("--case", choices=["ddp", "manual", "fsdp"], default="ddp")
 ap.add_argument("--nodes", type=int, default=2)
+ap.add_argument("--devices", type=int, default=1, help="GPUs of this machine, as a local job")
 ap.add_argument("--steps", type=int, default=300)
 ap.add_argument("--precision", default=None, help="default: 16-mixed (32-true for fsdp)")
 ap.add_argument(
     "--clip", type=float, default=1.0, help="manual case: clip_gradients value (0: off)"
 )
 args = ap.parse_args()
+WORLD = args.devices if args.devices > 1 else args.nodes
+PLACE: dict = (
+    dict(target="local", num_nodes=1, devices=args.devices)
+    if args.devices > 1
+    else dict(target="remote", num_nodes=args.nodes, devices=1)
+)
 
 
 def data() -> DataLoader:
@@ -100,7 +107,7 @@ class Report(glt.Callback):
         pl_module.print("RESULT " + json.dumps(result))
         checks = {
             "nccl backend": result["backend"] == "nccl",
-            "world size": world == args.nodes,
+            "world size": world == WORLD,
             "loss falls": self.losses[-1] < self.losses[0],
         }
         if args.case in ("ddp", "manual"):
@@ -113,7 +120,7 @@ class Report(glt.Callback):
         if args.case == "fsdp":
             checks["parameters sharded"] = result["local_param_fraction"] < 0.75
         for name, ok in checks.items():
-            pl_module.print(f"CHECK {args.case}/{args.nodes} {name}: {'PASS' if ok else 'FAIL'}")
+            pl_module.print(f"CHECK {args.case}/{WORLD} {name}: {'PASS' if ok else 'FAIL'}")
 
 
 class Model(glt.Module):
@@ -142,9 +149,7 @@ class Model(glt.Module):
 report = Report()
 trainer = glt.Trainer(
     accelerator="cuda",
-    devices=1,
-    num_nodes=args.nodes,
-    target="remote",
+    **PLACE,
     max_steps=args.steps,
     max_epochs=1000,
     precision=args.precision or ("32-true" if args.case == "fsdp" else "16-mixed"),
