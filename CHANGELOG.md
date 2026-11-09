@@ -3,7 +3,7 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
-## Unreleased
+## 0.11.1 (2026-11-09)
 
 Validated on NVIDIA L4 (4 GPUs), H200 and RTX PRO 6000 Blackwell
 (`benchmarks/results/2026-11-09-hf-gpus/`), which found two bugs.
