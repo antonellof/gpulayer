@@ -21,7 +21,7 @@ not yet validated.
 > an RTX PRO 6000 Blackwell, an Apple M2 Pro,
 > distributed CPU training on up to 16 Google Cloud machines, NCCL across 8 AWS machines with
 > one Tesla T4 each, and DeepSpeed, FSDP options, tensor parallelism and quantized training on
-> T4s. GPUlayer creates cloud VMs on Google Cloud; AWS and Vast.ai GPU machines were run by
+> T4s and on 4 L4s in one machine. GPUlayer creates cloud VMs on Google Cloud; AWS and Vast.ai GPU machines were run by
 > joining them as workers. See
 > [Status and roadmap](project/status.md) and
 > [Performance and comparison](get-started/performance-and-comparison.md).

@@ -76,8 +76,21 @@ On an M2 Pro (worker virtualenv with torch 2.15.0): `tqdm` built in 1.56 s and r
 0.00 s; `timm` built in 6.62 s and reused in 0.00 s, without installing torch again
 (`benchmarks/results/2026-10-31-environments/`).
 
+## CUDA libraries from pip (2026-11-09)
+
+TensorFlow (`tensorflow[and-cuda]`) and ONNX Runtime (`onnxruntime-gpu[cuda,cudnn]`) install
+CUDA libraries with pip but do not find them, even in a plain virtualenv (TensorFlow 2.21,
+ONNX Runtime 1.31, NVIDIA L4), so their jobs ran on the CPU. On Linux the worker now starts a
+job's `LD_LIBRARY_PATH` with the `nvidia/*/lib` folders of the job environment's own packages,
+then those of the worker's interpreter: pip installs only what the worker lacks (ONNX Runtime's
+cuRAND), and the rest comes from the worker's PyTorch. The job's own come first, so a library it
+asked for wins over the worker's of the same name. With TensorFlow's CUDA 12 libraries first,
+the worker's PyTorch (CUDA 13) still ran a convolution in the same process. All five listed
+libraries then ran on the GPU (`benchmarks/results/2026-11-09-hf-strategies-speed/`).
+
 ## Follow-up
 
-- Measure a cold and a warm preparation on a GPU worker.
+- Cold and warm preparation were measured on an L4 (JAX 62.6 s then 0.0 s; TensorFlow 146 s then
+  0.0 s), not yet on a busy worker.
 - Point 4 (`gpulayer env prepare`), point 5 (images), and cleanup of unused environments in
   `gpulayer gc`.

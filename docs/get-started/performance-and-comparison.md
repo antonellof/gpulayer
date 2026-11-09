@@ -12,6 +12,8 @@ the charts are drawn from them by `scripts/make_perf_charts.py`.
 | 1, 2 and 4 RTX 3070s in one machine (NCCL) | 1.26 to 1.60x faster in 5 of 6 cases; 1.12x slower on the 1-GPU CNN |
 | 2, 4 and 8 machines with one T4 each (NCCL) | MLP 1.08 to 1.29x faster; CNN 1.01 to 1.09x slower |
 | 2, 4 and 8 CPU machines (gloo) | up to 17.8% faster (8 machines) |
+| 1, 2 and 4 L4s in one machine (NCCL) | 1.04 to 1.68x faster in all 7 cases |
+| 1 and 2 H200s (NVLink) | 1.10 to 2.50x faster in all 7 cases |
 | Apple M2 Pro, GPU and CPU | 1.02 to 1.80x faster in all 5 cases |
 
 **Method.** Same model, data, optimizer and logged loss in both trainers, each with its
@@ -56,6 +58,31 @@ The batch is per GPU, so each step trains on more samples as GPUs are added. GPU
 both run the same GPU kernels; GPUlayer's CPU work is about 10% slower on this host for a reason
 not found yet. These hosts are noisy (up to 15% between runs). Logs:
 `benchmarks/results/2026-11-01-vast-4x3070-xeon/` ([start-up chart](../assets/perf/multigpu-startup-light.svg)).
+
+## L4 and H200 GPUs
+
+Measured 2026-11-09 on Hugging Face Jobs with GPUlayer 0.11.1 and the same method (Lightning
+2.6.6, torch 2.15.0).
+
+| Case | GPUlayer ms/step | Lightning ms/step | Result |
+|---|---|---|---|
+| L4: MLP fp32, 1 GPU | 3.58 | 3.72 | GPUlayer 1.04x faster |
+| L4: MLP fp16, 1 GPU | 3.25 | 4.80 | GPUlayer 1.48x faster |
+| L4: CNN fp16, 1 GPU | 6.40 | 6.91 | GPUlayer 1.08x faster |
+| L4: MLP fp32, 2 GPUs | 7.30 | 11.12 | GPUlayer 1.52x faster |
+| L4: MLP fp32, 4 GPUs | 10.24 | 15.67 | GPUlayer 1.53x faster |
+| L4: CNN fp16, 2 GPUs | 9.14 | 14.20 | GPUlayer 1.55x faster |
+| L4: CNN fp16, 4 GPUs | 13.40 | 22.45 | GPUlayer 1.68x faster |
+| H200: MLP fp32, 1 GPU (two hosts) | 1.74; 2.30 | 4.36; 3.39 | GPUlayer 2.50x; 1.47x faster |
+| H200: MLP fp16, 1 GPU | 2.95 | 3.36 | GPUlayer 1.14x faster |
+| H200: CNN fp16, 1 GPU (two hosts) | 5.51; 5.20 | 6.06; 6.43 | GPUlayer 1.10x; 1.24x faster |
+| 2 H200s (NVLink): MLP fp32 | 3.01 | 6.67 | GPUlayer 2.21x faster |
+| 2 H200s (NVLink): CNN fp16 | 9.25 | 13.58 | GPUlayer 1.47x faster |
+
+These models take a few milliseconds per step on an H200, so each trainer's CPU work per step
+decides the result, and it varies by host: the same case gave 2.50x on one H200 host and 1.47x
+on another. Small models, not a measure of large-model training. Logs and the parallel
+strategies run on the same machines: [results](../../benchmarks/results/2026-11-09-hf-strategies-speed/README.md).
 
 ## Across machines with NCCL
 

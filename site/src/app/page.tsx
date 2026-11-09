@@ -136,6 +136,7 @@ const GPU_RESULTS: { gpu: string; result: string }[] = [
   { gpu: "8 machines, 1x T4 each (NCCL)", result: "MLP 1.08 to 1.29x faster; CNN 1.01 to 1.09x slower" },
   { gpu: "2x A100 SXM4 (NVLink)", result: "DDP over NCCL and NVLink; CUDA checks passed" },
   { gpu: "4x L4, H200, RTX PRO 6000", result: "test suite and GPU checks passed; FP8, notebooks and exact resume on L4s" },
+  { gpu: "1 to 4 L4s, 1 and 2 H200s", result: "1.04 to 2.50x faster in all 14 cases; FSDP, DeepSpeed, tensor parallel on one machine" },
   { gpu: "Apple M2 Pro", result: "1.02 to 1.80x on the GPU and the CPU" },
 ];
 
@@ -269,7 +270,7 @@ export default function Home() {
             <SectionHeader
               eyebrow="Benchmarks"
               title="GPUlayer Trainer against PyTorch Lightning"
-              lede="Same model, data and optimizer, each trainer's defaults. Faster in 13 of 17 GPU cases and every CPU case; slower on a CNN on one GPU of one host and on a CNN across machines. Every number has a script and a log."
+              lede="Same model, data and optimizer, each trainer's defaults. Faster in 27 of 31 GPU cases and every CPU case; slower on a CNN on one GPU of one host and on a CNN across machines. Every number has a script and a log."
             />
             <div className="mt-12 grid gap-6 lg:grid-cols-2">
               {[

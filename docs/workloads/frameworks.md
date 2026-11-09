@@ -69,6 +69,11 @@ trainer = glt.Trainer(..., launch_options={"requirements": ["timm"]})
   Python. On an M2 Pro, `timm` took 6.6 s the first time and 0.00 s after.
 - **Worker packages stay visible** and are not reinstalled: `timm` used the worker's torch. Pin
   versions that must match the worker's CUDA build.
+- **CUDA libraries from pip are found.** On Linux the job's `LD_LIBRARY_PATH` starts with the
+  `nvidia/*/lib` folders of its own packages, then the worker's. TensorFlow and ONNX Runtime
+  need this: they install CUDA libraries with pip but do not find them, even in a plain
+  virtualenv. Ask for `tensorflow[and-cuda]` and `onnxruntime-gpu[cuda,cudnn]`; the extras
+  install what the worker's PyTorch lacks (ONNX Runtime needs cuRAND).
 - **Reported apart from the run.** The task log says `environment built in 6.62s` or
   `environment reused in 0.00s`; the finish event carries `prepare_seconds` and
   `prepare_cached`. Job timings and benchmarks exclude it.
@@ -82,8 +87,7 @@ PyTorch on NVIDIA CUDA, Apple MPS and CPU is validated on hardware, with automat
 the Apple GPU ([`examples/mlx_metal`](../../examples/mlx_metal/matmul.py)) has been run on Apple
 Silicon; NumPy batch ([`examples/numpy_batch`](../../examples/numpy_batch/estimate.py)) and shell
 tools ([`examples/shell_job`](../../examples/shell_job)) have been run. JAX, CuPy and
-Transformers ran as GPUlayer jobs on an NVIDIA L4, each installed with per-job requirements
-([results](../../benchmarks/results/2026-11-09-hf-gpus/README.md)). TensorFlow and ONNX Runtime,
-installed the same way next to torch's CUDA 13 libraries, did not find the CUDA libraries they
-need and ran on the CPU. Other reported packages have not been run as GPUlayer jobs on a GPU.
+Transformers, TensorFlow and ONNX Runtime ran as GPUlayer jobs on an NVIDIA L4, each installed
+with per-job requirements, and the worker's PyTorch still worked next to TensorFlow in the same
+process ([results](../../benchmarks/results/2026-11-09-hf-strategies-speed/README.md)). Other reported packages have not been run as GPUlayer jobs on a GPU.
 Distributed jobs start PyTorch process groups only.

@@ -222,8 +222,13 @@ store's package too (`launch_options={"requirements": ["fsspec", "s3fs"]}`) and 
 their environment, never in the URL (a URL with a password is refused, since paths are printed
 in logs). A checkpoint is written to a local file first and uploaded whole. A URL nothing can
 serve is an error when the Trainer is created. Sharded checkpoints need a local folder, and
-`TensorBoardLogger` needs a local `save_dir`. Tested with fsspec's in-memory filesystem; not yet
-run against S3, GCS or Azure.
+`TensorBoardLogger` needs a local `save_dir`. Validated against a private Hugging Face bucket
+(`hf://buckets/...`, `huggingface_hub` 2.4): checkpoints, the CSV log, resuming from a URL and
+from `"last"`, `load_from_checkpoint`, and two DDP processes
+(`scripts/validate_object_store.py <url>` checks a store). Not yet run against S3, GCS or Azure.
+Saving waits for the upload: three short epochs with three checkpoints took 35 s against a
+remote bucket from a laptop, so checkpoint less often, or use `AsyncCheckpointIO`, when the
+store is far away.
 
 ## Validate, test and predict
 
