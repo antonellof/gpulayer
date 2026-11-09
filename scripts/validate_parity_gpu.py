@@ -1,6 +1,6 @@
 """Validate on NVIDIA GPUs the Trainer features that 0.10 tested on CPU only:
 
-    python scripts/validate_parity_gpu.py        # 1 GPU runs checks 1 and 3; 2 or more run all
+    python scripts/validate_parity_gpu.py        # 1 GPU runs check 1; 2 or more run all
 
 Prints `CHECK name: PASS|FAIL detail` lines and exits non-zero on a failure.
 
@@ -10,7 +10,8 @@ Prints `CHECK name: PASS|FAIL detail` lines and exits non-zero on a failure.
                     trained on yet, across every rank.
 3. notebook_fork    a real Jupyter kernel: `devices=N` forks one process per GPU and the trained
                     weights come back; once the kernel has used CUDA, the Trainer refuses with
-                    its own error instead of crashing.
+                    its own error instead of crashing; and after `torch.cuda.is_available()`
+                    in a cell, the ranks say how to avoid it.
 4. metric_sync      N GPUs over NCCL: a torchmetrics `Accuracy` logged with `self.log` equals
                     the accuracy of the final weights over the whole validation set, and a value
                     logged in `on_validation_epoch_end` is the mean over ranks.
@@ -92,8 +93,10 @@ class Noisy(glt.Module):
     def __init__(self) -> None:
         super().__init__()
         self.net = nn.Sequential(nn.Linear(4, 64), nn.Dropout(0.5), nn.Linear(64, 1))
+        self.devices_seen: set[str] = set()
 
     def training_step(self, batch, batch_idx):
+        self.devices_seen.add(self.device.type)  # fit moves the weights back to the CPU after
         return (self.net(batch[0]) * (1.0 + random.random())).pow(2).mean()
 
     def configure_optimizers(self):
@@ -133,10 +136,9 @@ def exact_resume() -> None:
         t2.fit(resumed, data, ckpt_path=root / "mid.ckpt")
         pairs = zip(full.state_dict().values(), resumed.state_dict().values(), strict=True)
         same = all(torch.equal(a, b) for a, b in pairs)
-        device = next(resumed.parameters()).device
         check(
-            "exact_resume", same and t2.global_step == 30 and device.type == "cuda",
-            f"step {t2.global_step}, device {device}, identical weights {same}",
+            "exact_resume", same and t2.global_step == 30 and resumed.devices_seen == {"cuda"},
+            f"step {t2.global_step}, trained on {resumed.devices_seen}, identical weights {same}",
         )  # fmt: skip
     torch.use_deterministic_algorithms(False)
 
@@ -240,8 +242,8 @@ except Exception as e:
 """
 
 
-@guarded
-def notebook_fork() -> None:
+def in_kernel(*cells: str) -> str:
+    """Run cells in a new Jupyter kernel and return what they printed, errors included."""
     from jupyter_client.manager import start_new_kernel
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -255,7 +257,7 @@ def notebook_fork() -> None:
                 output.append("\n".join(message["content"]["traceback"]))
 
         try:
-            for cell in (CELL, AFTER_CUDA):
+            for cell in cells:
                 kernel.execute_interactive(
                     cell.replace("ROOT", repr(tmp)).replace("NPROC", str(N)), timeout=600,
                     output_hook=collect,
@@ -263,24 +265,34 @@ def notebook_fork() -> None:
         finally:
             kernel.stop_channels()
             manager.shutdown_kernel(now=True)
-        text = "".join(output)
-        if "RESULT {" not in text:
-            check("notebook_fork", False, text[-3000:])
-            return
-        result = json.loads(text.split("RESULT ", 1)[1].splitlines()[0])
-        steps = 2 * (16 // N)  # 16 batches split across the ranks, two epochs
-        ranks = sorted(ln for ln in text.splitlines() if ln.startswith("RANKDEVICE"))
-        devices = {ln.split()[2] for ln in ranks}
-        ok = (
-            result == {"changed": True, "step": steps, "epoch": 2, "cuda_in_kernel": False}
-            and len(ranks) >= N and len(devices) == N
-        )  # fmt: skip
-        check("notebook_fork", ok, f"{N} GPUs, {result}, ranks on {sorted(devices)}")
-        refused = next((ln for ln in text.splitlines() if ln.startswith("REFUSED")), "REFUSED ?")
-        check(
-            "notebook_refuses_after_cuda", "ValidationFailed" in refused and "CUDA" in refused,
-            refused,
-        )  # fmt: skip
+        return "".join(output)
+
+
+@guarded
+def notebook_fork() -> None:
+    text = in_kernel(CELL, AFTER_CUDA)
+    if "RESULT {" not in text:
+        check("notebook_fork", False, text[-3000:])
+        return
+    result = json.loads(text.split("RESULT ", 1)[1].splitlines()[0])
+    steps = 2 * (16 // N)  # 16 batches split across the ranks, two epochs
+    ranks = sorted(ln for ln in text.splitlines() if ln.startswith("RANKDEVICE"))
+    devices = {ln.split()[2] for ln in ranks}
+    ok = (
+        result == {"changed": True, "step": steps, "epoch": 2, "cuda_in_kernel": False}
+        and len(ranks) >= N and len(devices) == N
+    )  # fmt: skip
+    check("notebook_fork", ok, f"{N} GPUs, {result}, ranks on {sorted(devices)}")
+    refused = next((ln for ln in text.splitlines() if ln.startswith("REFUSED")), "REFUSED ?")
+    check(
+        "notebook_refuses_after_cuda", "ValidationFailed" in refused and "CUDA" in refused,
+        refused,
+    )  # fmt: skip
+    # torch.cuda.is_available() in a cell asks the driver, after which forks cannot use
+    # CUDA: the ranks must say so and how to avoid it, not only "exit 1".
+    text = in_kernel("import torch; print('AVAILABLE', torch.cuda.is_available())", CELL)
+    explained = "PYTORCH_NVML_BASED_CUDA_CHECK" in text
+    check("notebook_explains_driver_query", explained, text[-400:] if not explained else "")
 
 
 # ------------------------------------------------------------------ 4. metric objects over NCCL
@@ -344,8 +356,8 @@ def main() -> int:
     name = torch.cuda.get_device_name(0)
     print(f"torch {torch.__version__}, CUDA {torch.version.cuda}, {GPUS} x {name}")
     exact_resume()
-    notebook_fork()
-    if GPUS >= 2:
+    if GPUS >= 2:  # devices=1 trains in the kernel itself: nothing is forked
+        notebook_fork()
         ddp_resume()
         metric_sync()
     print(f"SUMMARY {'all passed' if not failed else f'{failed} failed'}")

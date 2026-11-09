@@ -289,3 +289,24 @@ def test_real_jupyter_kernel(tmp_path):
     assert "RESULT {" in text, text[-3000:]
     result = json.loads(text.split("RESULT ", 1)[1].splitlines()[0])
     assert result == {"changed": True, "step": 8, "epoch": 2}
+
+
+def test_cuda_check_asks_nvml_and_restores_the_environment(monkeypatch):
+    """torch.cuda.is_available() asks the CUDA driver unless PYTORCH_NVML_BASED_CUDA_CHECK is
+    set, and a process forked after that cannot use CUDA: the Trainer asks NVML."""
+    import torch
+
+    from gpulayer.pytorch.runtime import cuda_available
+
+    seen = []
+    monkeypatch.setattr(
+        torch.cuda,
+        "is_available",
+        lambda: seen.append(os.environ.get("PYTORCH_NVML_BASED_CUDA_CHECK")),
+    )
+    monkeypatch.delenv("PYTORCH_NVML_BASED_CUDA_CHECK", raising=False)
+    cuda_available()
+    assert seen == ["1"] and "PYTORCH_NVML_BASED_CUDA_CHECK" not in os.environ
+    monkeypatch.setenv("PYTORCH_NVML_BASED_CUDA_CHECK", "0")
+    cuda_available()
+    assert seen[-1] == "1" and os.environ["PYTORCH_NVML_BASED_CUDA_CHECK"] == "0"

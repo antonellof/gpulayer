@@ -75,6 +75,26 @@ def _xla_available() -> bool:
     return True
 
 
+def cuda_available() -> bool:
+    """``torch.cuda.is_available()`` that leaves this process able to fork ranks that use CUDA.
+
+    torch asks the CUDA driver for its device count, and from then on a forked child cannot
+    use CUDA ("Cannot re-initialize CUDA in forked subprocess"), although
+    ``torch.cuda.is_initialized()`` stays False. Asking NVML instead, as Lightning does, keeps
+    the fork usable (found on 4 NVIDIA L4s in a Jupyter kernel)."""
+    if torch.cuda.is_initialized():
+        return True
+    previous = os.environ.get("PYTORCH_NVML_BASED_CUDA_CHECK")
+    os.environ["PYTORCH_NVML_BASED_CUDA_CHECK"] = "1"
+    try:
+        return torch.cuda.is_available()
+    finally:
+        if previous is None:
+            del os.environ["PYTORCH_NVML_BASED_CUDA_CHECK"]
+        else:
+            os.environ["PYTORCH_NVML_BASED_CUDA_CHECK"] = previous
+
+
 def resolve_accelerator(accelerator: str = "auto") -> str:
     """'auto' -> the accelerator GPUlayer granted this job, else a TPU (when PJRT_DEVICE=TPU
     and torch_xla is installed), else cuda/rocm > mps > cpu."""
@@ -86,12 +106,12 @@ def resolve_accelerator(accelerator: str = "auto") -> str:
             return granted
         if os.environ.get("PJRT_DEVICE") == "TPU" and _xla_available():
             return "tpu"
-        if torch.cuda.is_available():
+        if cuda_available():
             return "rocm" if _rocm_build() else "cuda"
         return "mps" if _mps_available() else "cpu"
-    if accelerator == "cuda" and not (torch.cuda.is_available() and not _rocm_build()):
+    if accelerator == "cuda" and not (cuda_available() and not _rocm_build()):
         raise ValidationFailed("accelerator='cuda' requested but torch.cuda is not available")
-    if accelerator == "rocm" and not (torch.cuda.is_available() and _rocm_build()):
+    if accelerator == "rocm" and not (cuda_available() and _rocm_build()):
         raise ValidationFailed(
             "accelerator='rocm' requested but this torch is not a ROCm build with an AMD GPU"
         )

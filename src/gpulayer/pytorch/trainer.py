@@ -3031,6 +3031,14 @@ def _notebook_rank(
         GPULAYER_OUTPUT_DIR=str(out),
     )
     os.environ.setdefault("GLOO_SOCKET_IFNAME", "lo0" if sys.platform == "darwin" else "lo")
+    gpu = resolve_accelerator(trainer.accelerator) in ("cuda", "rocm")
+    if gpu and torch.cuda._is_in_bad_fork():
+        raise ValidationFailed(
+            "this notebook asked the CUDA driver about GPUs before fit (for example with "
+            "torch.cuda.is_available()), so a forked process cannot use CUDA: restart the "
+            "kernel and run `import os; os.environ['PYTORCH_NVML_BASED_CUDA_CHECK'] = '1'` "
+            "in the first cell, or use torch.cuda.device_count(), which is safe"
+        )
     trainer.fit(model, *args)
 
 
@@ -3262,7 +3270,7 @@ def _rng_states() -> dict[str, Any]:
     if numpy is not None:
         name, keys, pos, has_gauss, cached = numpy.random.get_state()
         states["numpy"] = (name, keys.tolist(), pos, has_gauss, cached)
-    if torch.cuda.is_available() and torch.cuda.is_initialized():
+    if torch.cuda.is_initialized():
         states["cuda"] = torch.cuda.get_rng_state_all()
     if torch.backends.mps.is_available():
         states["mps"] = torch.mps.get_rng_state()
