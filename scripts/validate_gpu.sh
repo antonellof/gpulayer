@@ -4,8 +4,11 @@
 #   bash scripts/validate_gpu.sh 2>&1 | tee validate.log
 #
 # Needs an NVIDIA driver (nvidia-smi) and network access to PyPI. Installs uv and a venv in
-# .venv-validate, then runs: hardware details, the full test suite, the CUDA hardware tests,
-# scripts/validate_cuda.py, scripts/validate_multigpu.py (with 2 or more GPUs), and the benchmarks.
+# .venv-validate, then runs: hardware details, the full test suite (with the Lightning
+# conformance tests), the CUDA hardware tests, scripts/validate_cuda.py,
+# scripts/validate_trainer_gpu.py, scripts/validate_parity_gpu.py, scripts/validate_multigpu.py
+# (with 2 or more GPUs), and the benchmarks. LIBRARIES=1 also runs scripts/validate_libraries.py
+# (installs JAX, CuPy, TensorFlow, ONNX Runtime and Transformers in jobs).
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 status=0
@@ -25,7 +28,7 @@ export PATH="$HOME/.local/bin:$PATH"
 uv venv -q --python 3.12 .venv-validate
 # shellcheck disable=SC1091
 . .venv-validate/bin/activate
-uv pip install -q -e '.[dev,examples]'
+uv pip install -q -e '.[dev,examples,conformance]'
 python -c "import torch; print('torch', torch.__version__, 'cuda', torch.version.cuda, 'available', torch.cuda.is_available(), 'devices', torch.cuda.device_count())"
 gpulayer --version || true
 
@@ -41,9 +44,20 @@ run pytest -v -p no:cacheprovider -m hardware_cuda tests  # every CUDA-marked te
 step "CUDA checks"
 run python scripts/validate_cuda.py
 
+step "Trainer checks on one GPU"
+run python scripts/validate_trainer_gpu.py
+
+step "Lightning parity on GPUs: exact resume, notebooks, metric sync"
+run python scripts/validate_parity_gpu.py
+
 if [ "$(nvidia-smi -L | wc -l)" -ge 2 ]; then
   step "several GPUs: interconnect, GPU choice, NCCL"
   run python scripts/validate_multigpu.py
+fi
+
+if [ "${LIBRARIES:-0}" = 1 ]; then
+  step "other GPU libraries as jobs"
+  run python scripts/validate_libraries.py
 fi
 
 step "benchmarks"
