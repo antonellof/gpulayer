@@ -36,6 +36,9 @@ class PreparedEnvironment:
     bin_dir: str
     seconds: float
     cached: bool
+    # The CUDA libraries the job's own packages installed (``nvidia/*/lib``), for the dynamic
+    # loader: TensorFlow and ONNX Runtime do not find them by themselves.
+    library_dirs: tuple[str, ...] = ()
 
 
 class EnvironmentCache:
@@ -67,6 +70,7 @@ class EnvironmentCache:
             bin_dir=str(bin_dir),
             seconds=time.perf_counter() - t0,
             cached=cached,
+            library_dirs=nvidia_library_dirs(env_dir),
         )
 
     # ------------------------------------------------------------------ internals
@@ -154,6 +158,19 @@ class EnvironmentCache:
         except BaseException:
             shutil.rmtree(tmp, ignore_errors=True)
             raise
+
+
+def nvidia_library_dirs(env_dir: Path) -> tuple[str, ...]:
+    """The ``lib`` folders of NVIDIA's pip packages installed in this environment itself (not
+    the worker's, which its PyTorch finds on its own): ``nvidia/cudnn/lib``, ``nvidia/cu13/lib``.
+
+    pip installs CUDA libraries for TensorFlow (``tensorflow[and-cuda]``) and ONNX Runtime
+    (``onnxruntime-gpu[cuda,cudnn]``), but neither finds them without ``LD_LIBRARY_PATH``, not
+    even in a plain virtualenv (TensorFlow 2.21 and ONNX Runtime 1.31 on an NVIDIA L4)."""
+    found: set[str] = set()
+    for nvidia in env_dir.glob("lib/python*/site-packages/nvidia"):
+        found.update(str(d) for d in nvidia.glob("*/lib") if d.is_dir())
+    return tuple(sorted(found))
 
 
 def _run_step(cmd: list[str]) -> None:

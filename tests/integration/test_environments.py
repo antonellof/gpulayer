@@ -134,3 +134,17 @@ def test_job_fails_in_preparation_with_the_installer_message(client, tmp_path):
     assert st.state == JobState.FAILED
     assert "environment build failed" in (st.error or "") + str([t.error for t in st.tasks])
     assert "never" not in job.logs_text()
+
+
+def test_cuda_libraries_of_the_job_environment_are_found(tmp_path):
+    """TensorFlow and ONNX Runtime install CUDA libraries with pip but do not find them: the
+    worker puts the environment's own nvidia/*/lib folders on LD_LIBRARY_PATH."""
+    from gpulayer.worker.environments import nvidia_library_dirs
+
+    site = tmp_path / "lib" / "python3.12" / "site-packages" / "nvidia"
+    for name in ("cudnn", "cu13", "cusolver"):
+        (site / name / "lib").mkdir(parents=True)
+    (site / "include").mkdir()  # no lib folder: not listed
+    dirs = nvidia_library_dirs(tmp_path)
+    assert [d.split("nvidia/")[1] for d in dirs] == ["cu13/lib", "cudnn/lib", "cusolver/lib"]
+    assert nvidia_library_dirs(tmp_path / "missing") == ()

@@ -48,11 +48,16 @@ with tf.device("/GPU:0"):
     x = tf.ones((2048, 2048))
     s = float(tf.reduce_sum(tf.matmul(x, x)))
 name = tf.config.experimental.get_device_details(gpus[0]).get("device_name", "?")
+# The worker's PyTorch in the same process, with TensorFlow's CUDA 12 libraries on the path.
+import torch
+x = torch.ones(1, 3, 32, 32, device="cuda")
+conv = torch.nn.functional.conv2d(x, torch.ones(4, 3, 3, 3, device="cuda"))
+print("NOTE torch alongside tensorflow:", torch.__version__, float(conv.max()) == 27.0)
 print("RESULT", "tensorflow", tf.__version__, name, s == 2048.0**3)
 """,
     ),
     "onnxruntime": (
-        ["onnxruntime-gpu", "onnx"],
+        ["onnxruntime-gpu[cuda,cudnn]", "onnx"],
         """
 import numpy as np, onnx, onnxruntime as ort
 from onnx import TensorProto, helper
@@ -114,6 +119,8 @@ def main() -> int:
                 st = job.wait(3600)
                 logs = job.logs_text()
                 result = next((ln for ln in logs.splitlines() if ln.startswith("RESULT")), "")
+                for note in (ln for ln in logs.splitlines() if ln.startswith("NOTE")):
+                    print(note, flush=True)
                 done = [e for e in job.events() if e.type.startswith("task.")]
                 prep = next((e.data.get("prepare_seconds") for e in done if e.data), None)
                 ok = st.state == JobState.SUCCEEDED and result.endswith("True")

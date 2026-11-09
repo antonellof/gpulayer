@@ -749,6 +749,11 @@ class WorkerAgent:
         )
         env["PATH"] = prepared.bin_dir + os.pathsep + env.get("PATH", "")
         env["VIRTUAL_ENV"] = str(Path(prepared.bin_dir).parent)
+        if prepared.library_dirs and sys.platform.startswith("linux"):
+            # First, so the job's own CUDA libraries win over others of the same name.
+            env["LD_LIBRARY_PATH"] = os.pathsep.join(
+                [*prepared.library_dirs, *filter(None, [env.get("LD_LIBRARY_PATH")])]
+            )
         return prepared.python
 
     def _serve(
