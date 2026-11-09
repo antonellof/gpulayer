@@ -37,8 +37,11 @@ Simulated with SLURM's variables on one machine; not run on a cluster.
 
 In a notebook on Linux, `Trainer(devices=N)` forks one process per device and returns the
 weights to the notebook, which needs checkpoints on (the default). The processes inherit your
-cells, so nothing has to be pickled, but CUDA must not have been used before `fit`. Tested in a
-real Jupyter kernel on CPU, not on a GPU. On macOS it stops with an explanation, because forks of
+cells, so nothing has to be pickled, but CUDA must not have been used before `fit`. Validated in
+a real Jupyter kernel on 4 NVIDIA L4s. `torch.cuda.is_available()` in a cell also stops the
+processes from using CUDA, because it asks the CUDA driver: use `torch.cuda.device_count()`, or
+set `os.environ["PYTORCH_NVML_BASED_CUDA_CHECK"] = "1"` in the first cell (the processes say so if
+it happens). On macOS it stops with an explanation, because forks of
 a kernel crash there. `launch()` has no script to send from a notebook: export it to a `.py` file.
 
 ## Requirements

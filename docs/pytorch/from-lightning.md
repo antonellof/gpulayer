@@ -87,9 +87,9 @@ objects to replace. How far each has run:
 - `ModelParallelStrategy` (tensor parallelism), the FSDP options (sharding strategies,
   activation checkpointing, CPU offload, sharded checkpoints) and `to_tensorrt` were validated
   on Tesla T4s across two machines ([results](../../benchmarks/results/2026-11-01-aws-2xt4-parallel/README.md)).
-- `TransformerEnginePrecision`, `XLAProfiler`, and the
+- `TransformerEnginePrecision` (FP8) was validated on an NVIDIA L4. `XLAProfiler` and the
   Comet, W&B, MLflow, TensorBoard and `LitLogger` loggers are tested against fake packages: the
-  real ones need NVIDIA GPUs, TPUs or accounts.
+  real ones need TPUs or accounts.
 - `glt.GPULayerCLI` ([Command line](cli.md)) uses `argparse`, not `jsonargparse`.
 - Habana HPUs are not supported. Current Lightning removed them too (`lightning-habana` is
   archived).
@@ -110,9 +110,9 @@ Each of Lightning's performance mechanisms, found in its source, and GPUlayer's 
 | keeps every `DataLoader` setting when adding a `DistributedSampler` | same |
 | `benchmark=` for cuDNN autotuning | on by default for CUDA runs of 1,000 steps or more |
 | `torch.compile`, `AsyncCheckpointIO`, `MpDeviceLoader` on TPUs | same |
-| FSDP, activation checkpointing, tensor parallelism, 4-bit and FP8 plugins | same (validated on T4s except FP8, which needs Hopper or Ada GPUs) |
+| FSDP, activation checkpointing, tensor parallelism, 4-bit and FP8 plugins | same (validated on T4s; FP8 on an L4) |
 | `srun python train.py` (SLURM) | the same: tasks train in place, nothing is submitted; `devices` and `num_nodes` must match the tasks |
-| `strategy="ddp_notebook"` | `Trainer(devices=N)` in a notebook forks by itself; the name is accepted. Keep CUDA calls out of the cells before `fit`. Not on macOS, where forks of a kernel crash: use `devices=1`, or a script |
+| `strategy="ddp_notebook"` | `Trainer(devices=N)` in a notebook forks by itself; the name is accepted. Keep CUDA calls, including `torch.cuda.is_available()`, out of the cells before `fit`. Not on macOS, where forks of a kernel crash: use `devices=1`, or a script |
 | SLURM auto-requeue on SIGUSR1 | `launch_options={"max_attempts": N}`: GPUlayer keeps the newest `last.ckpt` and restarts from it after a lost worker or a SIGTERM, also a group of machines ([details](trainer.md#surviving-preemption)). Off by default; tested on one machine, not yet on a reclaimed VM |
 
 Each row has a behaviour test in `tests/pytorch/test_speed_mechanisms.py` (for example, the

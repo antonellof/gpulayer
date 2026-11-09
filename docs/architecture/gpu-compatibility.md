@@ -8,7 +8,7 @@ if it is listed there.
 | Accelerator | Independent jobs | Distributed jobs | Notes |
 |---|---|---|---|
 | `cpu` | tested | tested (gloo, one host) | no GPU libraries required |
-| `cuda` | hardware-validated (Tesla T4, RTX 3070, A100) | hardware-validated on one machine (nccl, up to 4 GPUs) and across up to 8 machines (one GPU each) | any CUDA workload; the Trainer validated on a T4, RTX 3070 and A100; NCCL across 8 machines with one GPU each (multi-GPU machines across the network not yet run) |
+| `cuda` | hardware-validated (Tesla T4, RTX 3070, A100, L4, H200, RTX PRO 6000) | hardware-validated on one machine (nccl, up to 4 GPUs) and across up to 8 machines (one GPU each) | any CUDA workload; the Trainer validated on a T4, RTX 3070, A100, L4, H200 and RTX PRO 6000 Blackwell; NCCL across 8 machines with one GPU each (multi-GPU machines across the network not yet run) |
 | `mps` | hardware-validated | unsupported | the Apple GPU through Metal (PyTorch MPS, MLX, ...); run on Apple Silicon |
 | `rocm` | detection-only | unsupported | reported with `execution_supported=false`, never scheduled |
 

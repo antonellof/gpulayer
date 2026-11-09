@@ -7,6 +7,7 @@ the ``WorkerChannel`` differs.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import logging
 import os
@@ -85,7 +86,7 @@ class _CheckpointStream:
         self.channel, self.task_id, self.path = channel, task_id, path
         self._pending = threading.Event()
         self._stop = False
-        self._sent: tuple[float, int] | None = None
+        self._sent: bytes | None = None
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
@@ -117,16 +118,20 @@ class _CheckpointStream:
     def _send(self) -> None:
         if not self.path.is_file():  # a sharded checkpoint is a folder, and is not streamed
             return
-        stat = self.path.stat()
-        if (stat.st_mtime, stat.st_size) == self._sent:
-            return
-        if stat.st_size > MAX_OUTPUT_FILE_BYTES:
+        if self.path.stat().st_size > MAX_OUTPUT_FILE_BYTES:
             log.warning("checkpoint of task %s is too large to keep", self.task_id)
             return
         # The Trainer replaces this file with a rename, so reading it never sees half a file.
-        ref = self.channel.put_artifact(self.path.read_bytes(), self.path.name, ArtifactKind.OUTPUT)
+        data = self.path.read_bytes()
+        # Compare contents, not the modification time: Linux stamps files from a coarse clock
+        # (a few ms), so two checkpoints saved in a row can have the same time and size, and
+        # the second, saved on SIGTERM, was taken as sent (found on an RTX PRO 6000 host).
+        digest = hashlib.blake2b(data, digest_size=16).digest()
+        if digest == self._sent:
+            return
+        ref = self.channel.put_artifact(data, self.path.name, ArtifactKind.OUTPUT)
         self.channel.checkpoint(self.task_id, ref)
-        self._sent = (stat.st_mtime, stat.st_size)
+        self._sent = digest
 
 
 class _LogBuffer:

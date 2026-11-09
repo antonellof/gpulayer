@@ -135,6 +135,7 @@ const GPU_RESULTS: { gpu: string; result: string }[] = [
   { gpu: "4x RTX 3070 (PCIe)", result: "1.45 to 1.60x on 2 and 4 GPUs; 1.12x slower on one GPU with a CNN" },
   { gpu: "8 machines, 1x T4 each (NCCL)", result: "MLP 1.08 to 1.29x faster; CNN 1.01 to 1.09x slower" },
   { gpu: "2x A100 SXM4 (NVLink)", result: "DDP over NCCL and NVLink; CUDA checks passed" },
+  { gpu: "4x L4, H200, RTX PRO 6000", result: "test suite and GPU checks passed; FP8, notebooks and exact resume on L4s" },
   { gpu: "Apple M2 Pro", result: "1.02 to 1.80x on the GPU and the CPU" },
 ];
 

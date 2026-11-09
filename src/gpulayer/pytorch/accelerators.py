@@ -85,7 +85,9 @@ class CUDAAccelerator(Accelerator):
 
     @staticmethod
     def is_available() -> bool:
-        return torch.cuda.is_available()
+        from gpulayer.pytorch.runtime import cuda_available
+
+        return cuda_available()
 
     @staticmethod
     def auto_device_count() -> int:

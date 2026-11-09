@@ -3,6 +3,25 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
+## 0.11.1 (2026-11-09)
+
+Validated on NVIDIA L4 (4 GPUs), H200 and RTX PRO 6000 Blackwell
+(`benchmarks/results/2026-11-09-hf-gpus/`), which found two bugs.
+
+- Fix: in a notebook, `Trainer(devices=N)` on CUDA failed in every forked process ("Cannot
+  re-initialize CUDA in forked subprocess"), because checking for CUDA asked the CUDA driver.
+  The Trainer now asks NVML, as Lightning does. If a cell calls `torch.cuda.is_available()`
+  before `fit`, the processes now say how to avoid it.
+- Fix: automatic resume could restart from the checkpoint before the one saved on SIGTERM and
+  train some steps again: the worker took a checkpoint written a few milliseconds after the
+  previous one, with the same size, as already stored. It now compares contents.
+- Validated: `TransformerEnginePrecision` (FP8) on an L4. Transformer Engine 2.20 loads the FP8
+  state of a checkpoint only with `NVTE_ALLOW_UNSAFE_PICKLE_EXTRA_STATE=1`.
+- Validated on GPUs: exact resume, notebooks, `torchmetrics` sync over NCCL, and JAX, CuPy and
+  Transformers as jobs. TensorFlow and ONNX Runtime jobs did not find their CUDA libraries.
+- New: `scripts/validate_parity_gpu.py`, `scripts/validate_te_fp8.py`, and
+  `scripts/validate_libraries.py` again; `validate_gpu.sh` runs them.
+
 ## 0.11.0 (2026-11-07)
 
 Adds serving models on AMD Ryzen AI NPUs. **It has not run on an NPU or with FastFlowLM itself:** it
