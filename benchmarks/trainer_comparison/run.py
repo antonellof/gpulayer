@@ -2,7 +2,8 @@
 
 TRAINERS (default "gl pl") picks the variants, e.g. TRAINERS="gl gl-base pl" (see bench.py).
 
-ms/step = (median wall(600) - median wall(100)) / 500. Start-up = median wall(100) - 100 * step.
+ms/step = (median wall(LONG) - median wall(SHORT)) / (LONG - SHORT); LONG 600 and SHORT 100
+by default (BENCH_LONG, BENCH_SHORT). Start-up = median wall(SHORT) - SHORT * step.
 Wall time is measured outside the process, from start to exit.
 """
 
@@ -14,7 +15,9 @@ import time
 
 CASES = sys.argv[1:] or ["mlp-fp32", "mlp-fp16", "cnn-fp16", "ddp-cpu-2"]
 TRAINERS = os.environ.get("TRAINERS", "gl pl").split()
-SHORT, LONG, REPEAT = 100, 600, 3
+SHORT = int(os.environ.get("BENCH_SHORT", 100))  # fewer for large models: BENCH_SHORT=20
+LONG = int(os.environ.get("BENCH_LONG", 600))
+REPEAT = 3
 
 
 def wall(fw, case, steps):
