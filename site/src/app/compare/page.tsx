@@ -166,10 +166,11 @@ export default function ComparePage() {
             <div>
               <h2 className="section-title">Speed against Lightning</h2>
               <p className="mt-4 text-muted-foreground">
-                Same model, data and optimizer, each trainer&apos;s defaults (GPUlayer 0.8, Lightning 2.6.6). The
-                GPUlayer Trainer was faster in 13 of 17 GPU cases and every CPU case: 1.08 to 1.38x on a Tesla T4,
-                1.26 to 1.60x on 2 and 4 RTX 3070s, 17.8% on 8 CPU machines. Lightning was faster on a CNN on one GPU
-                of one host (1.12x) and on a CNN across 2 to 8 machines over NCCL (1.01 to 1.09x).
+                Same model, data and optimizer, each trainer&apos;s defaults (Lightning 2.6.6). The GPUlayer Trainer
+                was faster in 27 of 31 GPU cases and every CPU case: 1.08 to 1.38x on a Tesla T4, 1.26 to 1.60x on 2
+                and 4 RTX 3070s, 1.04 to 1.68x on 1 to 4 L4s, 1.10 to 2.50x on 1 and 2 H200s, 17.8% on 8 CPU machines.
+                Lightning was faster on a CNN on one GPU of one host (1.12x) and on a CNN across 2 to 8 machines over
+                NCCL (1.01 to 1.09x).
               </p>
               <Link href="/docs/get-started/performance-and-comparison/" className="link-arrow mt-6">
                 Charts, method and logs <ArrowRight className="h-3.5 w-3.5" />

@@ -29,7 +29,7 @@ Lightning conformance tests, the `hardware_cuda` tests, `validate_cuda.py`,
 | Exact resume in one process (identical weights, dropout on the GPU) | passed | passed | passed |
 | Resume over NCCL, 4 GPUs (each sample trained once) | passed | | |
 | `torchmetrics` object synced over NCCL, 4 GPUs; `on_validation_epoch_end` value averaged over ranks | passed (0.7910 = 0.7910) | | |
-| Notebook: `devices=4` forked from a Jupyter kernel | failed (bug 1); with the fix the weights came back trained at the expected step and CUDA stayed unused in the kernel (the check then misread the ranks' interleaved lines, since corrected and not rerun: no 4-GPU machine was free) | | |
+| Notebook: `devices=4` forked from a Jupyter kernel | failed (bug 1); passed with the fix: trained weights back at step 8, one rank on each of `cuda:0` to `cuda:3`, CUDA unused in the kernel, and the new messages for both mistakes | | |
 | Interconnect, GPU choice, NCCL 1 node × 4 processes | passed | | |
 | Automatic resume after SIGTERM, 20 runs | | | 20/20 with the fix |
 

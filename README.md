@@ -30,8 +30,9 @@ not yet validated. Docs: [gpulayer.dev/docs](https://www.gpulayer.dev/docs/).
 > **v0.11.1.** Validated on a Tesla T4, 4× RTX 3070, 2× A100 (NVLink), 4× L4, an H200, an RTX PRO
 > 6000 Blackwell, an Apple M2 Pro, and distributed CPU training on up to 16 Google Cloud machines. NCCL across machines is validated
 > on 8 AWS machines with one Tesla T4 each (DDP, `sync_batchnorm`, manual optimization, FSDP),
-> and on T4s: DeepSpeed ZeRO 1 to 3, FSDP options, tensor parallelism, DDP communication hooks,
-> 4/8-bit quantized training and TensorRT export; FP8 on an L4. Not run on hardware yet: TPUs, AMD. See
+> and on T4s and on the 4 L4s of one machine: DeepSpeed ZeRO 1 to 3, FSDP options, tensor
+> parallelism, DDP communication hooks, 4/8-bit quantized training and TensorRT export; FP8 on an
+> L4. Not run on hardware yet: TPUs, AMD. See
 > [Status](https://github.com/antonellof/gpulayer/blob/main/docs/project/status.md).
 
 ## Install
@@ -94,9 +95,10 @@ The [full quickstart](https://github.com/antonellof/gpulayer/blob/main/docs/get-
 ## Performance
 
 Against PyTorch Lightning, with the same model, data and optimizer and each trainer's
-defaults, the GPUlayer Trainer was faster in 13 of 17 GPU cases and in every CPU case
-(GPUlayer 0.8, 2026-11-01). Lightning was faster on one GPU with a CNN on one host, and by 1 to
-9% on a CNN across 2 to 8 machines over NCCL.
+defaults, the GPUlayer Trainer was faster in 27 of 31 GPU cases and in every CPU case: 13 of 17
+on T4, RTX 3070 and A100 hosts (GPUlayer 0.8, 2026-11-01), and all 14 on L4 and H200 GPUs
+(0.11.1, 2026-11-09). Lightning was faster on one GPU with a CNN on one host, and by 1 to 9% on
+a CNN across 2 to 8 machines over NCCL.
 
 ![Training step time: GPUlayer and PyTorch Lightning](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/perf/training-step-light.svg#gh-light-mode-only)
 ![Training step time: GPUlayer and PyTorch Lightning](https://raw.githubusercontent.com/antonellof/gpulayer/main/docs/assets/perf/training-step-dark.svg#gh-dark-mode-only)
@@ -110,6 +112,8 @@ defaults, the GPUlayer Trainer was faster in 13 of 17 GPU cases and in every CPU
 | Tesla T4 | 1.08 to 1.38x per step |
 | 1, 2 and 4 RTX 3070s (DDP over NCCL) | 1.26 to 1.60x in 5 cases; 1.12x slower on one GPU with a CNN |
 | 2, 4 and 8 machines with one T4 each (NCCL) | MLP 1.08 to 1.29x faster; CNN 1.01 to 1.09x slower |
+| 1, 2 and 4 L4s in one machine | 1.04 to 1.68x |
+| 1 and 2 H200s (NVLink) | 1.10 to 2.50x; 1.47x and 2.50x on the same case on two hosts |
 | Apple M2 Pro, GPU and CPU | 1.02 to 1.80x |
 | 8 CPU machines on AWS (gloo, 4 processes each) | 17.8% faster (Lightning under torchrun) |
 

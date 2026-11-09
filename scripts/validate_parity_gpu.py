@@ -216,7 +216,7 @@ class Model(glt.Module):
     def training_step(self, batch, batch_idx):
         if batch_idx == 0:
             # one write per line: the forked ranks share the kernel's output stream
-            sys.stdout.write(f"<RANKDEVICE {self.global_rank} {self.device}>\n")
+            sys.stdout.write(f"<RANKDEVICE {self.global_rank} {self.device}>\\n")
             sys.stdout.flush()
         return (self.net(batch[0]) - 2 * batch[0]).pow(2).mean()
     def configure_optimizers(self):

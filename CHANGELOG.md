@@ -3,6 +3,27 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
+## Unreleased
+
+Ran on NVIDIA L4 and H200 GPUs and a real object store
+(`benchmarks/results/2026-11-09-hf-strategies-speed/`).
+
+- Fix: TensorFlow and ONNX Runtime jobs ran on the CPU. They install CUDA libraries with pip but
+  do not find them, even in a plain virtualenv. On Linux a job's `LD_LIBRARY_PATH` now starts
+  with the `nvidia/*/lib` folders of its own packages, then the worker's. Ask for
+  `tensorflow[and-cuda]` and `onnxruntime-gpu[cuda,cudnn]`. JAX, CuPy, TensorFlow, ONNX Runtime
+  and Transformers now all run as jobs on an L4.
+- Validated: FSDP options, DeepSpeed ZeRO 1 to 3 with offload, tensor parallelism, DDP hooks,
+  `sync_batchnorm`, manual optimization, bitsandbytes and TensorRT on the 4 L4s of one machine
+  (until now across machines with one T4 each); NVLink detection, NCCL, FSDP and tensor
+  parallelism on 2 H200s.
+- Measured: the GPUlayer Trainer against Lightning was faster in all 14 cases on 1 to 4 L4s
+  (1.04 to 1.68x) and 1 and 2 H200s (1.10 to 2.50x; the same case gave 1.47x on another host).
+- Validated: checkpoints, CSV logs, resume and DDP against a private Hugging Face bucket
+  (`hf://`); not yet S3, GCS or Azure. New: `scripts/validate_object_store.py <url>`.
+- `validate_parallel.py`, `validate_deepspeed.py` and `validate_nccl.py` take `--devices N`
+  for the GPUs of one machine.
+
 ## 0.11.1 (2026-11-09)
 
 Validated on NVIDIA L4 (4 GPUs), H200 and RTX PRO 6000 Blackwell
