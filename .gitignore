@@ -9,3 +9,4 @@ dist/
 .gpulayer/
 examples/*/outputs/
 gpulayer_runs/
+.env
