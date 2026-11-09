@@ -140,9 +140,13 @@ def main() -> int:
                 )
                 job = c.submit(
                     gl.service(["sh", "-c", cmd], accelerator="cuda", gpus=1, name="vllm",
-                               requirements=["vllm"])
+                               requirements=["vllm"],
+                               # vLLM's FlashInfer sampler compiles at first use and needs nvcc,
+                               # which a CUDA runtime alone does not have.
+                               env={"VLLM_USE_FLASHINFER_SAMPLER": "0"})
                 )  # fmt: skip
                 endpoints = job.endpoints(wait=2400)
+                listening = time.perf_counter() - t0
                 endpoint = endpoints[0] if endpoints else ""
 
                 def models() -> bool:
@@ -163,7 +167,8 @@ def main() -> int:
                     took = (time.perf_counter() - s) * 1000
                 check(
                     "vllm", bool(text.strip()),
-                    f"{args.vllm} up in {up:.0f}s (install, download, load); "
+                    f"{args.vllm} listening after {listening:.0f}s, serving after {up:.0f}s "
+                    "(install, download, load); "
                     + (f"16 tokens in {took:.0f} ms: {text.strip()[:60]!r}" if text else
                        "\n" + job.logs_text()[-12000:]),
                 )  # fmt: skip
