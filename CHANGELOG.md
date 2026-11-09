@@ -3,7 +3,7 @@
 All notable changes to GPUlayer. Versions follow [semantic versioning](https://semver.org);
 before 1.0, minor versions may change public APIs, with migration notes here.
 
-## Unreleased
+## 0.11.2 (2026-11-09)
 
 Ran on NVIDIA L4 and H200 GPUs and a real object store
 (`benchmarks/results/2026-11-09-hf-strategies-speed/`).

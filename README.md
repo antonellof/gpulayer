@@ -27,7 +27,7 @@ checkpoint, which is kept while it trains.
 NVIDIA CUDA, Apple Metal (MPS) and CPU are validated on hardware. AMD ROCm is implemented and
 not yet validated. Docs: [gpulayer.dev/docs](https://www.gpulayer.dev/docs/).
 
-> **v0.11.1.** Validated on a Tesla T4, 4× RTX 3070, 2× A100 (NVLink), 4× L4, an H200, an RTX PRO
+> **v0.11.2.** Validated on a Tesla T4, 4× RTX 3070, 2× A100 (NVLink), 4× L4, an H200, an RTX PRO
 > 6000 Blackwell, an Apple M2 Pro, and distributed CPU training on up to 16 Google Cloud machines. NCCL across machines is validated
 > on 8 AWS machines with one Tesla T4 each (DDP, `sync_batchnorm`, manual optimization, FSDP),
 > and on T4s and on the 4 L4s of one machine: DeepSpeed ZeRO 1 to 3, FSDP options, tensor
@@ -56,7 +56,7 @@ To train with PyTorch, install it too: `pip install "gpulayer[torch]"`.
 |---|---|
 | As a standalone CLI with [uv](https://docs.astral.sh/uv/) | `uv tool install gpulayer` |
 | Install script (own virtual environment, no sudo) | `curl -fsSL https://gpulayer.dev/install.sh \| sh` |
-| Docker | `docker pull ghcr.io/antonellof/gpulayer:0.11.1` (also `:0.11.1-torch`; see [deploy/docker](https://github.com/antonellof/gpulayer/tree/main/deploy/docker)) |
+| Docker | `docker pull ghcr.io/antonellof/gpulayer:0.11.2` (also `:0.11.2-torch`; see [deploy/docker](https://github.com/antonellof/gpulayer/tree/main/deploy/docker)) |
 | Kubernetes (Helm) | `helm install gpulayer deploy/kubernetes/helm/gpulayer -n gpulayer --create-namespace` (see [Kubernetes](https://github.com/antonellof/gpulayer/blob/main/docs/guides/kubernetes.md)) |
 | From source, to run the examples | `git clone https://github.com/antonellof/gpulayer && cd gpulayer && pip install -e ".[dev,examples]"` |
 
