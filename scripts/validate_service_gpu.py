@@ -30,8 +30,13 @@ import gpulayer as gl
 ap = argparse.ArgumentParser()
 ap.add_argument("--vllm", default=None, help="a model for vLLM to serve")
 ap.add_argument("--accelerator", default="cuda", help="mps to try it on Apple Silicon")
+ap.add_argument("--vllm-only", action="store_true", help="skip checks 1 to 3")
 args = ap.parse_args()
 failed = 0
+
+
+class _Skip(Exception):
+    pass
 
 
 def check(name: str, ok: bool, detail: str = "") -> None:
@@ -73,6 +78,8 @@ def main() -> int:
         c.ensure_local_worker()
         bundle = c.package(repo / "examples" / "gpu_service")
         try:
+            if args.vllm_only:
+                raise _Skip
             t0 = time.perf_counter()
             job = c.submit(
                 gl.service(["python", "serve.py"], source=bundle, accelerator=args.accelerator,
@@ -117,6 +124,8 @@ def main() -> int:
             st = job.wait(120)
             gone = wait_for(lambda: not answers(restarted), 60)
             check("cancel", bool(gone), f"job {st.state.value}, port closed {bool(gone)}")
+        except _Skip:
+            pass
         except Exception:
             check("service", False, traceback.format_exc()[-2500:])
 
@@ -124,6 +133,8 @@ def main() -> int:
             try:
                 t0 = time.perf_counter()
                 cmd = (
+                    "python -c \"import torch, vllm; print('versions torch', torch.__version__, "
+                    "'vllm', vllm.__version__)\"; "
                     f'exec vllm serve {args.vllm} --host 0.0.0.0 --port "$PORT" '
                     "--max-model-len 2048 --gpu-memory-utilization 0.8"
                 )
@@ -154,7 +165,7 @@ def main() -> int:
                     "vllm", bool(text.strip()),
                     f"{args.vllm} up in {up:.0f}s (install, download, load); "
                     + (f"16 tokens in {took:.0f} ms: {text.strip()[:60]!r}" if text else
-                       job.logs_text()[-1500:]),
+                       "\n" + job.logs_text()[-12000:]),
                 )  # fmt: skip
                 job.cancel()
             except Exception:
